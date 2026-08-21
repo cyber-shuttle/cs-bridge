@@ -177,3 +177,10 @@ export interface WebviewMessage {
     resources?: Resources;
     jobId?: string;
 }
+
+export interface CloudProviderState {
+    name: string;
+    secretKey: string
+    accessKey: string
+}
+

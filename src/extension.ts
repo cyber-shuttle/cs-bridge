@@ -13,6 +13,7 @@ import { Transports } from './modules/transport';
 import { RemoteSessionController } from './remoteSessionController';
 import { consumePendingSummary } from './summaryPanel';
 import { CsBridgeMenu } from './menu';
+import { CloudProvider } from './cloudProivder';
 
 export async function activate(context: vscode.ExtensionContext) {
     const logger = Logger.getInstance();
