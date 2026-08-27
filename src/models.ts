@@ -182,6 +182,7 @@ export interface CloudProviderState {
     name: string;
     secretKey: string
     accessKey: string
+    sessionToken: string
     instanceID: string
     instanceStatus: string
     region: string
