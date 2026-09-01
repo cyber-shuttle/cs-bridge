@@ -196,3 +196,9 @@ export interface CloudProviderState {
     clientInit: boolean
 }
 
+export enum InstanceActions {
+    Start,
+    Stop,
+    Remove,
+}
+
