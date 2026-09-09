@@ -194,6 +194,8 @@ export interface CloudProviderState {
     instances: AWSInstanceInfo[]
     region: string
     clientInit: boolean
+    sshHosts: SshHost[];
+
 }
 
 export enum InstanceActions {
