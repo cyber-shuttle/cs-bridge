@@ -14,7 +14,8 @@ import { stopSession, SessionMonitor, launchSession, prepareLaunch } from './mod
 import { Transports, connectSessionToTunnel, disposeAllTunnelClients, disposeTunnelClient, ensureRemoteSession, hasTunnelClient } from './modules/transport';
 import { validateSlurmConfig } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
-import { isTerminal, isDeletable, isStoppable, isReachable, isWallTimeExpired } from './modules/sessionMachine';
+import { isTerminal, isCloseable, isStoppable, isReattachable, isRelayLive, isWallTimeExpired } from './modules/sessionMachine';
+import AWSClient from "./modules/aws"
 
 // forceNew=false relies on VS Code deduping by workspace identity: it focuses the window already holding this URI.
 function openSessionWindow(session: SlurmSession, forceNew: boolean): void {
@@ -36,6 +37,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private readonly opening = new Set<string>();
     private readonly monitor;
     private sharedReady = false;
+    private awsClient = new AWSClient()
 
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
     constructor(extensionUri: vscode.Uri, private readonly transports: Transports, private readonly remoteSessionId?: string) {

@@ -178,7 +178,7 @@ export interface WebviewMessage {
     jobId?: string;
 }
 
-export interface AWSInstanceInfo {
+export interface CloudInstanceInfo {
     name: string | undefined
     instanceID: string | undefined;
     state: string | undefined;
@@ -191,7 +191,7 @@ export interface CloudProviderState {
     secretKey: string
     accessKey: string
     sessionToken: string
-    instances: AWSInstanceInfo[]
+    instances: CloudInstanceInfo[]
     region: string
     clientInit: boolean
     sshHosts: SshHost[];
