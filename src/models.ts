@@ -161,6 +161,8 @@ export interface SessionsState {
     previewSession: SlurmSession | null;
     validating: boolean;
     alert: { title: string; message: string } | null;
+    isCloud: boolean
+    cloudSessions: CloudInstanceInfo[]
 }
 
 export interface HostsState {
