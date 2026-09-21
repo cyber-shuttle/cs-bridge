@@ -38,8 +38,8 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private readonly monitor;
     private sharedReady = false;
     private awsClient = new AWSClient()
-    protected cloudPollInterval: NodeJS.Timeout | null = null;
-    private pollIntervalTime = 10000
+    private cloudPollInterval: NodeJS.Timeout | null = null;
+    private pollIntervalTime = 15000
 
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
     constructor(extensionUri: vscode.Uri, private readonly transports: Transports, private readonly remoteSessionId?: string) {
@@ -88,7 +88,11 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     dispose(): void {
         this.monitor.dispose(); // window close: clear every per-session poll interval so none leak past teardown
         this.shared.forEach(d => d.dispose());
-        void disposeAllTunnelClients(); // window close: free local ports (remote stays, reaped by Linkspan)
+        void disposeAllTunnelClients(); // window close: free local ports (remote stays, reaped by linkspan)
+        if (this.cloudPollInterval) {
+            clearInterval(this.cloudPollInterval)
+            this.cloudPollInterval = null
+        }
     }
 
     private readonly dismissals: Record<string, () => void> = {
@@ -109,6 +113,12 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         },
         connectTunnel: (_data, id) => void this.connectSession(id),
         deleteSession: (_data, id) => this.confirmAndDeleteSession(id),
+        pollCloudStatus: (_data) => {
+            this.cloudPollInterval = setInterval(() => {
+                this.awsClient.pollInstances()
+                this.pushState()
+            }, this.pollIntervalTime);
+        }
     };
 
     protected handleMessage(data: WebviewMessage) {
