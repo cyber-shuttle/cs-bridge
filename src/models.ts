@@ -178,6 +178,9 @@ export interface WebviewMessage {
     account?: string;
     resources?: Resources;
     jobId?: string;
+    instanceIp?: string;
+    instanceId?: string;
+    instanceName?: string;
 }
 
 export interface CloudInstanceInfo {

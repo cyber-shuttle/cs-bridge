@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { enabled } from './features';
 import { uuidv7 } from 'uuidv7';
 import { errMsg } from './logger';
-import { HostRuntime, SlurmSession, SessionsState, WebviewMessage } from './models';
+import { HostRuntime, SlurmSession, SessionsState, WebviewMessage, InstanceActions } from './models';
 import { WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSshConfigEntry, addSshConfigEntry, hasSessionKey, SshManager } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
@@ -39,7 +39,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private sharedReady = false;
     private awsClient = new AWSClient()
     private cloudPollInterval: NodeJS.Timeout | null = null;
-    private pollIntervalTime = 15000
+    private pollIntervalTime = 10000
 
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
     constructor(extensionUri: vscode.Uri, private readonly transports: Transports, private readonly remoteSessionId?: string) {
@@ -118,7 +118,32 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 this.awsClient.pollInstances()
                 this.pushState()
             }, this.pollIntervalTime);
-        }
+        },
+        launchCloudInstance: (_data) => this.awsClient.launchEC2Instance(),
+        stopCloudInstance: (_data) => {
+            if (_data.instanceId) {
+                this.awsClient.doInstanceActions(InstanceActions.Stop, _data.instanceId, "")
+            }
+        },
+        restartCloudInstance: (_data) => {
+            if (_data.instanceId) {
+                this.awsClient.doInstanceActions(InstanceActions.Start, _data.instanceId, "")
+            }
+        },
+        removeCloudInstance: (_data,) => {
+            if (_data.instanceId && _data.instanceName) {
+                this.awsClient.removeInstance(_data.instanceId, _data.instanceName)
+            }
+        },
+        sshIntoCloudInstance: (_data) => this.awsClient.openTerminal(_data.instanceIp ?? ""),
+        startRemoteForloudInstance: async (_data) => {
+            if (_data.instanceId && _data.instanceName && _data.instanceIp) {
+
+                console.log("Launching Remote Session")
+                await this.awsClient.openRemoteSession(_data.instanceId, _data.instanceName, _data.instanceIp)
+            }
+        },
+
     };
 
     protected handleMessage(data: WebviewMessage) {
