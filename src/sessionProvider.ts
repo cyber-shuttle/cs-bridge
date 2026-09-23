@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { enabled } from './features';
 import { uuidv7 } from 'uuidv7';
 import { errMsg } from './logger';
-import { HostRuntime, SlurmSession, SessionsState, WebviewMessage, InstanceActions } from './models';
+import { HostRuntime, SlurmSession, SessionsState, WebviewMessage, InstanceActions, CloudFormOptions, CloudFormState } from './models';
 import { WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSshConfigEntry, addSshConfigEntry, hasSessionKey, SshManager } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
@@ -40,6 +40,14 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private awsClient = new AWSClient()
     private cloudPollInterval: NodeJS.Timeout | null = null;
     private pollIntervalTime = 10000
+    private cloudForm: CloudFormState= null
+    private cloudFormOptions: Record<string, CloudFormOptions> = {
+        "aws": {
+            image: [],
+            type: [],
+            region: []
+        }
+    }
 
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
     constructor(extensionUri: vscode.Uri, private readonly transports: Transports, private readonly remoteSessionId?: string) {
@@ -99,6 +107,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         dismissDraftSession: () => { this.draftAlias = null; },
         dismissPreview: () => { void this.release(this.previewSession); this.previewSession = null; this.previewSbatchEnv = {}; },
         dismissAlert: () => { this.alert = null; },
+        dismissCloudForm: () => { this.cloudForm = null; },
     };
 
     private readonly handlers: Record<string, (data: WebviewMessage, id: string) => void> = {
@@ -293,7 +302,9 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 validating: this.validating,
                 alert: this.alert,
                 isCloud: this.awsClient.isReady(),
-                cloudSessions: this.awsClient.getInstances()
+                cloudSessions: this.awsClient.getInstances(),
+                cloudForm: this.cloudForm,
+                cloudFormOptions: this.cloudFormOptions.aws
             };
 
             view.webview.postMessage({ command: 'state', state });

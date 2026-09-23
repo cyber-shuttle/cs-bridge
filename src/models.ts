@@ -163,6 +163,8 @@ export interface SessionsState {
     alert: { title: string; message: string } | null;
     isCloud: boolean
     cloudSessions: CloudInstanceInfo[]
+    cloudForm: CloudFormState
+    cloudFormOptions: CloudFormOptions
 }
 
 export interface HostsState {
@@ -207,5 +209,12 @@ export enum InstanceActions {
     Start,
     Stop,
     Remove,
+}
+
+export type CloudFormState =  "aws" | "gcp"| "azure" | "loading" | "ready" | null
+export interface CloudFormOptions {
+    image: string[][]
+    type: string[][]
+    region: string[][]
 }
 

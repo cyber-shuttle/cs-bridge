@@ -6,6 +6,7 @@ import { SessionCard, NowContext } from '@/ui/components/SessionCard';
 import { HostForm } from '@/ui/components/HostForm';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button } from '@/ui/components/base';
 import { CloudSessionCard } from '../components/CloudSessionCard';
+import { CloudForm } from '../components/CloudForm';
 
 function ConfigCard({ icon, muted, alias, runtime, onDismiss, validating }: {
     icon: string; muted?: boolean; alias: string; runtime: HostRuntime | undefined;
@@ -24,6 +25,43 @@ function ConfigCard({ icon, muted, alias, runtime, onDismiss, validating }: {
             <HostForm alias={alias} runtime={runtime} validating={validating} />
         </Card>
     );
+}
+
+function CloudConfigCard({ state, icon, muted, onDismiss }: { state: SessionsState, icon: string, muted?: boolean, onDismiss: () => void }) {
+
+    const options = state.cloudFormOptions
+    const formState = state.cloudForm
+
+    return (
+        <Card>
+            <Row gap={6}>
+                <Icon name={icon} style={muted ? { color: 'var(--vscode-descriptionForeground)' } : undefined} />
+                <Text weight={600}>Instance Options</Text>
+                <Row gap={4} style={{ marginLeft: 'auto' }}>
+                    <ActionIcon name="close" ariaLabel="Dismiss" onClick={onDismiss} />
+                </Row>
+            </Row>
+
+            {formState === "loading" && <Row gap={6} pad="8px"><Spinner size={16} />Fetching Form Options</Row>}
+            {formState !== "loading" && <CloudForm options={options} vendors={[["AWS", "AWS"]]} />}
+        </Card>
+    );
+}
+
+function gpuInitial(gpuClass: string): Partial<HostFormInitial> {
+    const gpu = parseGpuClass(gpuClass);
+    return gpu ? { tab: 'gpu', gpuType: gpu.gpuType, gpuCount: gpu.gpuCount } : { tab: 'cpu' };
+}
+
+function editInitial(session: ViewSession): HostFormInitial {
+    return {
+        ...gpuInitial(session.gpuClass),
+        partName: session.queue,
+        allocation: session.allocation,
+        cpu: String(session.cpus),
+        memory: session.memory,
+        wall: session.wallTime,
+    };
 }
 
 function ScriptPreviewOverlay({ state }: { state: SessionsState }) {
@@ -70,10 +108,13 @@ function SessionsView({ state }: { state: SessionsState }) {
         <>
             {state.draftAlias ? <ConfigCard key={state.draftAlias} icon="circle-outline" muted alias={state.draftAlias} runtime={state.hostRuntime[state.draftAlias]} onDismiss={() => post({ command: 'dismissDraftSession' })} validating={state.validating} /> : null}
             {state.sessions.map(s => <SessionCard key={s.id} session={s} />)}
-            {!state.sessions.length && !state.draftAlias && !state.cloudSessions.length
-                ? <Text muted block style={{ margin: '4px', textAlign: 'center' }}>No sessions yet. Click on + to create one.</Text>
-                : null}
+            {
+                !state.sessions.length && !state.draftAlias && !state.cloudSessions.length && !state.cloudForm
+                    ? <Text muted block style={{ margin: '4px', textAlign: 'center' }}>No sessions yet. Click on + to create one.</Text>
+                    : null
+            }
             <ScriptPreviewOverlay state={state} />
+            {state.cloudForm && <CloudConfigCard state={state} icon="circle-outline" muted onDismiss={() => post({ command: 'dismissCloudForm' })} />}
             {state.cloudSessions.map(s => <CloudSessionCard key={s.instanceID} instance={s} />)}
             {state.alert ? <AlertOverlay alert={state.alert} /> : null}
         </>
