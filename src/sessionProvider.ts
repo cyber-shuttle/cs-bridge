@@ -40,7 +40,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private awsClient = new AWSClient()
     private cloudPollInterval: NodeJS.Timeout | null = null;
     private pollIntervalTime = 10000
-    private cloudForm: CloudFormState= null
+    private cloudForm: CloudFormState = null
     private cloudFormOptions: Record<string, CloudFormOptions> = {
         "aws": {
             image: [],
@@ -128,7 +128,15 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 this.pushState()
             }, this.pollIntervalTime);
         },
-        launchCloudInstance: (_data) => this.awsClient.launchEC2Instance(),
+        launchCloudInstance:async (_data) => {
+            const { cloudLaunchParams } = _data
+            if (cloudLaunchParams?.vendor === "AWS") {
+                await this.awsClient.launchEC2Instance(cloudLaunchParams.image, cloudLaunchParams.type)
+                this.cloudForm = null
+                this.pushState()
+
+            }
+        },
         stopCloudInstance: (_data) => {
             if (_data.instanceId) {
                 this.awsClient.doInstanceActions(InstanceActions.Stop, _data.instanceId, "")
