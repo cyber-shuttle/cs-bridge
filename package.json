@@ -66,13 +66,6 @@
 					"name": "SSH Hosts",
 					"icon": "resources/csbridge.svg",
 					"when": "!csbridge.remote"
-				},
-				{
-					"type": "webview",
-					"id": "csbridge.cloudView",
-					"name": "Cloud Providers",
-					"icon": "resources/csbridge.svg",
-					"when": "!csbridge.remote"
 				}
 			]
 		},
@@ -166,11 +159,6 @@
 					"command": "csbridge.addHost",
 					"group": "navigation@1",
 					"when": "view == csbridge.hostsView"
-				},
-				{
-					"command": "csbridge.addAWSToken",
-					"group": "navigation@0",
-					"when": "view == csbridge.cloudView"
 				}
 			],
 			"commandPalette": [
