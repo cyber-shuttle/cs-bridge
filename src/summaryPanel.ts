@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import { getSession, watchSessions } from './extensionStore';
 import { renderHtml } from './webviewProvider';
-import { readAllRuns, readRecentMetrics, readSessionStats, watchSessionMetrics } from './modules/sessionMetricsStore';
-import { Metric, Stats, SlurmSession, SummaryState } from './models';
+import { readAllRuns, readRecentSamples, readSessionStats, watchSessionMetrics } from './modules/sessionMetricsStore';
+import { Sample, Stats, SlurmSession, SummaryState } from './models';
 
-// A finished run's fixed snapshot (from the Stats view), shown instead of the possibly-relaunched live session.
-interface RunSnapshot { stats?: Stats; metrics?: Metric[] }
+// A finished run's fixed snapshot (from the Run History view), shown instead of the live session, which may have been started again.
+interface RunSnapshot { stats?: Stats; samples?: Sample[] }
 
 const PENDING_KEY = 'csbridge.pendingSummaries';
 // Trade-off: hard cap so a never-consumed baton (e.g. an activation that errors before consuming) can't grow globalState unbounded. Bump if summaries ever legitimately queue deeper than this.
@@ -36,11 +36,11 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
     // Re-read the session each post: it may still be 'stopping' at open and flip to 'stopped' while the tab is up.
     const post = () => {
         const s = getSession(session.id) ?? session;
-        // Past run from Stats: its fixed snapshot. Live: current samples + latest sacct copy (run record or in-run file).
+        // Past run from Run History: its fixed snapshot. Live: current samples + latest sacct copy (run record or in-run file).
         const run = runSnapshot ? undefined : readAllRuns().find(r => r.cluster === s.cluster && r.jobId === s.jobId);
-        const metrics = runSnapshot ? runSnapshot.metrics : readRecentMetrics(s.id);
+        const samples = runSnapshot ? runSnapshot.samples : readRecentSamples(s.id);
         const stats = runSnapshot ? runSnapshot.stats : (run?.stats ?? readSessionStats(s.id));
-        const state: SummaryState = { session: s, metrics, stats };
+        const state: SummaryState = { session: s, samples, stats };
         void panel.webview.postMessage({ command: 'state', state });
     };
     const msgSub = panel.webview.onDidReceiveMessage((m: { command?: string }) => { if (m?.command === 'ready') { post(); } });

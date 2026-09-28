@@ -22,7 +22,7 @@ type CommandResult = { stdout: string; stderr: string; code: number };
 // The single command in flight on a shell; its streams accumulate until both sentinels arrive (see sshShell).
 type Pending = { rid: string; outBuf: string; errBuf: string; settled: boolean; resolve: (r: CommandResult) => void };
 
-// One persistent `ssh … bash -l` per host. `ready` resolves once the connect noise is drained; on Win32 (no
+// One persistent `ssh … bash -l` per SSH host. `ready` resolves once the connect noise is drained; on Win32 (no
 // ControlMaster) this in-process channel is the only multiplexing, so authentication happens once here.
 type HostShell = {
     proc: ChildProcess;
@@ -36,7 +36,7 @@ type HostShell = {
 export class SshManager {
     private static instance: SshManager | undefined;
 
-    // One persistent shell per host, plus a per-host serial queue so a single in-flight command owns the streams.
+    // One persistent shell per SSH host, plus a per-SSH-host serial queue so a single in-flight command owns the streams.
     private readonly shells = new Map<string, HostShell>();
     private readonly queues = new Map<string, Promise<unknown>>();
 
@@ -55,7 +55,7 @@ export class SshManager {
             SshManager.instance = new SshManager(extensionUri);
         }
 
-        // Include'd above the user's global entries so a session alias wins via SSH first-match.
+        // Include'd above the user's global entries so a per-session SSH host wins via SSH first-match.
         if (!fs.existsSync(CS_SSH_CONFIG_PATH)) {
             fs.mkdirSync(path.dirname(CS_SSH_CONFIG_PATH), { recursive: true, mode: 0o700 });
             fs.writeFileSync(CS_SSH_CONFIG_PATH, '', { mode: 0o600 });
@@ -90,13 +90,13 @@ export class SshManager {
         );
     }
 
-    public buildControlMasterArgs(hostName: string): string[] {
+    public buildControlMasterArgs(alias: string): string[] {
         // Windows OpenSSH has no Unix-socket ControlMaster ("getsockname failed: Not a socket").
         if (process.platform === 'win32') {
             return [];
         }
         // Hashed socket name keeps ControlPath under the 104-byte UNIX socket limit.
-        const hash = crypto.createHash('sha256').update(hostName).digest('hex').substring(0, 16);
+        const hash = crypto.createHash('sha256').update(alias).digest('hex').substring(0, 16);
         const socketPath = path.join(CS_SSH_CONTROL_DIR, hash);
         return [
             '-o', 'ControlMaster=auto',
@@ -105,13 +105,13 @@ export class SshManager {
         ];
     }
 
-    // Every remote command rides the host's one persistent shell, established on demand and reused until it drops.
+    // Every remote command rides the SSH host's one persistent shell, established on demand and reused until it drops.
     // batch: a background poll won't open a new connection that would raise a Duo box it can't answer — it rides an
     // existing shell or fails fast (caller retries). A user-driven call authenticates interactively.
-    public runRemoteCommand(hostName: string, command: string, opts?: { batch?: boolean }): Promise<CommandResult> {
-        return this.enqueue(hostName, async () => {
+    public runRemoteCommand(alias: string, command: string, opts?: { batch?: boolean }): Promise<CommandResult> {
+        return this.enqueue(alias, async () => {
             let shell: HostShell;
-            try { shell = await this.ensureShell(hostName, !!opts?.batch); }
+            try { shell = await this.ensureShell(alias, !!opts?.batch); }
             catch (err) {
                 return { stdout: '', stderr: errMsg(err), code: 255 };
             }
@@ -131,19 +131,19 @@ export class SshManager {
         SshManager.instance?.disposeAll();
     }
 
-    // Per-host serial queue: chain each command after the previous so one Pending owns the shell's streams at a time.
-    private enqueue<T>(hostName: string, fn: () => Promise<T>): Promise<T> {
-        const prev = this.queues.get(hostName) ?? Promise.resolve();
+    // Per-SSH-host serial queue: chain each command after the previous so one Pending owns the shell's streams at a time.
+    private enqueue<T>(alias: string, fn: () => Promise<T>): Promise<T> {
+        const prev = this.queues.get(alias) ?? Promise.resolve();
         const next = prev.then(fn, fn);
-        this.queues.set(hostName, next.then(() => { }, () => { }));
+        this.queues.set(alias, next.then(() => { }, () => { }));
         return next;
     }
 
-    private async ensureShell(hostName: string, batch: boolean): Promise<HostShell> {
-        let shell = this.shells.get(hostName);
+    private async ensureShell(alias: string, batch: boolean): Promise<HostShell> {
+        let shell = this.shells.get(alias);
         if (!shell || !shell.alive) {
-            shell = this.spawnShell(hostName, batch);
-            this.shells.set(hostName, shell);
+            shell = this.spawnShell(alias, batch);
+            this.shells.set(alias, shell);
         }
         await shell.ready; // throws if this shell died during connect (auth failure / dismiss); caller maps it
         return shell;
@@ -177,7 +177,7 @@ export class SshManager {
         };
     }
 
-    private spawnShell(hostName: string, batch: boolean): HostShell {
+    private spawnShell(alias: string, batch: boolean): HostShell {
         const askpassDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-askpass-'));
         const env: NodeJS.ProcessEnv = { ...process.env, ...(batch ? {} : this.askpassEnvironment(askpassDir)) };
 
@@ -187,11 +187,11 @@ export class SshManager {
 
         // `bash -l` gives the same PATH (Slurm binaries) a login shell has; the channel is held open and fed commands.
         const proc = spawn('ssh', [
-            ...this.buildControlMasterArgs(hostName),
+            ...this.buildControlMasterArgs(alias),
             ...connectArgs,
             '-o', 'ServerAliveInterval=15',
             '-o', 'ServerAliveCountMax=3',
-            hostName,
+            alias,
             'bash -l',
         ], { env, stdio: ['pipe', 'pipe', 'pipe'] });
 
@@ -224,7 +224,7 @@ export class SshManager {
 
         proc.stdin!.write(`printf '\\n${READY_MARKER}\\n'\n`);
 
-        const poll = batch ? undefined : this.pollAskpass(shell, hostName);
+        const poll = batch ? undefined : this.pollAskpass(shell, alias);
         const stopPoll = (): void => { if (poll) { clearInterval(poll); } };
         shell.ready.then(stopPoll, stopPoll); // authentication is one-shot at connect
 
@@ -233,24 +233,24 @@ export class SshManager {
             stopPoll();
             try { fs.rmSync(askpassDir, { recursive: true, force: true }); }
             catch { /* best-effort */ }
-            if (this.shells.get(hostName) === shell) { this.shells.delete(hostName); }
+            if (this.shells.get(alias) === shell) { this.shells.delete(alias); }
             if (shell.connecting) { shell.connecting = false; readyReject(onConnect()); }
             if (shell.current && !shell.current.settled) {
                 shell.current.settled = true;
                 shell.current.resolve({ stdout: shell.current.outBuf, stderr: `${shell.current.errBuf}\nssh connection closed`, code: 255 });
             }
         };
-        proc.on('close', (code: number | null) => drop(() => new Error(`SSH connection to ${hostName} closed (exit ${code ?? 'null'})`)));
+        proc.on('close', (code: number | null) => drop(() => new Error(`SSH connection to ${alias} closed (exit ${code ?? 'null'})`)));
         proc.on('error', (err: Error) => drop(() => err));
 
         return shell;
     }
 
     // SSH auth prompt in a monospace webview (renderAuthHtml); resolves to the response, or undefined on dismiss.
-    private promptAuth(hostName: string, prompt: string): Promise<string | undefined> {
+    private promptAuth(alias: string, prompt: string): Promise<string | undefined> {
         const nonce = crypto.randomBytes(16).toString('hex');
         const panel = vscode.window.createWebviewPanel(
-            'csbridge.sshAuth', `SSH Authentication — ${hostName}`,
+            'csbridge.sshAuth', `SSH Authentication — ${alias}`,
             vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true },
         );
         panel.webview.html = renderAuthHtml(prompt, nonce);
@@ -262,7 +262,7 @@ export class SshManager {
         });
     }
 
-    private pollAskpass(shell: HostShell, hostName: string): NodeJS.Timeout {
+    private pollAskpass(shell: HostShell, alias: string): NodeJS.Timeout {
         const handled = new Set<string>();
         const cancelFile = path.join(shell.askpassDir, 'cancel');
         return setInterval(async () => {
@@ -275,7 +275,7 @@ export class SshManager {
                 handled.add(file);
                 try {
                     const { id, prompt } = JSON.parse(fs.readFileSync(path.join(shell.askpassDir, file), 'utf-8'));
-                    const password = await this.promptAuth(hostName, String(prompt));
+                    const password = await this.promptAuth(alias, String(prompt));
                     if (password !== undefined) {
                         fs.writeFileSync(path.join(shell.askpassDir, `response-${id}`), password, 'utf-8');
                     }
@@ -309,28 +309,28 @@ export class SshManager {
     }
 }
 
-// Upsert/drop this alias in remote.SSH.serverInstallPath (host->path map Remote-SSH reads at connect). Best-effort and
+// Upsert/drop this alias in remote.SSH.serverInstallPath (alias->path map Remote-SSH reads at connect). Best-effort and
 // unlocked: no Remote-SSH, or a race between concurrent connects, just leaves that session on $HOME (today's default).
-async function setServerInstallPath(hostAlias: string, dir: string | undefined): Promise<void> {
+async function setServerInstallPath(alias: string, dir: string | undefined): Promise<void> {
     try {
         const cfg = vscode.workspace.getConfiguration('remote.SSH');
         const map = { ...(cfg.get<Record<string, string>>('serverInstallPath') ?? {}) };
-        if (dir === undefined) { delete map[hostAlias]; }
-        else { map[hostAlias] = dir; }
+        if (dir === undefined) { delete map[alias]; }
+        else { map[alias] = dir; }
         await cfg.update('serverInstallPath', map, vscode.ConfigurationTarget.Global);
     }
     catch (err) {
-        logger.warn(`Could not update remote.SSH.serverInstallPath for ${hostAlias}: ${errMsg(err)}`);
+        logger.warn(`Could not update remote.SSH.serverInstallPath for ${alias}: ${errMsg(err)}`);
     }
 }
 
 export async function addSshConfigEntry(session: SlurmSession, localPort: number): Promise<string> {
-    const hostAlias = csHostAlias(session.cluster, session.name);
-    await removeSshConfigEntry(session.id, hostAlias, false); // keep the key: it is this session's, generated locally
+    const alias = csHostAlias(session.cluster, session.name);
+    await deleteSshConfigEntry(session.id, alias, false); // keep the key: it is this session's, generated locally
 
     const hostname = '127.0.0.1';
     const user = 'cs-ssh-user'; // any non-empty value works; the custom SSH server ignores the username
-    const configBlock = buildSshConfigBlock(session.id, hostAlias, hostname, localPort, user, sessionKeyPath(session.id));
+    const configBlock = buildSshConfigBlock(session.id, alias, hostname, localPort, user, sessionKeyPath(session.id));
 
     // Locked: startup reattach can rewrite this concurrently, so the append must not interleave.
     lock(CS_SSH_CONFIG_PATH);
@@ -345,14 +345,14 @@ export async function addSshConfigEntry(session: SlurmSession, localPort: number
     }
     // Pin the server to node-local /tmp, not $HOME/.vscode-server: on HPC $HOME is a shared network fs where stalls miss
     // the ptyHost heartbeat and one account's sessions fight over a single tree. Set after the prune above so it wins.
-    await setServerInstallPath(hostAlias, `/tmp/cs-vscode/${session.id}`);
-    return hostAlias;
+    await setServerInstallPath(alias, `/tmp/cs-vscode/${session.id}`);
+    return alias;
 }
 
 // Mint the session key pair locally and return only the public half; the private key never leaves this machine.
 export function createSessionKeyPair(sessionId: string): string {
     fs.mkdirSync(CS_SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
-    removeSessionPrivateKey(sessionId);
+    deleteSessionPrivateKey(sessionId);
     const keyPath = sessionKeyPath(sessionId);
     const generated = spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', keyPath], { encoding: 'utf-8' });
     if (generated.error || generated.status !== 0) { throw new Error(`Failed to generate SSH key: ${generated.error?.message ?? generated.stderr.trim()}`); }
@@ -363,7 +363,7 @@ export function createSessionKeyPair(sessionId: string): string {
 
 export const hasSessionKey = (sessionId: string): boolean => fs.existsSync(sessionKeyPath(sessionId));
 
-function removeSessionPrivateKey(sessionId: string): void {
+function deleteSessionPrivateKey(sessionId: string): void {
     const privateKeyPath = sessionKeyPath(sessionId);
     try {
         if (fs.existsSync(privateKeyPath)) {
@@ -371,16 +371,16 @@ function removeSessionPrivateKey(sessionId: string): void {
         }
     }
     catch (err) {
-        logger.error(`Failed to remove SSH private key for session ${sessionId}:`, err);
+        logger.error(`Failed to delete SSH private key for session ${sessionId}:`, err);
     }
 }
 
-export async function removeSshConfigEntry(sessionId: string, hostAlias: string, removeKey = true): Promise<void> {
+export async function deleteSshConfigEntry(sessionId: string, alias: string, deleteKey = true): Promise<void> {
     lock(CS_SSH_CONFIG_PATH);
     try {
         const content = fs.readFileSync(CS_SSH_CONFIG_PATH, 'utf-8');
-        // Escape the alias (a cluster name may contain '.') so it can't over-match; the id marker is a regex-safe uuid.
-        const aliasRe = hostAlias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Escape the alias (an SSH host's alias may contain '.') so it can't over-match; the id marker is a regex-safe uuid.
+        const aliasRe = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const re = new RegExp(
             `(?:\\n|^)# CS-Bridge auto-generated for session ${sessionId}\\nHost ${aliasRe}\\n(?:    [^\\n]+\\n)*`,
             'gm',
@@ -390,7 +390,7 @@ export async function removeSshConfigEntry(sessionId: string, hostAlias: string,
             fs.writeFileSync(CS_SSH_CONFIG_PATH, cleaned);
         }
 
-        if (removeKey) { removeSessionPrivateKey(sessionId); }
+        if (deleteKey) { deleteSessionPrivateKey(sessionId); }
     }
     catch (err) {
         logger.error(`Failed to clear SSH config entry for session ${sessionId}:`, err);
@@ -398,5 +398,5 @@ export async function removeSshConfigEntry(sessionId: string, hostAlias: string,
     finally {
         release(CS_SSH_CONFIG_PATH);
     }
-    await setServerInstallPath(hostAlias, undefined);
+    await setServerInstallPath(alias, undefined);
 }

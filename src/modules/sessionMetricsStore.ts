@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Metric, METRICS_HISTORY_LEN, Stats, SessionRunRecord } from '../models';
+import { Sample, SAMPLE_HISTORY_LEN, Stats, SessionRunRecord } from '../models';
 import { readJson, lockedUpdateJson, deleteFile } from './fsSupport';
 
 // One file per session: metrics/{id}.json = { runs, metrics, stats } — finished-run history, live samples, live sacct
@@ -10,7 +10,7 @@ const METRICS_DIR = path.join(os.homedir(), '.cybershuttle', 'metrics');
 const filePath = (id: string): string => path.join(METRICS_DIR, `${id}.json`);
 const RUNS_PER_SESSION = 10;
 
-interface MetricsFile { runs?: SessionRunRecord[]; metrics?: Metric[]; stats?: Stats }
+interface MetricsFile { runs?: SessionRunRecord[]; metrics?: Sample[]; stats?: Stats }
 
 const read = (id: string): MetricsFile => readJson<MetricsFile>(filePath(id)) ?? {};
 function sessionIds(): string[] {
@@ -24,10 +24,10 @@ const mutate = (id: string, fn: (cur: MetricsFile) => MetricsFile): void => {
 };
 
 // live samples — append one, capped to the rolling window
-export function appendMetric(id: string, sample: Metric): void {
-    mutate(id, cur => ({ ...cur, metrics: [...(cur.metrics ?? []), sample].slice(-METRICS_HISTORY_LEN) }));
+export function appendSample(id: string, sample: Sample): void {
+    mutate(id, cur => ({ ...cur, metrics: [...(cur.metrics ?? []), sample].slice(-SAMPLE_HISTORY_LEN) }));
 }
-export const readRecentMetrics = (id: string): Metric[] => read(id).metrics ?? [];
+export const readRecentSamples = (id: string): Sample[] => read(id).metrics ?? [];
 
 export const writeSessionStats = (id: string, stats: Stats): void => mutate(id, cur => ({ ...cur, stats }));
 export const readSessionStats = (id: string): Stats | undefined => read(id).stats;

@@ -1,5 +1,5 @@
 import { Row, Stack, Text } from '@/ui/components/base';
-import { efficiencyColor, fmtPct } from '@/ui/logic/metrics';
+import { efficiencyColor, fmtPct } from '@/ui/logic/usage';
 import { fmtTime } from '@/ui/logic/session';
 import type { Stats } from '@/models';
 
@@ -24,7 +24,7 @@ export function MetricRow({ label, value }: { label: string; value: string }) {
 
 export function StatsView({ stats }: { stats?: Stats }) {
     if (!stats || Object.keys(stats).length === 0) {
-        return <Text muted>No utilization stats were recorded for this run.</Text>;
+        return <Text muted>No Slurm accounting was recorded for this run.</Text>;
     }
     const { cpuEfficiencyPct, memEfficiencyPct, cores, reqMem, maxRss, elapsedSec } = stats;
     return (

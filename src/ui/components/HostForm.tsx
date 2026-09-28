@@ -1,12 +1,12 @@
 import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import type { SlurmClusterInfo, HostRuntime } from '@/models';
+import type { SlurmDiscovery, HostRuntime } from '@/models';
 import { partitionsForTab, hasTab, cpuOptions, memoryOptions, gpuOptions, gpuString, resolvePick, type ResourceTab } from '@/ui/logic/cluster';
 import { Row, Stack, Text, Spinner, Button, SingleSelect, Option } from '@/ui/components/base';
 import { post } from '@/ui/platform/vscode';
 
 interface Props {
-    host: string;
+    alias: string;
     runtime: HostRuntime | undefined;
     validating?: boolean;
 }
@@ -27,7 +27,7 @@ function Select({ label, value, onChange, options, children }: { label: string; 
     );
 }
 
-function HostFormFields({ host, info, validating }: { host: string; info: SlurmClusterInfo; validating?: boolean }) {
+function HostFormFields({ alias, info, validating }: { alias: string; info: SlurmDiscovery; validating?: boolean }) {
     const tabs: ResourceTab[] = (['cpu', 'gpu'] as ResourceTab[]).filter(t => hasTab(info, t));
     const initialTab = tabs[0] ?? 'cpu';
     const initialParts = partitionsForTab(info, initialTab);
@@ -35,7 +35,7 @@ function HostFormFields({ host, info, validating }: { host: string; info: SlurmC
 
     const [tab, setTab] = useState<ResourceTab>(initialTab);
     const [partName, setPartName] = useState(initialPart?.name ?? '');
-    const [allocation, setAllocation] = useState(info.accounts[0] ?? '');
+    const [account, setAccount] = useState(info.accounts[0] ?? '');
     const [cpuPick, setCpu] = useState('');
     const [memoryPick, setMemory] = useState('');
     const [gpuCountPick, setGpuCount] = useState('');
@@ -62,13 +62,13 @@ function HostFormFields({ host, info, validating }: { host: string; info: SlurmC
     const submit = () => {
         post({
             command: 'addSession',
-            host,
+            alias,
             cpus: cpu,
             memory,
             gpu: gpuString(gpuType, parseInt(gpuCount, 10) || 0),
             wallTime: wall,
-            queue: partName,
-            allocation,
+            partition: partName,
+            account,
         });
     };
 
@@ -84,8 +84,8 @@ function HostFormFields({ host, info, validating }: { host: string; info: SlurmC
                     )
                 : null}
 
-            {/* '' → (No Allocation): a cluster may expose no accounts to pick (buildSlurmScript then omits --account). */}
-            <Select label="Allocation" value={allocation} onChange={setAllocation} options={[['', '(No Allocation)'], ...info.accounts.map(a => [a, a])]} />
+            {/* '' → (no Slurm account): a cluster may expose no Slurm accounts to pick (buildSlurmScript then omits --account). */}
+            <Select label="Slurm account" value={account} onChange={setAccount} options={[['', '(no Slurm account)'], ...info.accounts.map(a => [a, a])]} />
             <Select label="Partition" value={partName} onChange={setPartName}>
                 {parts.map(p => (
                     <Option key={p.name} value={p.name}>
@@ -103,7 +103,7 @@ function HostFormFields({ host, info, validating }: { host: string; info: SlurmC
                         </>
                     )
                 : null}
-            <Select label="Wall Time" value={wall} onChange={setWall} options={WALL_OPTIONS} />
+            <Select label="Walltime" value={wall} onChange={setWall} options={WALL_OPTIONS} />
             <Button onClick={submit} disabled={validating}>
                 {validating ? <Row gap={4}><Spinner size={12} /> Validating…</Row> : 'Add'}
             </Button>
@@ -111,17 +111,17 @@ function HostFormFields({ host, info, validating }: { host: string; info: SlurmC
     );
 }
 
-export function HostForm({ host, runtime, validating }: Props) {
+export function HostForm({ alias, runtime, validating }: Props) {
     switch (runtime?.phase) {
         case 'error':
             return (
                 <Stack gap={6} pad="8px">
                     <Text color="var(--vscode-errorForeground)">{runtime.message}</Text>
-                    <Button onClick={() => post({ command: 'refreshClusterInfo', host })}>Retry</Button>
+                    <Button onClick={() => post({ command: 'refreshSlurmDiscovery', alias })}>Retry</Button>
                 </Stack>
             );
         case 'ready':
-            return <HostFormFields host={host} info={runtime.info} validating={validating} />;
+            return <HostFormFields alias={alias} info={runtime.info} validating={validating} />;
         default:
             return <Row gap={6} pad="8px"><Spinner size={16} /> Fetching runtime details…</Row>;
     }

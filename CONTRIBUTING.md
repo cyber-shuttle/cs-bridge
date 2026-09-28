@@ -66,7 +66,7 @@ Maintainers, one pull request per release:
 2. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, open a fresh `[Unreleased]` above it,
    and add the version's link definition at the bottom of the file. Group entries under the Keep a Changelog
    headings only: Added, Changed, Deprecated, Removed, Fixed, Security.
-3. If the release needs a newer linkspan, say so under the version heading (`Requires linkspan X.Y.Z.`). The
+3. If the release needs a newer Linkspan, say so under the version heading (`Requires Linkspan X.Y.Z.`). The
    changelog is the only place that companion-agent contract is recorded.
 4. Merge the pull request as `release: X.Y.Z`, then tag that commit `X.Y.Z` — no `v` prefix — and push the tag.
 5. `npm run package` produces `csbridge-X.Y.Z.vsix`. A maintainer uploads it to the VS Code Marketplace under the

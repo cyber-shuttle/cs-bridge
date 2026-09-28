@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpuCoreSeries, efficiencyColor, fmtPct, groupRunsBySession } from './metrics';
+import { cpuCoreSeries, efficiencyColor, fmtPct, groupRunsBySession } from './usage';
 
 test('cpuCoreSeries derives cores-busy from cumulative usec across sample gaps', () => {
     // 10s wall gaps (dt=1e7 usec). +1e7 usec/gap → 1.0 core; +2e7 → 2.0 cores.

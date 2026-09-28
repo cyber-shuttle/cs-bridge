@@ -3,7 +3,7 @@ import { useWebviewState } from '@/ui/platform/vscode';
 import { Stack, Row, Text, Card, Icon, Spinner } from '@/ui/components/base';
 import { fmtTime, wallMs, elapsedRunMs } from '@/ui/logic/session';
 import { StatsView, MetricRow as Field } from '@/ui/components/StatsView';
-import { MetricGraphs } from '@/ui/components/MetricGraphs';
+import { UsageGraphs } from '@/ui/components/UsageGraphs';
 import { isTerminal, isWallTimeExpired } from '@/modules/sessionMachine';
 import type { SlurmSession, SummaryState } from '@/models';
 
@@ -11,12 +11,12 @@ const STATUS_LABEL: Partial<Record<SlurmSession['status'], string>> = {
     stopped: 'Stopped', failed: 'Failed',
 };
 
-// The record may not be terminal yet at summary time: the wall-time path tears down at the deadline,
+// The record may not be terminal yet at summary time: the walltime path tears down at the deadline,
 // ~30s before any sidebar marks it 'stopped' (and a reload demotes 'connected' → 'ready_to_connect').
 // So derive the ended-state label rather than trusting the raw status.
 function finalStateLabel(s: SlurmSession): string {
     if (isTerminal(s.status)) { return STATUS_LABEL[s.status] ?? s.status; }
-    if (isWallTimeExpired(s, Date.now())) { return 'Wall-time reached'; }
+    if (isWallTimeExpired(s, Date.now())) { return 'Walltime reached'; }
     return 'Ended';
 }
 
@@ -24,8 +24,8 @@ function Root() {
     const state = useWebviewState<SummaryState>();
     const s = state?.session;
     if (!s) { return <Stack pad="12px"><Text muted>Loading summary…</Text></Stack>; }
-    const loadingMsg = s.status === 'stopping' ? 'Closing session and preparing summary…'
-        : !state?.stats ? 'Fetching utilization stats…'
+    const loadingMsg = s.status === 'stopping' ? 'Stopping session and preparing summary…'
+        : !state?.stats ? 'Fetching Slurm accounting…'
                 : null;
     if (loadingMsg) {
         return <Stack gap={12} pad="48px" style={{ alignItems: 'center' }}><Spinner size={28} /><Text muted>{loadingMsg}</Text></Stack>;
@@ -50,30 +50,30 @@ function Root() {
                 <Field label="Memory" value={s.memory} />
                 <Field label="GPUs" value={gpus} />
                 <Field label="Partition" value={s.queue} />
-                <Field label="Account" value={s.allocation} />
+                <Field label="Slurm account" value={s.allocation} />
                 <Field label="Job ID" value={s.jobId} />
             </Card>
 
             <Card>
-                <Text weight={600} style={{ marginBottom: '4px' }}>Wall time</Text>
+                <Text weight={600} style={{ marginBottom: '4px' }}>Walltime</Text>
                 <Field label="Used" value={fmtTime(usedMs)} />
                 <Field label="Limit" value={limitMs > 0 ? fmtTime(limitMs) : 'No limit'} />
             </Card>
 
-            {state?.metrics?.length ? (
+            {state?.samples?.length ? (
                 <Card>
                     <Row gap={6} style={{ marginBottom: '4px' }}>
                         <Icon name="pulse" />
                         <Text weight={600}>Live resource history</Text>
                     </Row>
-                    <MetricGraphs history={state.metrics} gpuCount={s.gpuCount} />
+                    <UsageGraphs history={state.samples} gpuCount={s.gpuCount} />
                 </Card>
             ) : null}
 
             <Card>
                 <Row gap={6} style={{ marginBottom: '4px' }}>
                     <Icon name="graph" />
-                    <Text weight={600}>Utilization &amp; efficiency</Text>
+                    <Text weight={600}>Slurm accounting</Text>
                 </Row>
                 <StatsView stats={state?.stats} />
             </Card>

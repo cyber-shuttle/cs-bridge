@@ -7,14 +7,14 @@ export interface SlurmSession extends Session {
     cpus: number;
     memory: string;
     allocation: string;
-    batchScript?: string;
+    jobScript?: string;
     tunnelId?: string;
     tunnelCluster?: string;
 }
 
-// Lifecycle: not_started → submitting → queued → preparing (job + Step-1 sshd/tunnel) →
-// ready_to_connect → connecting → connected; unreachable on a dropped link or cluster outage; stopping → stopped/failed.
-// Job end (completed or wall-time killed) → stopped (restartable).
+// Lifecycle: not_started → submitting → queued → preparing (job + Step-1 sshd/Dev Tunnel) →
+// ready_to_connect → connecting → connected; unreachable on a dropped Dev Tunnel connection or cluster outage; stopping → stopped/failed.
+// Job end (completed or walltime killed) → stopped (can be started again).
 interface Session {
     id: string;
     name: string;
@@ -46,22 +46,22 @@ export interface SessionConnectionInfo extends PersistedConnectionInfo {
 }
 
 export function persistableConnectionInfo(ci: SessionConnectionInfo | undefined): PersistedConnectionInfo | undefined {
-    // A session preparing on the tunnel has an apiPort but no sshd yet; drop it and a reload orphans it.
+    // A session preparing on the Dev Tunnel has an apiPort but no sshd yet; drop it and a reload orphans it.
     if (!ci?.sshTunnelId && !ci?.apiPort) { return undefined; }
     const { sshTunnelId, sshPort, region, apiPort } = ci;
     return { sshTunnelId, sshPort, region, apiPort };
 }
 
 export interface SshHost {
-    name: string;
+    alias: string;
     hostname?: string;
     user?: string;
     extraDirectives?: string[]; // "Key Value" ssh_config lines other than HostName/User
     source?: 'user' | 'system'; // user is editable, system is read-only
 }
 
-export interface SlurmClusterInfo {
-    host: string;
+export interface SlurmDiscovery {
+    alias: string;
     accounts: string[];
     partitions: SlurmPartitionInfo[];
     homeDir?: string;
@@ -90,13 +90,13 @@ export enum SlurmJobStatus {
     UNKNOWN = 'unknown',
 }
 
-export type ViewSession = SlurmSession & { isCurrent: boolean; windowAlive: boolean; opening?: boolean; metrics?: Metric[] };
+export type ViewSession = SlurmSession & { isCurrent: boolean; windowAlive: boolean; opening?: boolean; samples?: Sample[] };
 
-export const METRICS_HISTORY_LEN = 20; // rolling live-sample window, also the sparkline slot count
+export const SAMPLE_HISTORY_LEN = 20; // rolling live-sample window, also the sparkline slot count
 export const POLLING_INTERVAL_MS = 5000;
 
-// A resource sample from linkspan's /metrics. atMs (when taken) is set once stored, for rate derivation.
-export interface Metric {
+// A resource sample from Linkspan's /metrics. atMs (when taken) is set once stored, for rate derivation.
+export interface Sample {
     memBytes?: number;
     cpuUsageUsec?: number;
     gpus?: GpuStat[];
@@ -126,7 +126,7 @@ export interface SessionRunRecord {
     endedAt: number;
     finalStatus: Session['status'];
     stats?: Stats;
-    metrics?: Metric[];
+    metrics?: Sample[];
     allocation?: string;
     queue?: string;
 }
@@ -137,20 +137,20 @@ export interface StatsState {
 
 export interface SummaryState {
     session: SlurmSession;
-    metrics?: Metric[]; // live sample history (sparklines)
+    samples?: Sample[]; // live sample history (sparklines)
     stats?: Stats; // sacct accounting; absent → the webview shows a "fetching…" spinner
 }
 
-// A host's runtime-details fetch is in exactly one phase; the draft form renders straight off it.
+// An SSH host's runtime-details fetch is in exactly one phase; the draft form renders straight off it.
 export type HostRuntime =
     | { phase: 'loading' }
     | { phase: 'error'; message: string }
-    | { phase: 'ready'; info: SlurmClusterInfo };
+    | { phase: 'ready'; info: SlurmDiscovery };
 
 export interface SessionsState {
     isRemote: boolean;
     sessions: ViewSession[];
-    draftHost: string | null;
+    draftAlias: string | null;
     hostRuntime: Record<string, HostRuntime>;
     previewSession: SlurmSession | null;
     validating: boolean;
@@ -165,13 +165,12 @@ export interface HostsState {
 export interface WebviewMessage {
     command: string;
     sessionId?: string;
-    host?: string;
-    name?: string;
-    queue?: string;
+    alias?: string;
+    partition?: string;
     wallTime?: string;
     gpu?: string;
     cpus?: string;
     memory?: string;
-    allocation?: string;
+    account?: string;
     jobId?: string;
 }

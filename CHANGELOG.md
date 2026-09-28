@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **One term per concept** across the UI, logs, errors and documentation, matching cs-plane, cs-jupyter and Linkspan:
+  SSH host (not login node, remote host or host), Slurm account (not allocation), job script, walltime, run history, usage,
+  Slurm accounting, Dev Tunnel (not relay), Linkspan and delete (not remove).
+- **Renamed labels**: the **Stats** view is **Run History**, with **Refresh Run History** and **Clear Run History**
+  commands; the session form's **Allocation** and **Wall Time** are **Slurm account** and **Walltime**, and
+  **(No Allocation)** is **(no Slurm account)**; **Remove** is **Delete** in the session and SSH host dialogs.
+
 ## [0.1.8] - 2026-09-24
 
 Requires linkspan 0.21.0.

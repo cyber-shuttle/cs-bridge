@@ -20,9 +20,9 @@ and say whether we can reproduce it before any fix ships.
 CS Bridge runs in your local VS Code and drives a cluster you already have SSH access to. These are the boundaries
 it is built around; a report is most useful when it shows one of them failing.
 
-- The private half of a session key never leaves the local machine; only the public half is handed to the agent.
-- The only writes to `~/.ssh/config` are the `Include ~/.cybershuttle/ssh_config` line and the `Host` entries you
-  add or remove yourself in the SSH Hosts view. Per-session aliases go to `~/.cybershuttle/ssh_config`.
+- The private half of a session's SSH key never leaves the local machine; only the public half is handed to the agent.
+- The only writes to `~/.ssh/config` are the `Include ~/.cybershuttle/ssh_config` line and the SSH hosts you
+  add or delete yourself in the SSH Hosts view. Per-session SSH hosts go to `~/.cybershuttle/ssh_config`.
 - The job receives a token scoped to hosting one Dev Tunnel, never an account credential, and that token is not
   written to the cluster filesystem.
 - Authentication is VS Code's Microsoft provider; CS Bridge runs no OAuth server and stores no token of its own.
@@ -33,4 +33,4 @@ How each of these is implemented is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 
 A finding that assumes an attacker already holds the local account, or an account on the cluster as that user,
 describes one of these boundaries rather than a way through it. The compute-node agent's own boundaries are in
-[linkspan's security policy](https://github.com/cyber-shuttle/linkspan/blob/main/SECURITY.md).
+[Linkspan's security policy](https://github.com/cyber-shuttle/linkspan/blob/main/SECURITY.md).

@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import { useWebviewState, post } from '@/ui/platform/vscode';
 import { Stack, Row, Text, Icon, Chip } from '@/ui/components/base';
 import { EfficiencyChip } from '@/ui/components/StatsView';
-import { groupRunsBySession } from '@/ui/logic/metrics';
+import { groupRunsBySession } from '@/ui/logic/usage';
 import type { StatsState, SessionRunRecord } from '@/models';
 
 function RunItem({ run }: { run: SessionRunRecord }) {
@@ -51,7 +51,7 @@ function Root() {
     const runs = state?.runs;
     if (!runs) { return <Stack pad="8px"><Text muted>Loading…</Text></Stack>; }
     if (runs.length === 0) {
-        return <Stack pad="8px"><Text muted>No finished runs yet — utilization appears here once a session ends.</Text></Stack>;
+        return <Stack pad="8px"><Text muted>No finished runs yet — Slurm accounting appears here once a session ends.</Text></Stack>;
     }
     return (
         <Stack gap={6} pad="4px 8px">

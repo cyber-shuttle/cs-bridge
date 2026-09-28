@@ -6,21 +6,21 @@ import { SessionCard, NowContext } from '@/ui/components/SessionCard';
 import { HostForm } from '@/ui/components/HostForm';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button } from '@/ui/components/base';
 
-function ConfigCard({ icon, muted, host, runtime, onDismiss, validating }: {
-    icon: string; muted?: boolean; host: string; runtime: HostRuntime | undefined;
+function ConfigCard({ icon, muted, alias, runtime, onDismiss, validating }: {
+    icon: string; muted?: boolean; alias: string; runtime: HostRuntime | undefined;
     onDismiss: () => void; validating?: boolean;
 }) {
     return (
         <Card>
             <Row gap={6}>
                 <Icon name={icon} style={muted ? { color: 'var(--vscode-descriptionForeground)' } : undefined} />
-                <Text weight={600}>{host}</Text>
+                <Text weight={600}>{alias}</Text>
                 <Row gap={4} style={{ marginLeft: 'auto' }}>
-                    <ActionIcon name="refresh" title="Refresh cluster details" ariaLabel="Refresh cluster details" onClick={() => post({ command: 'refreshClusterInfo', host })} />
+                    <ActionIcon name="refresh" title="Refresh Slurm details" ariaLabel="Refresh Slurm details" onClick={() => post({ command: 'refreshSlurmDiscovery', alias })} />
                     <ActionIcon name="close" ariaLabel="Dismiss" onClick={onDismiss} />
                 </Row>
             </Row>
-            <HostForm host={host} runtime={runtime} validating={validating} />
+            <HostForm alias={alias} runtime={runtime} validating={validating} />
         </Card>
     );
 }
@@ -31,8 +31,8 @@ function ScriptPreviewOverlay({ state }: { state: SessionsState }) {
     return (
         <Stack gap={8} pad="12px" style={{ position: 'fixed', inset: 0, background: 'var(--vscode-editor-background)', zIndex: 10 }}>
             <Text weight={600}>Slurm Job Script Preview</Text>
-            <Text muted>Host: {s.cluster}</Text>
-            <Text block style={{ flex: 1, overflow: 'auto', whiteSpace: 'pre', fontFamily: 'var(--vscode-editor-font-family)', fontSize: '12px', background: 'var(--vscode-textCodeBlock-background)', padding: '8px', borderRadius: '4px' }}>{s.batchScript ?? ''}</Text>
+            <Text muted>SSH host: {s.cluster}</Text>
+            <Text block style={{ flex: 1, overflow: 'auto', whiteSpace: 'pre', fontFamily: 'var(--vscode-editor-font-family)', fontSize: '12px', background: 'var(--vscode-textCodeBlock-background)', padding: '8px', borderRadius: '4px' }}>{s.jobScript ?? ''}</Text>
             <Row gap={8} justify="flex-end">
                 <Button secondary onClick={() => post({ command: 'dismissPreview' })}>Close</Button>
                 <Button onClick={() => post({ command: 'launchSession', sessionId: s.id })}>Submit Job</Button>
@@ -67,9 +67,9 @@ function SessionsView({ state }: { state: SessionsState }) {
     }
     return (
         <>
-            {state.draftHost ? <ConfigCard key={state.draftHost} icon="circle-outline" muted host={state.draftHost} runtime={state.hostRuntime[state.draftHost]} onDismiss={() => post({ command: 'dismissDraftSession' })} validating={state.validating} /> : null}
+            {state.draftAlias ? <ConfigCard key={state.draftAlias} icon="circle-outline" muted alias={state.draftAlias} runtime={state.hostRuntime[state.draftAlias]} onDismiss={() => post({ command: 'dismissDraftSession' })} validating={state.validating} /> : null}
             {state.sessions.map(s => <SessionCard key={s.id} session={s} />)}
-            {!state.sessions.length && !state.draftHost
+            {!state.sessions.length && !state.draftAlias
                 ? <Text muted block style={{ margin: '4px', textAlign: 'center' }}>No sessions yet. Click on + to create one.</Text>
                 : null}
             <ScriptPreviewOverlay state={state} />

@@ -26,7 +26,7 @@ function HostItem({ host }: { host: SshHost }) {
             <Row gap={4} pad="3px 0" style={{ cursor: 'pointer' }} onClick={() => setOpen(!open)}>
                 <Icon name={open ? 'chevron-down' : 'chevron-right'} />
                 <Icon name={SOURCE_ICON[src] ?? 'remote'} title={SOURCE_TITLE[src]} />
-                <Text weight={600} ellipsis>{host.name}</Text>
+                <Text weight={600} ellipsis>{host.alias}</Text>
             </Row>
             {open ? (
                 <Stack gap={4} pad="0 0 6px 22px">
@@ -37,7 +37,7 @@ function HostItem({ host }: { host: SshHost }) {
                     ) : null}
                     {/* zoom 0.85 matches the Sessions-view action buttons (e.g. Connect). */}
                     <Row gap={6} justify="flex-end" pad="2px 0 0" style={{ zoom: 0.85 }}>
-                        {src === 'user' ? <Button icon="trash" onClick={() => post({ command: 'removeSshHost', name: host.name })}>Delete</Button> : null}
+                        {src === 'user' ? <Button icon="trash" onClick={() => post({ command: 'deleteSshHost', alias: host.alias })}>Delete</Button> : null}
                     </Row>
                 </Stack>
             ) : null}
@@ -48,7 +48,7 @@ function HostItem({ host }: { host: SshHost }) {
 function HostList({ state }: { state: HostsState }) {
     const hosts = [...state.sshHosts].sort((a, b) => (SOURCE_ORDER[a.source ?? 'system'] ?? 9) - (SOURCE_ORDER[b.source ?? 'system'] ?? 9));
     if (hosts.length === 0) { return <Text muted style={{ margin: '4px 0' }}>No SSH hosts yet — use + above.</Text>; }
-    return <>{hosts.map(host => <HostItem key={host.name} host={host} />)}</>;
+    return <>{hosts.map(host => <HostItem key={host.alias} host={host} />)}</>;
 }
 
 function Root() {

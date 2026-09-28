@@ -64,7 +64,7 @@ test('installLinkspan normalizes aarch64 and throws on a failed install', async 
 
     await assert.rejects(
         () => installLinkspan(session(), runner([{ match: 'uname', stdout: 'x86_64' }, { match: 'base64 -d', code: 1, stderr: 'net' }]), noopLog),
-        /Failed to install Linkspan on cluster cl: net/);
+        /Failed to install Linkspan on SSH host cl: net/);
 });
 
 test('validateSlurmConfig resolves on exit 0 and throws the site filter error otherwise', async () => {
@@ -72,25 +72,25 @@ test('validateSlurmConfig resolves on exit 0 and throws the site filter error ot
     await validateSlurmConfig(s, runner([{ match: 'sbatch --test-only', stderr: 'sbatch: Job 1 to start at ...' }]), noopLog);
     await assert.rejects(
         () => validateSlurmConfig(s, runner([{ match: 'sbatch --test-only', code: 1, stderr: 'ERROR: Unknown project acct1' }]), noopLog),
-        /Cluster cl rejected the session configuration: ERROR: Unknown project acct1/);
+        /Slurm on SSH host cl rejected the session configuration: ERROR: Unknown project acct1/);
 });
 
 test('submitJobToSlurm records the job without touching status, and throws on missing script / bad output', async () => {
-    const s = session({ batchScript: '#!/bin/bash' });
+    const s = session({ jobScript: '#!/bin/bash' });
     await submitJobToSlurm(s, runner([{ match: 'sbatch', stdout: 'Submitted batch job 4242' }]), noopLog);
     assert.equal(s.jobId, '4242');
     assert.equal(s.status, undefined, 'status belongs to setStatus, not the submit step');
     assert.ok((s.submittedAt ?? 0) > 0);
 
-    await assert.rejects(() => submitJobToSlurm(session(), runner([]), noopLog), /missing batch script/);
+    await assert.rejects(() => submitJobToSlurm(session(), runner([]), noopLog), /missing job script/);
     await assert.rejects(
-        () => submitJobToSlurm(session({ batchScript: 'x' }), runner([{ match: 'sbatch', stdout: 'no id here' }]), noopLog),
+        () => submitJobToSlurm(session({ jobScript: 'x' }), runner([{ match: 'sbatch', stdout: 'no id here' }]), noopLog),
         /Failed to parse job ID/);
 });
 
-// cs-control's provisionScript refuses an unmapped machine by name (error=architecture).
+// cs-plane's provisionScript refuses an unmapped machine by name (error=architecture).
 // Building a release URL from it instead would 404 and read as a network fault.
-test('installLinkspan refuses a machine linkspan is not released for', async () => {
+test('installLinkspan refuses a machine Linkspan is not released for', async () => {
     await assert.rejects(
         () => installLinkspan(session(), runner([{ match: 'uname', stdout: 'ppc64le' }]), noopLog),
         /architecture ppc64le, which Linkspan is not released for/);

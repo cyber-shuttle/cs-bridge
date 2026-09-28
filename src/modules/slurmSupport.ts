@@ -1,4 +1,4 @@
-import { Metric, SlurmClusterInfo, SlurmJobStatus, SlurmSession } from '../models';
+import { Sample, SlurmDiscovery, SlurmJobStatus, SlurmSession } from '../models';
 import { Logger, errMsg } from '../logger';
 import { SshManager } from './sshSupport';
 import { parseAccounts, parsePartitionLine, parseSacctStatus } from './slurmParse';
@@ -12,29 +12,29 @@ export async function getSlurmJobStatus(slurmSession: SlurmSession): Promise<{ s
     return parseSacctStatus(commandResult.stdout.trim());
 }
 
-// linkspan's /metrics on its loopback API port from inside the allocation. --input none is load-bearing: srun forwards
+// Linkspan's /metrics on its loopback control port from inside the job. --input none is load-bearing: srun forwards
 // stdin to the task, which would otherwise swallow the persistent shell's completion marker (sshShell) and hang.
-export async function getMetricsViaSrun(session: SlurmSession): Promise<Metric> {
+export async function getSampleViaSrun(session: SlurmSession): Promise<Sample> {
     const command = `srun --jobid=${session.jobId} --overlap --quiet --input none `
         + `curl -sf --max-time 4 http://127.0.0.1:${session.connectionInfo?.apiPort}/api/v1/metrics`;
     const res = await SshManager.getInstance().runRemoteCommand(session.cluster, command, { batch: true });
-    if (res.code !== 0) { throw new Error(`live metrics via srun failed (${res.code}): ${res.stderr}`); }
-    return JSON.parse(res.stdout) as Metric;
+    if (res.code !== 0) { throw new Error(`live usage via srun failed (${res.code}): ${res.stderr}`); }
+    return JSON.parse(res.stdout) as Sample;
 }
 
-export async function getSlurmClusterInfo(hostName: string): Promise<SlurmClusterInfo> {
+export async function getSlurmDiscovery(alias: string): Promise<SlurmDiscovery> {
     const sshManager = SshManager.getInstance();
     const log = Logger.getInstance();
-    const clusterInfo: SlurmClusterInfo = { host: hostName, accounts: [], partitions: [] };
+    const info: SlurmDiscovery = { alias, accounts: [], partitions: [] };
     // Only the first command authenticates (later ones reuse the ControlMaster socket), so the auth box surfaces here.
     // Slurm's database lowercases account names; TACC's submit filter wants them as project.map spells them.
     try {
-        const accountResult = await sshManager.runRemoteCommand(hostName,
+        const accountResult = await sshManager.runRemoteCommand(alias,
             'sacctmgr -n show associations where user=$USER format=Account -P'
             + ' | if [ -r /usr/local/etc/project.map ]; then grep -iwf - /usr/local/etc/project.map | cut -d" " -f1; else cat; fi');
 
         if (accountResult.code === 0) {
-            clusterInfo.accounts = parseAccounts(accountResult.stdout);
+            info.accounts = parseAccounts(accountResult.stdout);
         }
         else {
             throw new Error(`Failed to query associations (exit ${accountResult.code}): ${accountResult.stderr || 'Unknown error'}`);
@@ -46,7 +46,7 @@ export async function getSlurmClusterInfo(hostName: string): Promise<SlurmCluste
     }
 
     try {
-        const partitionResult = await sshManager.runRemoteCommand(hostName, 'sinfo -h -o "%P|%c|%m|%G"');
+        const partitionResult = await sshManager.runRemoteCommand(alias, 'sinfo -h -o "%P|%c|%m|%G"');
         /* Example output:
         interactive-cpu|24|191000+|gpu:v100:2(S:0-1)
         interactive-cpu1|24|385000+|gpu:rtx_6000:4(S:0-1)
@@ -55,7 +55,7 @@ export async function getSlurmClusterInfo(hostName: string): Promise<SlurmCluste
         cpu-amd|128|515000+|(null)
         */
         if (partitionResult.code === 0) {
-            clusterInfo.partitions = partitionResult.stdout
+            info.partitions = partitionResult.stdout
                 .split(/\r?\n/)
                 .map(line => line.trim())
                 .filter(Boolean)
@@ -67,12 +67,12 @@ export async function getSlurmClusterInfo(hostName: string): Promise<SlurmCluste
     }
 
     try {
-        const homeResult = await sshManager.runRemoteCommand(hostName, 'echo $HOME');
-        if (homeResult.code === 0) { clusterInfo.homeDir = homeResult.stdout.trim(); }
+        const homeResult = await sshManager.runRemoteCommand(alias, 'echo $HOME');
+        if (homeResult.code === 0) { info.homeDir = homeResult.stdout.trim(); }
     }
     catch (err) {
         log.warn(`Failed to query $HOME: ${errMsg(err)}`);
     }
 
-    return clusterInfo;
+    return info;
 }

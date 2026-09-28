@@ -4,57 +4,57 @@ import {
     includeIsEffective,
     parseHostsFromConfigText,
     addHostToConfigText,
-    removeHostFromConfigText,
+    deleteHostFromConfigText,
     mergeHostsByPriority,
     buildSshConfigBlock,
     csHostAlias,
     SSH_RESILIENCE_OPTIONS,
 } from './sshHostsStore';
 
-test('csHostAlias is <cluster>-<last 6 chars of the session name>', () => {
+test('csHostAlias is <alias>-<last 6 chars of the session name>', () => {
     assert.equal(csHostAlias('delta', '1782444493119'), 'delta-493119');
     assert.equal(csHostAlias('delta', 'abc'), 'delta-abc'); // shorter than 6: whole name
 });
 
 test('parseHostsFromConfigText reads Host/HostName/User and skips wildcards', () => {
     const text = 'Host work\n  HostName work.example.com\n  User alice\n\nHost *\n  ServerAliveInterval 60\n';
-    assert.deepEqual(parseHostsFromConfigText(text), [{ name: 'work', hostname: 'work.example.com', user: 'alice' }]);
+    assert.deepEqual(parseHostsFromConfigText(text), [{ alias: 'work', hostname: 'work.example.com', user: 'alice' }]);
 });
 
 test('parseHostsFromConfigText captures extra directives', () => {
     const text = 'Host gpu\n  HostName gpu.example.com\n  User bob\n  Port 2222\n  ForwardAgent yes\n';
     assert.deepEqual(parseHostsFromConfigText(text), [
-        { name: 'gpu', hostname: 'gpu.example.com', user: 'bob', extraDirectives: ['Port 2222', 'ForwardAgent yes'] },
+        { alias: 'gpu', hostname: 'gpu.example.com', user: 'bob', extraDirectives: ['Port 2222', 'ForwardAgent yes'] },
     ]);
 });
 
 test('parseHostsFromConfigText flattens multi-token directives instead of emitting [object Object]', () => {
     const text = 'Host bastioned\n  HostName internal.example.com\n  User carol\n  ProxyCommand ssh -W %h:%p bastion\n  SendEnv LANG LC_*\n';
     assert.deepEqual(parseHostsFromConfigText(text), [
-        { name: 'bastioned', hostname: 'internal.example.com', user: 'carol', extraDirectives: ['ProxyCommand ssh -W %h:%p bastion', 'SendEnv LANG LC_*'] },
+        { alias: 'bastioned', hostname: 'internal.example.com', user: 'carol', extraDirectives: ['ProxyCommand ssh -W %h:%p bastion', 'SendEnv LANG LC_*'] },
     ]);
 });
 
 test('addHostToConfigText adds an entry that round-trips', () => {
     const text = addHostToConfigText('', { Host: 'h', HostName: 'h', User: 'a' });
-    assert.deepEqual(parseHostsFromConfigText(text), [{ name: 'h', hostname: 'h', user: 'a' }]);
+    assert.deepEqual(parseHostsFromConfigText(text), [{ alias: 'h', hostname: 'h', user: 'a' }]);
 });
 
 test('addHostToConfigText replaces an existing alias instead of duplicating', () => {
     const t1 = addHostToConfigText('', { Host: 'h', HostName: 'h1', User: 'a' });
     const t2 = addHostToConfigText(t1, { Host: 'h', HostName: 'h2', User: 'b' });
-    assert.deepEqual(parseHostsFromConfigText(t2), [{ name: 'h', hostname: 'h2', user: 'b' }]);
+    assert.deepEqual(parseHostsFromConfigText(t2), [{ alias: 'h', hostname: 'h2', user: 'b' }]);
 });
 
 test('addHostToConfigText prepends newest above existing', () => {
     const base = addHostToConfigText('', { Host: 'first', HostName: 'f' });
     const both = addHostToConfigText(base, { Host: 'second', HostName: 's' });
-    assert.deepEqual(parseHostsFromConfigText(both).map(h => h.name), ['second', 'first']);
+    assert.deepEqual(parseHostsFromConfigText(both).map(h => h.alias), ['second', 'first']);
 });
 
-test('removeHostFromConfigText removes the named entry', () => {
+test('deleteHostFromConfigText deletes the named entry', () => {
     const text = addHostToConfigText('', { Host: 'h', HostName: 'h' });
-    assert.deepEqual(parseHostsFromConfigText(removeHostFromConfigText(text, 'h')), []);
+    assert.deepEqual(parseHostsFromConfigText(deleteHostFromConfigText(text, 'h')), []);
 });
 
 test('buildSshConfigBlock emits the six SSH resilience options', () => {
@@ -69,8 +69,8 @@ test('buildSshConfigBlock emits the six SSH resilience options', () => {
     assert.match(block, /^ {4}IdentityFile \/keys\/id_cshost-sess1$/m);
 });
 
-// removeSshConfigEntry's removal regex only matches 4-space-indented directive lines.
-test('buildSshConfigBlock indents every directive so removeSshConfigEntry can remove it', () => {
+// deleteSshConfigEntry's removal regex only matches 4-space-indented directive lines.
+test('buildSshConfigBlock indents every directive so deleteSshConfigEntry can remove it', () => {
     const block = buildSshConfigBlock('s', csHostAlias('delta', 'abc123'), '127.0.0.1', 22, 'u', '/k');
     for (const line of block.split('\n')) {
         if (line === '' || line.startsWith('#') || line.startsWith('Host ')) { continue; }
@@ -78,13 +78,13 @@ test('buildSshConfigBlock indents every directive so removeSshConfigEntry can re
     }
 });
 
-test('mergeHostsByPriority keeps the first occurrence of each name (user wins over system)', () => {
-    const user = [{ name: 'a', source: 'user' as const }, { name: 'b', hostname: 'user-b', source: 'user' as const }];
-    const system = [{ name: 'b', hostname: 'system-b', source: 'system' as const }, { name: 'c', source: 'system' as const }];
+test('mergeHostsByPriority keeps the first occurrence of each alias (user wins over system)', () => {
+    const user = [{ alias: 'a', source: 'user' as const }, { alias: 'b', hostname: 'user-b', source: 'user' as const }];
+    const system = [{ alias: 'b', hostname: 'system-b', source: 'system' as const }, { alias: 'c', source: 'system' as const }];
     const merged = mergeHostsByPriority(user, system);
-    assert.deepEqual(merged.map(h => h.name), ['a', 'b', 'c']);
-    assert.equal(merged.find(h => h.name === 'b')?.hostname, 'user-b');
-    assert.equal(merged.find(h => h.name === 'b')?.source, 'user');
+    assert.deepEqual(merged.map(h => h.alias), ['a', 'b', 'c']);
+    assert.equal(merged.find(h => h.alias === 'b')?.hostname, 'user-b');
+    assert.equal(merged.find(h => h.alias === 'b')?.source, 'user');
 });
 
 test('includeIsEffective accepts only an uncommented Include above the first Host/Match block', () => {

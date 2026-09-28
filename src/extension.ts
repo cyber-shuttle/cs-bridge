@@ -54,7 +54,7 @@ export async function activate(context: vscode.ExtensionContext) {
     void sessionProvider.reattachLiveSessions();
 
     if (id) {
-        // Remote window: own the wall-time status bar + graceful end for this session.
+        // Remote window: own the walltime status bar + graceful end for this session.
         context.subscriptions.push(new RemoteSessionController(context, id));
     }
     else {
@@ -78,10 +78,10 @@ function currentWindowSessionId(): string | undefined {
     const auth = vscode.workspace.workspaceFolders?.[0]?.uri.authority ?? '';
     const prefix = 'ssh-remote+';
     if (!auth.startsWith(prefix)) { return undefined; }
-    const suffix = auth.slice(prefix.length);
+    const alias = auth.slice(prefix.length);
     // The alias carries no id, so reconstruct each session's and match. Safe here: extensionKind:ui runs this window's
     // extension host locally, so it can read the local session store (already initialized above).
-    return getAllSessions().find(s => csHostAlias(s.cluster, s.name) === suffix)?.id;
+    return getAllSessions().find(s => csHostAlias(s.cluster, s.name) === alias)?.id;
 }
 
 export function deactivate() {

@@ -36,7 +36,7 @@ export function initSessionStore(): string {
     fs.mkdirSync(sessionsDir, { recursive: true });
     sessions = readAllRecords();
     for (const s of sessions) {
-        // The relay is gone after a reload; demote so the UI offers Connect (which reattaches from the persisted refs).
+        // The Dev Tunnel connection is gone after a reload; demote so the UI offers Connect (which reattaches from the persisted refs).
         if (s.status === 'connected' || s.status === 'connecting') { s.status = 'ready_to_connect'; }
     }
     logger.info(`Loaded ${sessions.length} session(s) from ${sessionsDir}`);
@@ -69,7 +69,7 @@ export function setStatus(session: SlurmSession, status: SlurmSession['status'],
     updateSession(session);
 }
 
-export function removeSession(sessionId: string) {
+export function deleteSession(sessionId: string) {
     const index = sessions.findIndex(s => s.id === sessionId);
     if (index !== -1) { sessions.splice(index, 1); }
     deleteFile(recordPath(sessionId));
