@@ -1,8 +1,8 @@
 import { Sample, POLLING_INTERVAL_MS } from '../models';
 
 // Linkspan's HTTP API client — one function per endpoint, each taking the base URL + auth headers its transport
-// mandates (a Dev Tunnel today; see tunnelSupport.linkspanEndpoint). It does the calling but owns no transport of its
-// own, so the Dev Tunnel and Linkspan stay separate and compose at the caller.
+// mandates (see Tunnels.withLinkspan). It does the calling but owns no transport of its
+// own, so the transport and Linkspan stay separate and compose at the caller.
 
 const TIMEOUT_MS = POLLING_INTERVAL_MS - 500;
 

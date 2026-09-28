@@ -88,6 +88,13 @@ test('submitJobToSlurm records the job without touching status, and throws on mi
         /Failed to parse job ID/);
 });
 
+test('submitJobToSlurm passes sbatchEnv only as assignments on sbatch', async () => {
+    await submitJobToSlurm(
+        session({ jobScript: 'x' }),
+        runner([{ match: `| base64 -d | LINKSPAN_LINK_TOKEN='tok'\\''en' sbatch --export=ALL`, stdout: 'Submitted batch job 7' }]),
+        noopLog, { LINKSPAN_LINK_TOKEN: 'tok\'en' });
+});
+
 // cs-plane's provisionScript refuses an unmapped machine by name (error=architecture).
 // Building a release URL from it instead would 404 and read as a network fault.
 test('installLinkspan refuses a machine Linkspan is not released for', async () => {

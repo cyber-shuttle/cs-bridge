@@ -64,12 +64,35 @@
 				}
 			]
 		},
+		"configuration": {
+			"properties": {
+				"csbridge.transport": {
+					"type": "string",
+					"enum": [
+						"devtunnel",
+						"link"
+					],
+					"default": "devtunnel",
+					"description": "How a session's Linkspan is reached, from its next start."
+				}
+			}
+		},
 		"commands": [
 			{
 				"command": "csbridge.switchAccount",
 				"title": "Switch Dev Tunnels Account",
 				"category": "CS Bridge",
 				"icon": "$(account)"
+			},
+			{
+				"command": "csbridge.signIn",
+				"title": "Sign In to CyberShuttle",
+				"category": "CS Bridge"
+			},
+			{
+				"command": "csbridge.signOut",
+				"title": "Sign Out of CyberShuttle",
+				"category": "CS Bridge"
 			},
 			{
 				"command": "csbridge.newSession",

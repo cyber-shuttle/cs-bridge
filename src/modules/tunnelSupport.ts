@@ -5,12 +5,14 @@ import { updateSession } from '../extensionStore';
 import {
     TunnelManagementHttpClient,
     ManagementApiVersions,
+    TunnelRequestOptions,
 } from '@microsoft/dev-tunnels-management';
 import {
     TunnelRelayTunnelClient,
     ConnectionStatus,
+    TunnelConnectionOptions,
 } from '@microsoft/dev-tunnels-connections';
-import { TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
+import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
 import { createSessionKeyPair, hasSessionKey, deleteSshConfigEntry } from './sshSupport';
 import { csHostAlias } from './sshHostsStore';
 import { createSshServer, getSshServers, LinkspanSshStatus, sshdPort } from './linkspanSupport';
@@ -22,7 +24,34 @@ const RECONNECT_AFTER_MISSES = 4;
 
 const logger = Logger.getInstance();
 
-const activeTunnelClients = new Map<string, TunnelRelayTunnelClient>();
+// A transport's management and relay clients, as the session-level functions below use them: the Dev Tunnels SDK's
+// (devTunnels) or linkTunnel's mirror of them over cs-plane.
+interface TunnelManagement {
+    getTunnel(tunnel: Tunnel, options?: TunnelRequestOptions): Promise<Tunnel | null>;
+}
+
+interface TunnelRelayClient {
+    acceptLocalConnectionsForForwardedPorts: boolean;
+    readonly connectionStatus: string;
+    readonly forwardedPorts?: { find(predicate: (port: { remotePort: number | null }) => boolean): { localPort: number | null } | undefined };
+    readonly connectionStatusChanged?: TunnelRelayTunnelClient['connectionStatusChanged'];
+    readonly keepAliveFailed?: TunnelRelayTunnelClient['keepAliveFailed'];
+    connect(tunnel: Tunnel, options?: TunnelConnectionOptions): Promise<void>;
+    refreshPorts(): Promise<void>;
+    waitForForwardedPort(remotePort: number): Promise<void>;
+    dispose(): Promise<void>;
+}
+
+export interface Tunnels {
+    readonly label: string;
+    management(): TunnelManagement;
+    relayClient(management: TunnelManagement): TunnelRelayClient;
+    ensureTunnel(session: SlurmSession, ...ports: number[]): Promise<unknown>;
+    withLinkspan<T>(session: SlurmSession, call: (baseUrl: string, headers: Record<string, string>) => Promise<T>): Promise<T>;
+    deleteTunnel(session: SlurmSession): Promise<void>;
+}
+
+const activeTunnelClients = new Map<string, TunnelRelayClient>();
 
 function buildTunnelManagementClient(): TunnelManagementHttpClient {
     return new TunnelManagementHttpClient(
@@ -72,6 +101,18 @@ export async function ensureDevTunnel(session: SlurmSession, ...ports: number[])
     return hostToken;
 }
 
+export const devTunnels = {
+    label: 'Dev Tunnel',
+    management: buildTunnelManagementClient,
+    relayClient: (management: TunnelManagementHttpClient) => new TunnelRelayTunnelClient(management),
+    ensureTunnel: ensureDevTunnel,
+    withLinkspan: (session, call) => {
+        const { baseUrl, headers } = linkspanEndpoint(session);
+        return call(baseUrl, headers);
+    },
+    deleteTunnel: deleteDevTunnel,
+} satisfies Tunnels;
+
 export async function deleteDevTunnel(session: SlurmSession): Promise<void> {
     if (!session.tunnelId) { return; }
     try {
@@ -88,17 +129,16 @@ export async function deleteDevTunnel(session: SlurmSession): Promise<void> {
 // Step 1: an sshd forwarded on the session's current API Dev Tunnel. Linkspan is the source of truth for the sshd, so we
 // reconcile to what it reports rather than trusting local port/forward state — self-healing a stale port after a
 // Linkspan restart, or a forward stranded on a re-minted Dev Tunnel. Idempotent.
-export async function ensureRemoteSession(session: SlurmSession): Promise<void> {
-    await ensureDevTunnel(session); // re-mints apiTunnelId (+ token) over the MS API before we publish against it
-    const ci = session.connectionInfo!; // ensureDevTunnel guarantees connectionInfo
-    const { baseUrl, headers } = linkspanEndpoint(session);
+export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Promise<void> {
+    await t.ensureTunnel(session); // refreshes the tunnel id and connect token
+    const ci = session.connectionInfo!; // ensureTunnel guarantees connectionInfo
 
     // Reuse the sshd Linkspan reports (its port is stable across restarts) as long as we still hold its key; else create
     // a fresh one — only create returns the key we SSH with. A "failed" sshd has given up, so it doesn't count as reusable.
     // Best-effort: if the probe stalls (flaky Dev Tunnel) but we're already forwarded on the current Dev Tunnel with a known port,
     // proceed with that rather than failing the whole connect — the reconcile is an optimization, not a gate.
     let sshd: LinkspanSshStatus | undefined;
-    try { sshd = (await getSshServers(baseUrl, headers)).find(s => s.state !== 'failed'); }
+    try { sshd = (await t.withLinkspan(session, getSshServers)).find(s => s.state !== 'failed'); }
     catch (err) {
         if (ci.sshTunnelId === ci.apiTunnelId && ci.sshPort) { return; }
         throw err;
@@ -108,16 +148,16 @@ export async function ensureRemoteSession(session: SlurmSession): Promise<void> 
         ci.sshPort = port;
     }
     else {
-        const created = await createSshServer(baseUrl, headers, createSessionKeyPair(session.id));
+        const created = await t.withLinkspan(session, (baseUrl, headers) => createSshServer(baseUrl, headers, createSessionKeyPair(session.id)));
         logger.info(`SSH server for session ${session.id} created on port ${created.bind_port}.`);
         ci.sshPort = created.bind_port;
         updateSession(session);
     }
 
-    await ensureDevTunnel(session, ci.sshPort); // the Dev Tunnel must carry the sshd port before ssh is pointed at it
+    await t.ensureTunnel(session, ci.sshPort); // the tunnel must carry the sshd port before ssh is pointed at it
     ci.sshTunnelId = ci.apiTunnelId!;
     updateSession(session);
-    logger.info(`SSH port ${ci.sshPort} published on Dev Tunnel ${ci.apiTunnelId} for session ${session.id}.`);
+    logger.info(`SSH port ${ci.sshPort} published on ${t.label} ${ci.apiTunnelId} for session ${session.id}.`);
 }
 
 export function hasTunnelClient(sessionId: string): boolean {
@@ -130,15 +170,15 @@ export function isTunnelClientConnected(sessionId: string): boolean {
     return activeTunnelClients.get(sessionId)?.connectionStatus === ConnectionStatus.Connected;
 }
 
-export async function connectSessionToTunnel(session: SlurmSession, onDevTunnelLost: () => void): Promise<number> {
-    logger.info(`Connecting session ${session.id} to its Dev Tunnel...`);
+export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, onDevTunnelLost: () => void): Promise<number> {
+    logger.info(`Connecting session ${session.id} to its ${t.label}...`);
 
     if (!session.connectionInfo) {
         throw new Error(`Session ${session.id} does not have connection info.`);
     }
 
     const { sshTunnelId, sshPort, region } = session.connectionInfo;
-    const mgmtClient = buildTunnelManagementClient();
+    const mgmtClient = t.management();
 
     const tunnel = await mgmtClient.getTunnel(
         { tunnelId: sshTunnelId, clusterId: region },
@@ -152,15 +192,15 @@ export async function connectSessionToTunnel(session: SlurmSession, onDevTunnelL
         throw new Error(`Dev Tunnel ${sshTunnelId} not found in Dev Tunnels region ${region}.`);
     }
 
-    logger.info(`Fetched Dev Tunnel ${sshTunnelId}: ${tunnel.endpoints?.length ?? 0} endpoints, ${tunnel.ports?.length ?? 0} ports`);
+    logger.info(`Fetched ${t.label} ${sshTunnelId}: ${tunnel.endpoints?.length ?? 0} endpoints, ${tunnel.ports?.length ?? 0} ports`);
 
     // Register before connecting so a re-entrant connect can't orphan the prior client and a failed connect stays disposable.
     await disposeTunnelClient(session.id);
-    const client = new TunnelRelayTunnelClient(mgmtClient);
+    const client = t.relayClient(mgmtClient);
     client.acceptLocalConnectionsForForwardedPorts = true;
     // Surface Dev Tunnel connection health: a stalled/reconnecting Dev Tunnel is otherwise invisible, and this tells contention from raw Dev Tunnel bandwidth.
-    client.connectionStatusChanged(e => logger.info(`Session ${session.id}: Dev Tunnel ${e.previousStatus} → ${e.status}${e.disconnectError ? ` (${e.disconnectError.message})` : ''}`));
-    client.keepAliveFailed((e) => {
+    client.connectionStatusChanged?.(e => logger.info(`Session ${session.id}: Dev Tunnel ${e.previousStatus} → ${e.status}${e.disconnectError ? ` (${e.disconnectError.message})` : ''}`));
+    client.keepAliveFailed?.((e) => {
         logger.warn(`Session ${session.id}: Dev Tunnel keep-alive missed ${e.count} consecutive probe(s)`);
         // A half-open Dev Tunnel stays "Connected", so the SDK's enableReconnect never fires; rebuild once misses cross the
         // bar. Fires once — the rebuild disposes this client, ending its events.
@@ -187,7 +227,7 @@ export async function connectSessionToTunnel(session: SlurmSession, onDevTunnelL
     }
 
     session.connectionInfo!.sshTunnelForwardPort = localPort;
-    logger.info(`Dev Tunnel connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
+    logger.info(`${t.label} connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
     return localPort;
 }
 
@@ -209,12 +249,12 @@ export async function disposeAllTunnelClients(): Promise<void> {
     await Promise.all([...activeTunnelClients.keys()].map(id => disposeTunnelClient(id)));
 }
 
-export async function disconnectSessionFromTunnel(session: SlurmSession): Promise<void> {
+export async function disconnectSessionFromTunnel(t: Tunnels, session: SlurmSession): Promise<void> {
     await disposeTunnelClient(session.id);
     await deleteSshConfigEntry(session.id, csHostAlias(session.cluster, session.name));
     session.connectionInfo = undefined;
     updateSession(session);
-    logger.info(`Session ${session.id} disconnected from its Dev Tunnel.`);
+    logger.info(`Session ${session.id} disconnected from its ${t.label}.`);
 }
 
 function getMicrosoftSession(options: vscode.AuthenticationGetSessionOptions & { createIfNone: true }): Thenable<vscode.AuthenticationSession>;

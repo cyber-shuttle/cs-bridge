@@ -7,7 +7,8 @@ import { getSampleViaSrun, getSlurmJobStatus } from './slurmSupport';
 import { buildSlurmScript } from './slurmParse';
 import { computeStatusTransition, isReachable, isTerminal, isWallTimeExpired, unreachableStatus, StatusTransition } from './sessionMachine';
 import { checkSlurmAvailability, linkspanIsUpToDate, installLinkspan, submitJobToSlurm } from './slurmLaunch';
-import { disconnectSessionFromTunnel, disposeTunnelClient, ensureDevTunnel, ensureRemoteSession, isTunnelClientConnected, linkspanEndpoint, deleteDevTunnel } from './tunnelSupport';
+import { Transport } from './transport';
+import { disconnectSessionFromTunnel, disposeTunnelClient, ensureRemoteSession, isTunnelClientConnected } from './tunnelSupport';
 import { getHealth, getSample } from './linkspanSupport';
 import { appendSample, writeSessionStats, resetLive } from './sessionMetricsStore';
 
@@ -30,6 +31,8 @@ export class SessionMonitor {
     private probeFailedCounts = new Map<string, number>();
     private lastSacctAt = new Map<string, number>(); // throttles the in-run sacct refresh, per session
 
+    constructor(readonly transportFor: (session: SlurmSession) => Transport) { }
+
     private log(session: SlurmSession, msg: string): void { logger.info(sessionLine(session.name, msg)); }
     private warn(session: SlurmSession, msg: string): void { logger.warn(sessionLine(session.name, msg)); }
 
@@ -38,7 +41,7 @@ export class SessionMonitor {
 
     private endSession(sessionId: string): void {
         const session = this.sessions.get(sessionId);
-        if (session) { void recordSessionRun(session); }
+        if (session) { void recordSessionRun(session); void this.transportFor(session).release(session); }
         void disposeTunnelClient(sessionId);
         this.stopMonitoring(sessionId);
     }
@@ -72,10 +75,10 @@ export class SessionMonitor {
     // guard, so it needs no in-flight guard of its own.
     private async prepareRemote(session: SlurmSession): Promise<void> {
         try {
-            await ensureDevTunnel(session); // re-mint Dev Tunnel id + connect token (also valid after a reload dropped them)
-            const { baseUrl, headers } = linkspanEndpoint(session);
-            await getHealth(baseUrl, headers); // poll the Dev Tunnel: throws until Linkspan is up and answering /health
-            await ensureRemoteSession(session); // Linkspan is up — start the sshd and forward it (all over the Dev Tunnel)
+            const transport = this.transportFor(session);
+            await transport.ensureTunnel(session); // refresh the tunnel id and connect token, also after a reload dropped them
+            await transport.withLinkspan(session, getHealth); // throws until Linkspan is up and answering /health
+            await ensureRemoteSession(transport, session); // Linkspan is up — start the sshd and forward it
             if (session.status === 'preparing') { // may have left 'preparing' during the awaits (e.g. user hit Stop)
                 this.probeFailedCounts.delete(session.id); // Step 1 up — clear the prepare-failure tally
                 this.log(session, 'Linkspan is ready to connect.');
@@ -119,7 +122,7 @@ export class SessionMonitor {
             // Job running but not yet up: drive bring-up over the Dev Tunnel rather than Slurm,
             // cross-checking sacct only after PROBE_GIVEUP failures, so a running session
             // never SSH-polls the SSH host.
-            if (session.status === 'preparing' && session.tunnelId && (session.connectionInfo?.apiPort ?? 0) > 0) {
+            if (session.status === 'preparing' && this.transportFor(session).hasTunnel(session) && (session.connectionInfo?.apiPort ?? 0) > 0) {
                 await this.pingOrCrossCheck(session, () => this.prepareRemote(session));
                 return;
             }
@@ -175,8 +178,7 @@ export class SessionMonitor {
 
     private pullSample(session: SlurmSession): Promise<Sample> {
         if (!isTunnelClientConnected(session.id)) { return getSampleViaSrun(session); }
-        const { baseUrl, headers } = linkspanEndpoint(session);
-        return getSample(baseUrl, headers);
+        return this.transportFor(session).withLinkspan(session, getSample);
     }
 
     // Throttled sacct refresh, fire-and-forget from the health path (sacctStats swallows its own errors).
@@ -217,40 +219,37 @@ export class SessionMonitor {
     }
 }
 
-export async function prepareLaunch(session: SlurmSession): Promise<void> {
-    // Fresh connection info with this run's control port pinned before ensureDevTunnel: that call is what puts the port
+export async function prepareLaunch(session: SlurmSession, transport: Transport): Promise<Record<string, string>> {
+    // Fresh connection info with this run's control port pinned before transport.prepare: that call is what puts the port
     // on the Dev Tunnel, and the job's Dev Tunnel host has to find it already there.
     // Trade-off: random high port; ~1/12000 collision on a shared compute node (Linkspan log.Fatals if taken, session then fails) — probe a free port on the node if it ever bites.
     session.connectionInfo = { sshPort: 0, sshTunnelId: '', region: '', apiPort: 20000 + Math.floor(Math.random() * 12000) };
     resetLive(session.id); // clear the prior run's live samples + stats, keep the run history
 
-    // Fresh launch: drop the prior run's Dev Tunnel so its ports don't accumulate toward Microsoft's PortsPerTunnel (10) cap.
-    await deleteDevTunnel(session);
+    const launch = await transport.prepare(session);
 
-    let hostToken: string;
-    try { hostToken = await ensureDevTunnel(session); }
-    catch (err) { throw new Error(`Failed to create Dev Tunnel: ${errMsg(err)}`); }
-
-    try { session.jobScript = buildSlurmScript(session, hostToken); }
+    try { session.jobScript = buildSlurmScript(session, launch); }
     catch (err) { throw new Error(`Failed to generate Slurm script: ${errMsg(err)}`); }
 
     session.errorMessage = '';
     updateSession(session);
+    return launch.sbatchEnv;
 }
 
-export async function launchSession(session: SlurmSession, monitor: SessionMonitor): Promise<void> {
+export async function launchSession(session: SlurmSession, monitor: SessionMonitor, sbatchEnv: Record<string, string>): Promise<void> {
     logger.info(sessionLine(session.name, `initiating launch`));
     const run = SshManager.getInstance();
     await checkSlurmAvailability(session, run, logger);
-    if (!await linkspanIsUpToDate(session, run, logger)) {
+    if (!await linkspanIsUpToDate(session, run, logger, monitor.transportFor(session).linkspanMinimum)) {
         await installLinkspan(session, run, logger);
     }
-    await submitJobToSlurm(session, run, logger);
+    await submitJobToSlurm(session, run, logger, sbatchEnv);
     setStatus(session, 'queued');
     monitor.startMonitoring(session);
 }
 
 export async function stopSession(session: SlurmSession, monitor: SessionMonitor): Promise<void> {
+    const transport = monitor.transportFor(session);
     logger.info(sessionLine(session.name, `stopping`));
 
     let stopError: Error | undefined;
@@ -278,15 +277,17 @@ export async function stopSession(session: SlurmSession, monitor: SessionMonitor
     // On failure the job may still be alive, so free only the local port and keep the refs for reattach.
     if (session.status === 'stopped') {
         try {
-            await disconnectSessionFromTunnel(session);
+            await disconnectSessionFromTunnel(transport, session);
         }
         catch (err) {
-            logger.error(`Session ${session.name}: Failed to disconnect from its Dev Tunnel: ${err}`);
+            logger.error(`Session ${session.name}: Failed to disconnect from its ${transport.label}: ${err}`);
         }
     }
     else {
         await disposeTunnelClient(session.id);
     }
+    // A failed scancel still releases the run, so its tokens die with the stop.
+    await transport.release(session);
 
     void recordSessionRun(session);
     monitor.stopMonitoring(session.id);

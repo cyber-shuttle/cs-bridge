@@ -10,6 +10,8 @@ export interface SlurmSession extends Session {
     jobScript?: string;
     tunnelId?: string;
     tunnelCluster?: string;
+    transport?: 'devtunnel' | 'link'; // the latest run's route to Linkspan; absent reads as devtunnel
+    planeId?: string; // the cs-plane session each link run attaches
 }
 
 // Lifecycle: not_started → submitting → queued → preparing (job + Step-1 sshd/Dev Tunnel) →

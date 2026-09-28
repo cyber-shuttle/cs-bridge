@@ -1,5 +1,5 @@
 import { SlurmSession } from '../models';
-import { buildSlurmScript } from './slurmParse';
+import { buildSlurmScript, devTunnelLaunch, envAssignments } from './slurmParse';
 
 // RemoteRunner/LogSink are injected (SshManager and Logger satisfy them structurally) so the steps below
 // are unit-testable with fakes, free of SSH and vscode.
@@ -45,7 +45,7 @@ export function keepsInstalledLinkspan(local: string, latest: string): boolean {
 }
 
 // A version-check failure returns false (→ reinstall) rather than throwing, so it never fails the launch.
-export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<boolean> {
+export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunner, log: LogSink, minimum = MINIMUM): Promise<boolean> {
     const localVersionResult = await run.runRemoteCommand(session.cluster, `~/.cybershuttle/bin/linkspan --version 2>/dev/null || echo ""`);
 
     if (localVersionResult.code !== 0) {
@@ -54,11 +54,11 @@ export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunne
     }
 
     const localVersion = localVersionResult.stdout.trim().replace(/^v/, '');
-    if (keepsInstalledLinkspan(localVersion, MINIMUM)) {
-        log.info(`Linkspan ${localVersion} on SSH host ${session.cluster} is at or ahead of ${MINIMUM}; keeping it`);
+    if (keepsInstalledLinkspan(localVersion, minimum)) {
+        log.info(`Linkspan ${localVersion} on SSH host ${session.cluster} is at or ahead of ${minimum}; keeping it`);
         return true;
     }
-    log.info(`Linkspan is not installed or older than ${MINIMUM} on SSH host ${session.cluster}. Local version: ${localVersion}`);
+    log.info(`Linkspan is not installed or older than ${minimum} on SSH host ${session.cluster}. Local version: ${localVersion}`);
     return false;
 }
 
@@ -102,17 +102,19 @@ export async function installLinkspan(session: SlurmSession, run: RemoteRunner, 
 
 // --test-only runs the site submit filter without queueing; the body never runs, so a blank credential is fine.
 export async function validateSlurmConfig(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
-    const scriptB64 = Buffer.from(buildSlurmScript(session, '')).toString('base64');
+    const scriptB64 = Buffer.from(buildSlurmScript(session, devTunnelLaunch(session, ''))).toString('base64');
     const result = await run.runRemoteCommand(session.cluster, `echo '${scriptB64}' | base64 -d | sbatch --test-only`);
     ensureSuccess(result, `Slurm on SSH host ${session.cluster} rejected the session configuration`);
     log.info(`Slurm on SSH host ${session.cluster} validated the session configuration`);
 }
 
-export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
+// sbatchEnv reaches the job as assignments on sbatch over the shell's stdin, never an argv, the job script or a file.
+export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner, log: LogSink, sbatchEnv: Record<string, string> = {}): Promise<void> {
     if (!session.jobScript) { throw new Error(`Session ${session.name}: missing job script`); }
 
     const scriptB64 = Buffer.from(session.jobScript).toString('base64');
-    const submitCommand = `echo '${scriptB64}' | base64 -d | sbatch`;
+    const env = envAssignments(sbatchEnv);
+    const submitCommand = `echo '${scriptB64}' | base64 -d | ${env}sbatch${env && ' --export=ALL'}`;
     log.info(`Submitting job to Slurm for session ${session.name}`);
 
     const submitResult = await run.runRemoteCommand(session.cluster, submitCommand);

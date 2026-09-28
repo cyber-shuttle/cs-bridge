@@ -26,6 +26,11 @@ it is built around; a report is most useful when it shows one of them failing.
 - The job receives a token scoped to hosting one Dev Tunnel, never an account credential, and that token is not
   written to the cluster filesystem.
 - Authentication is VS Code's Microsoft provider; CS Bridge runs no OAuth server and stores no token of its own.
+- With the `link` transport, sign-in is CILogon's device grant brokered by cs-plane, and the credential is kept only in
+  VS Code's SecretStorage and sent only to cs-plane. The job's link token reaches Linkspan only as an environment
+  assignment on `sbatch --export=ALL`, never the job script, a command line or a file, and cs-plane revokes it when the
+  session stops. The forward token stays in the extension host's memory, every forward listens on 127.0.0.1 only, and
+  Linkspan's API is forwarded per call.
 - The agent binary is fetched over HTTPS with no signature check, and everything CS Bridge runs remotely runs as
   the submitting user with no privilege that user does not already have.
 

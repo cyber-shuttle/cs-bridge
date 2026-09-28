@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Sign In to CyberShuttle** and **Sign Out of CyberShuttle** commands.
+- **`csbridge.transport`**: `devtunnel` (default) or `link`, which reaches Linkspan through cs-plane. `link` needs
+  CyberShuttle sign-in and VS Code 1.101 or newer.
+
 ### Changed
 
 - **One term per concept** across the UI, logs, errors and documentation, matching cs-plane, cs-jupyter and Linkspan:
