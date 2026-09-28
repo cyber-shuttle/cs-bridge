@@ -11,12 +11,12 @@ CS Bridge is a VS Code extension for working on high-performance computing (HPC)
 
 ## Features
 
-- **Cluster hosts** — hosts come from `~/.ssh/config`; a new one is added by pasting its `ssh` command.
-- **Job form** — partition, allocation, CPUs, memory, GPUs and walltime are chosen once; CS Bridge writes and submits the batch script.
-- **Live metrics** — the session card shows the job state and its current CPU, memory and GPU use.
+- **SSH hosts** — they come from `~/.ssh/config`; a new one is added by pasting its `ssh` command.
+- **Job form** — partition, Slurm account, CPUs, memory, GPUs and walltime are chosen once; CS Bridge writes and submits the job script.
+- **Live usage** — each session shows the job state and its current CPU, memory and GPU use.
 - **Persistent sessions** — a job outlives its VS Code window; **Connect** opens a new window on the same job.
-- **Session reuse** — a finished session can be started again.
-- **Utilization history** — the Stats view records the CPU and memory efficiency of every run.
+- **Start again** — a finished session can be started again.
+- **Run history** — the Run History view records the CPU and memory efficiency of every run.
 - **No inbound ports** — connections go through a Microsoft Dev Tunnel, so the cluster opens no port.
 
 ## Supported Clusters
@@ -38,17 +38,17 @@ CS Bridge requires VS Code 1.98 or newer, a Slurm cluster reachable from `~/.ssh
 
 1. Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=cybershuttle.csbridge), or search for `CS Bridge` in the Extensions view.
 2. Open CS Bridge from the activity bar and sign in with a Microsoft account, which is used only to authenticate the Dev Tunnel.
-3. Select a host.
+3. Select an SSH host.
 4. Fill in the resource form.
 5. Click **Start**, then **Connect**. A new VS Code window opens on the compute node.
 
 ## How It Works
 
-A cluster is entered through a login node, but work runs on compute nodes that Slurm allocates. CS Bridge installs [linkspan](https://github.com/cyber-shuttle/linkspan), a small agent, on the cluster and runs it inside each job; linkspan hosts a Microsoft Dev Tunnel from the compute node, which is how VS Code reaches it without any inbound port.
+A cluster is entered through an SSH host, but work runs on compute nodes that Slurm allocates. CS Bridge installs [Linkspan](https://github.com/cyber-shuttle/linkspan), a small agent, on the cluster and runs it inside each job; Linkspan hosts a Microsoft Dev Tunnel from the compute node, which is how VS Code reaches it without any inbound port.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/02-sessions.png" alt="Sessions sidebar" width="480">
 
-**Start** submits the job. The session card shows its state and, once running, its CPU, memory and GPU use.
+**Start** submits the job. The session shows its state and, once running, its CPU, memory and GPU use.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/03-live-status.png" alt="Live session status" width="480">
 
@@ -56,9 +56,9 @@ A cluster is entered through a login node, but work runs on compute nodes that S
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/05-remote-window.png" alt="VS Code running on the compute node" width="480">
 
-After a run ends, the Stats view records its CPU and memory efficiency.
+After a run ends, the Run History view records its CPU and memory efficiency.
 
-<img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/04-utilization.png" alt="Past runs and their utilization" width="480">
+<img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/04-utilization.png" alt="Past runs and their efficiency" width="480">
 
 The full design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -67,7 +67,7 @@ The full design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 **Local**
 
 - `~/.cybershuttle/sessions/` holds one `<sessionId>.json` per session.
-- `~/.cybershuttle/metrics/` holds the utilization history of each session.
+- `~/.cybershuttle/metrics/` holds the run history and usage of each session.
 - `~/.cybershuttle/ssh_config` defines the per-session SSH aliases and is included from `~/.ssh/config`.
 - `~/.cybershuttle/ssh_keys/` holds the per-session SSH keys.
 - `~/.cybershuttle/ssh_control/` holds the ControlMaster sockets.
@@ -76,23 +76,23 @@ The full design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 **Remote**
 
 - `~/.cybershuttle/bin/linkspan` is installed on first launch.
-- `~/.cybershuttle/logs/` holds the linkspan output of each session.
+- `~/.cybershuttle/logs/` holds the Linkspan output of each session.
 
 To reset, remove `~/.cybershuttle/` on both machines and the `Include` line in `~/.ssh/config`.
 
 ## Privacy
 
-CS Bridge collects no usage metrics. SSH credentials and tunnel traffic pass only between the user, the remote host and Microsoft Dev Tunnels. Opt-in metrics are on the [roadmap](#roadmap).
+CS Bridge collects no analytics. SSH credentials and Dev Tunnel traffic pass only between the user, the cluster and Microsoft Dev Tunnels. Opt-in analytics is on the [roadmap](#roadmap).
 
 ## FAQ
 
 1. **How does CS Bridge differ from Remote-SSH?**
 
-   Microsoft's [Remote-SSH](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh) attaches a VS Code window to a host that is already reachable over SSH. CS Bridge adds the steps a cluster needs first: the Slurm job, the compute-node allocation and the tunnel past the login node and firewall. It then hands the final attach to Remote-SSH.
+   Microsoft's [Remote-SSH](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh) attaches a VS Code window to an SSH host that is already reachable. CS Bridge adds the steps a cluster needs first: the Slurm job, the compute node and the Dev Tunnel past the SSH host and firewall. It then hands the final attach to Remote-SSH.
 
 2. **Which operating systems are supported?**
 
-   Windows, macOS and Linux locally, wherever VS Code and OpenSSH run. The remote needs a Unix-like environment with SSH and Slurm.
+   Windows, macOS and Linux locally, wherever VS Code and OpenSSH run. The cluster needs a Unix-like environment with SSH and Slurm.
 
 3. **Do VS Code forks work?**
 
@@ -112,7 +112,7 @@ CS Bridge collects no usage metrics. SSH credentials and tunnel traffic pass onl
 
 7. **Why is file transfer slower than plain SSH?**
 
-   Dev Tunnels route through Microsoft's relay, which caps throughput at tens of Mbit/s. Move large data through the login node with `scp` or `rsync`.
+   Dev Tunnels route through Microsoft's service, which caps throughput at tens of Mbit/s. Move large data through the SSH host with `scp` or `rsync`.
 
 ## Troubleshooting
 
@@ -122,11 +122,11 @@ CS Bridge collects no usage metrics. SSH credentials and tunnel traffic pass onl
 
 2. **Session stays on `Submitting…`.**
 
-   The first launch installs linkspan, which needs outbound access to github.com from the cluster. Check `~/.cybershuttle/logs/` on the remote.
+   The first launch installs Linkspan, which needs outbound access to github.com from the cluster. Check `~/.cybershuttle/logs/` on the cluster.
 
 3. **The remote window disconnects.**
 
-   The tunnel is rebuilt automatically; if that fails, the session returns to **Connect**. Click **Connect** again, and check `View > Output > CS Bridge` for the failing step.
+   The Dev Tunnel connection is rebuilt automatically; if that fails, the session returns to **Connect**. Click **Connect** again, and check `View > Output > CS Bridge` for the failing step.
 
 4. **The remote window crashes or reports `No ptyHost heartbeat`.**
 
@@ -146,10 +146,10 @@ CS Bridge is pre-1.0, and interfaces may change between releases. The following 
 
 - [ ] **Issue reporting from the extension** — file an issue with a typed description and an automatically captured stack trace.
 - [ ] **Queue visibility** — queued jobs, queue positions and estimated start times shown in the Sessions view.
-- [ ] **Opt-in usage metrics** — anonymous telemetry to a central endpoint, sent only after explicit consent.
+- [ ] **Opt-in analytics** — anonymous analytics to a central endpoint, sent only after explicit consent.
 - [ ] **Cloud VM support** — provision a cloud VM and run a session on it, for work that needs no cluster.
 - [ ] **File mounts** — mount local files and external datasets into the remote session.
-- [ ] **Checkpoint and restore** — snapshot a session and resume it in another job with its running processes intact.
+- [ ] **Checkpoint and restore** — checkpoint a session and resume it in another job with its running processes intact.
 
 ## Contributing
 
@@ -170,7 +170,7 @@ CS Bridge is part of CyberShuttle, the ARTISAN group's toolset for interactive H
 
 ## Acknowledgments
 
-Developed by the [ARTISAN research group](https://gt-artisan.github.io/) at Georgia Tech. Built on [linkspan](https://github.com/cyber-shuttle/linkspan), [devtunnels](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/) and [OpenSSH](https://www.openssh.com/).
+Developed by the [ARTISAN research group](https://gt-artisan.github.io/) at Georgia Tech. Built on [Linkspan](https://github.com/cyber-shuttle/linkspan), [Dev Tunnels](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/) and [OpenSSH](https://www.openssh.com/).
 
 ## License
 

@@ -7,8 +7,8 @@ import { confirmModal } from './webviewProvider';
 
 const WARN_THRESHOLD_MS = 10 * 60_000; // color the status bar under 10 minutes left
 
-// Lives only in a remote window. Owns the wall-time status bar + a Stop button, and the end-to-local:
-// on wall-time expiry, terminal status, or the user hitting Stop, queue the summary and convert this window to local.
+// Lives only in a remote window. Owns the walltime status bar + a Stop button, and the end-to-local:
+// on walltime expiry, terminal status, or the user hitting Stop, queue the summary and convert this window to local.
 export class RemoteSessionController implements vscode.Disposable {
     private readonly item: vscode.StatusBarItem;
     private readonly stopItem: vscode.StatusBarItem;
@@ -69,7 +69,7 @@ export class RemoteSessionController implements vscode.Disposable {
         if (!session) { return; }
         const confirmed = await confirmModal(
             'Stop session?', 'Stop', 'This stops the running job and returns this window to local.');
-        if (!confirmed || this.torndown) { return; } // may have torn down (wall-time/terminal) during the dialog
+        if (!confirmed || this.torndown) { return; } // may have torn down (walltime/terminal) during the dialog
 
         this.torndown = true; // claim now so the 1s render tick can't race the reload
         this.stopItem.text = '$(loading~spin) Stopping…';

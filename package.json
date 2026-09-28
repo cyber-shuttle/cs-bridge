@@ -51,7 +51,7 @@
 				{
 					"type": "webview",
 					"id": "csbridge.statsView",
-					"name": "Stats",
+					"name": "Run History",
 					"icon": "resources/csbridge.svg",
 					"when": "!csbridge.remote"
 				},
@@ -91,13 +91,13 @@
 			},
 			{
 				"command": "csbridge.refreshStats",
-				"title": "Refresh Utilization History",
+				"title": "Refresh Run History",
 				"category": "CS Bridge",
 				"icon": "$(refresh)"
 			},
 			{
 				"command": "csbridge.clearRunHistory",
-				"title": "Clear Utilization History",
+				"title": "Clear Run History",
 				"category": "CS Bridge",
 				"icon": "$(clear-all)"
 			}

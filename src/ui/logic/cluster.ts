@@ -1,4 +1,4 @@
-import type { SlurmClusterInfo, SlurmPartitionInfo } from '@/models';
+import type { SlurmDiscovery, SlurmPartitionInfo } from '@/models';
 
 export type ResourceTab = 'cpu' | 'gpu';
 
@@ -9,17 +9,17 @@ interface GpuOptions {
 
 const hasGres = (p: SlurmPartitionInfo): boolean => !!p.gres && p.gres.length > 0;
 
-export function partitionsForTab(info: SlurmClusterInfo, tab: ResourceTab): SlurmPartitionInfo[] {
+export function partitionsForTab(info: SlurmDiscovery, tab: ResourceTab): SlurmPartitionInfo[] {
     return info.partitions.filter(p => (tab === 'gpu' ? hasGres(p) : !hasGres(p)));
 }
 
-export function hasTab(info: SlurmClusterInfo, tab: ResourceTab): boolean {
+export function hasTab(info: SlurmDiscovery, tab: ResourceTab): boolean {
     return partitionsForTab(info, tab).length > 0;
 }
 
 export function cpuOptions(partition: SlurmPartitionInfo | undefined): number[] {
     const max = Math.max(0, partition?.cpuCount ?? 0);
-    // 2-CPU floor: a 1-CPU dev host is impractical for the VS Code server.
+    // 2-CPU floor: a 1-CPU compute node is impractical for the VS Code server.
     return Array.from({ length: Math.max(0, max - 1) }, (_, i) => i + 2);
 }
 

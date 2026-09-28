@@ -26,13 +26,13 @@ export function elapsedLabel(since: number, now: number): string {
     return secs >= 60 ? `${Math.floor(secs / 60)}m ${secs % 60}s` : `${secs}s`;
 }
 
-/** Milliseconds left until the wall-clock deadline; the full wall time if not yet started. */
+/** Milliseconds left until the wall-clock deadline; the full walltime if not yet started. */
 export function remainingMs(session: Pick<SlurmSession, 'wallTime' | 'startedAt'>, now: number): number {
     const total = wallMs(session.wallTime);
     return session.startedAt ? session.startedAt + total - now : total;
 }
 
-/** Wall-clock run-time used: elapsed since start, capped at the wall-time limit (uncapped when the limit is 0/unlimited); 0 before the job starts. */
+/** Wall-clock run-time used: elapsed since start, capped at the walltime limit (uncapped when the limit is 0/unlimited); 0 before the job starts. */
 export function elapsedRunMs(session: Pick<SlurmSession, 'wallTime' | 'startedAt'>, now: number): number {
     if (!session.startedAt) { return 0; }
     const total = wallMs(session.wallTime);
@@ -69,7 +69,7 @@ export function sessionActions(session: ViewSession): SessionAction[] {
         actions.push({ kind: 'opening', label: 'Connecting…', icon: 'loading' });
     }
     else if (s === 'ready_to_connect' || s === 'unreachable') {
-        // For 'unreachable', Reconnect rebuilds the relay via the tunnel API → back to relay-live, off the login-node path.
+        // For 'unreachable', Reconnect rebuilds the Dev Tunnel connection via the Dev Tunnels API → back to reachable, off the SSH host path.
         actions.push({ kind: 'connect', label: s === 'ready_to_connect' ? 'Connect' : 'Reconnect', icon: 'arrow-swap' });
     }
     return actions;

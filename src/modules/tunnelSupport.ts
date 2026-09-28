@@ -11,14 +11,14 @@ import {
     ConnectionStatus,
 } from '@microsoft/dev-tunnels-connections';
 import { TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
-import { createSessionKeyPair, hasSessionKey, removeSshConfigEntry } from './sshSupport';
+import { createSessionKeyPair, hasSessionKey, deleteSshConfigEntry } from './sshSupport';
 import { csHostAlias } from './sshHostsStore';
 import { createSshServer, getSshServers, LinkspanSshStatus, sshdPort } from './linkspanSupport';
 
 const DEV_TUNNELS_APP_ID = '46da2f7e-b5ef-422a-88d4-2a7f9de6a0b2';
 const DEV_TUNNELS_SCOPE = `${DEV_TUNNELS_APP_ID}/.default`;
-// Consecutive 15s keep-alive misses (~1 min of dead relay) before we rebuild a half-open tunnel the SDK won't self-heal.
-const RELAY_RECONNECT_AFTER_MISSES = 4;
+// Consecutive 15s keep-alive misses (~1 min of dead Dev Tunnel) before we rebuild a half-open Dev Tunnel the SDK won't self-heal.
+const RECONNECT_AFTER_MISSES = 4;
 
 const logger = Logger.getInstance();
 
@@ -32,7 +32,7 @@ function buildTunnelManagementClient(): TunnelManagementHttpClient {
     );
 }
 
-// The base URL + auth headers devtunnel mandates for reaching linkspan's API on this session's tunnel. linkspanSupport
+// The base URL + auth headers a Dev Tunnel mandates for reaching Linkspan's API on this session's Dev Tunnel. linkspanSupport
 // does the calling; the two compose at the caller.
 export function linkspanEndpoint(session: SlurmSession): { baseUrl: string; headers: Record<string, string> } {
     const ci = session.connectionInfo;
@@ -42,8 +42,8 @@ export function linkspanEndpoint(session: SlurmSession): { baseUrl: string; head
     };
 }
 
-// Makes the tunnel carry apiPort plus any extra ports, and returns the relay token: we keep the Entra bearer local
-// and register every port ourselves, so the node only ever holds a token scoped to hosting this one tunnel.
+// Makes the Dev Tunnel carry apiPort plus any extra ports, and returns the host token: we keep the Entra bearer local
+// and register every port ourselves, so the node only ever holds a token scoped to hosting this one Dev Tunnel.
 export async function ensureDevTunnel(session: SlurmSession, ...ports: number[]): Promise<string> {
     const mgmt = buildTunnelManagementClient();
     const ci = session.connectionInfo ?? (session.connectionInfo = { sshPort: 0, sshTunnelId: '', region: '' });
@@ -62,17 +62,17 @@ export async function ensureDevTunnel(session: SlurmSession, ...ports: number[])
     ci.apiTunnelAccessToken = tunnel.accessTokens?.[TunnelAccessScopes.Connect] ?? ci.apiTunnelAccessToken;
     updateSession(session);
 
-    // Nothing reaches the allocation on a port the tunnel does not carry, and a failure here is the session's failure.
+    // Nothing reaches the job on a port the Dev Tunnel does not carry, and a failure here is the session's failure.
     for (const portNumber of [ci.apiPort, ...ports]) {
         if (!portNumber || tunnel.ports?.some(p => p.portNumber === portNumber)) { continue; }
         await mgmt.createTunnelPort(tunnel, { portNumber, protocol: 'auto' }, { tokenScopes: [TunnelAccessScopes.Host] });
     }
     const hostToken = tunnel.accessTokens?.[TunnelAccessScopes.Host];
-    if (!hostToken) { throw new Error('Dev Tunnel did not return a host-scoped access token.'); }
+    if (!hostToken) { throw new Error('Dev Tunnel did not return a host token.'); }
     return hostToken;
 }
 
-export async function removeDevTunnel(session: SlurmSession): Promise<void> {
+export async function deleteDevTunnel(session: SlurmSession): Promise<void> {
     if (!session.tunnelId) { return; }
     try {
         await buildTunnelManagementClient().deleteTunnel({ tunnelId: session.tunnelId, clusterId: session.tunnelCluster });
@@ -85,17 +85,17 @@ export async function removeDevTunnel(session: SlurmSession): Promise<void> {
     updateSession(session);
 }
 
-// Step 1: an sshd forwarded on the session's current API tunnel. linkspan is the source of truth for the sshd, so we
+// Step 1: an sshd forwarded on the session's current API Dev Tunnel. Linkspan is the source of truth for the sshd, so we
 // reconcile to what it reports rather than trusting local port/forward state — self-healing a stale port after a
-// linkspan restart, or a forward stranded on a re-minted tunnel. Idempotent.
+// Linkspan restart, or a forward stranded on a re-minted Dev Tunnel. Idempotent.
 export async function ensureRemoteSession(session: SlurmSession): Promise<void> {
     await ensureDevTunnel(session); // re-mints apiTunnelId (+ token) over the MS API before we publish against it
     const ci = session.connectionInfo!; // ensureDevTunnel guarantees connectionInfo
     const { baseUrl, headers } = linkspanEndpoint(session);
 
-    // Reuse the sshd linkspan reports (its port is stable across restarts) as long as we still hold its key; else create
+    // Reuse the sshd Linkspan reports (its port is stable across restarts) as long as we still hold its key; else create
     // a fresh one — only create returns the key we SSH with. A "failed" sshd has given up, so it doesn't count as reusable.
-    // Best-effort: if the probe stalls (flaky relay) but we're already forwarded on the current tunnel with a known port,
+    // Best-effort: if the probe stalls (flaky Dev Tunnel) but we're already forwarded on the current Dev Tunnel with a known port,
     // proceed with that rather than failing the whole connect — the reconcile is an optimization, not a gate.
     let sshd: LinkspanSshStatus | undefined;
     try { sshd = (await getSshServers(baseUrl, headers)).find(s => s.state !== 'failed'); }
@@ -114,24 +114,24 @@ export async function ensureRemoteSession(session: SlurmSession): Promise<void> 
         updateSession(session);
     }
 
-    await ensureDevTunnel(session, ci.sshPort); // the tunnel must carry the sshd port before ssh is pointed at it
+    await ensureDevTunnel(session, ci.sshPort); // the Dev Tunnel must carry the sshd port before ssh is pointed at it
     ci.sshTunnelId = ci.apiTunnelId!;
     updateSession(session);
-    logger.info(`SSH port ${ci.sshPort} published on tunnel ${ci.apiTunnelId} for session ${session.id}.`);
+    logger.info(`SSH port ${ci.sshPort} published on Dev Tunnel ${ci.apiTunnelId} for session ${session.id}.`);
 }
 
 export function hasTunnelClient(sessionId: string): boolean {
     return activeTunnelClients.has(sessionId);
 }
 
-// True while this window's relay client holds a live connection — its keepAlive already watches the link, so this is
+// True while this window's Dev Tunnel client holds a live connection — its keepAlive already watches the connection, so this is
 // the authoritative liveness signal for a connected session.
 export function isTunnelClientConnected(sessionId: string): boolean {
     return activeTunnelClients.get(sessionId)?.connectionStatus === ConnectionStatus.Connected;
 }
 
-export async function connectSessionToTunnel(session: SlurmSession, onRelayLost: () => void): Promise<number> {
-    logger.info(`Connecting session ${session.id} to tunnel...`);
+export async function connectSessionToTunnel(session: SlurmSession, onDevTunnelLost: () => void): Promise<number> {
+    logger.info(`Connecting session ${session.id} to its Dev Tunnel...`);
 
     if (!session.connectionInfo) {
         throw new Error(`Session ${session.id} does not have connection info.`);
@@ -149,22 +149,22 @@ export async function connectSessionToTunnel(session: SlurmSession, onRelayLost:
     );
 
     if (!tunnel) {
-        throw new Error(`Tunnel ${sshTunnelId} not found in cluster ${region}.`);
+        throw new Error(`Dev Tunnel ${sshTunnelId} not found in Dev Tunnels region ${region}.`);
     }
 
-    logger.info(`Fetched tunnel ${sshTunnelId}: ${tunnel.endpoints?.length ?? 0} endpoints, ${tunnel.ports?.length ?? 0} ports`);
+    logger.info(`Fetched Dev Tunnel ${sshTunnelId}: ${tunnel.endpoints?.length ?? 0} endpoints, ${tunnel.ports?.length ?? 0} ports`);
 
     // Register before connecting so a re-entrant connect can't orphan the prior client and a failed connect stays disposable.
     await disposeTunnelClient(session.id);
     const client = new TunnelRelayTunnelClient(mgmtClient);
     client.acceptLocalConnectionsForForwardedPorts = true;
-    // Surface relay link health: a stalled/reconnecting tunnel is otherwise invisible, and this tells contention from raw relay bandwidth.
-    client.connectionStatusChanged(e => logger.info(`Tunnel ${session.id}: relay ${e.previousStatus} → ${e.status}${e.disconnectError ? ` (${e.disconnectError.message})` : ''}`));
+    // Surface Dev Tunnel connection health: a stalled/reconnecting Dev Tunnel is otherwise invisible, and this tells contention from raw Dev Tunnel bandwidth.
+    client.connectionStatusChanged(e => logger.info(`Session ${session.id}: Dev Tunnel ${e.previousStatus} → ${e.status}${e.disconnectError ? ` (${e.disconnectError.message})` : ''}`));
     client.keepAliveFailed((e) => {
-        logger.warn(`Tunnel ${session.id}: relay keep-alive missed ${e.count} consecutive probe(s)`);
-        // A half-open relay stays "Connected", so the SDK's enableReconnect never fires; rebuild once misses cross the
+        logger.warn(`Session ${session.id}: Dev Tunnel keep-alive missed ${e.count} consecutive probe(s)`);
+        // A half-open Dev Tunnel stays "Connected", so the SDK's enableReconnect never fires; rebuild once misses cross the
         // bar. Fires once — the rebuild disposes this client, ending its events.
-        if (e.count === RELAY_RECONNECT_AFTER_MISSES) { onRelayLost(); }
+        if (e.count === RECONNECT_AFTER_MISSES) { onDevTunnelLost(); }
     });
     activeTunnelClients.set(session.id, client);
 
@@ -173,9 +173,9 @@ export async function connectSessionToTunnel(session: SlurmSession, onRelayLost:
         await client.connect(tunnel, {
             enableRetry: true,
             enableReconnect: true,
-            keepAliveIntervalInSeconds: 15, // probe the upstream WebSocket so a half-open relay is detected and reconnected fast (default 0 = off)
+            keepAliveIntervalInSeconds: 15, // probe the upstream WebSocket so a half-open Dev Tunnel is detected and reconnected fast (default 0 = off)
         });
-        // the sshd port is added after the host starts, so refresh before waiting for it
+        // the sshd port is added after Linkspan starts hosting the Dev Tunnel, so refresh before waiting for it
         try { await client.refreshPorts(); }
         catch (err) { logger.warn(`refreshPorts failed for session ${session.id}:`, err); }
         await client.waitForForwardedPort(sshPort);
@@ -187,20 +187,20 @@ export async function connectSessionToTunnel(session: SlurmSession, onRelayLost:
     }
 
     session.connectionInfo!.sshTunnelForwardPort = localPort;
-    logger.info(`Tunnel connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
+    logger.info(`Dev Tunnel connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
     return localPort;
 }
 
-// Frees the local port only. Never deletes the remote sshd/tunnel (job-scoped, reaped by linkspan) — that would break reattach.
+// Frees the local port only. Never deletes the remote sshd/Dev Tunnel (job-scoped, reaped by Linkspan) — that would break reattach.
 export async function disposeTunnelClient(sessionId: string): Promise<void> {
     const client = activeTunnelClients.get(sessionId);
     if (!client) { return; }
     try {
         await client.dispose();
-        logger.info(`Tunnel relay client disposed for session ${sessionId}`);
+        logger.info(`Dev Tunnel client disposed for session ${sessionId}`);
     }
     catch (err) {
-        logger.error(`Error disposing tunnel relay client for session ${sessionId}:`, err);
+        logger.error(`Error disposing Dev Tunnel client for session ${sessionId}:`, err);
     }
     activeTunnelClients.delete(sessionId);
 }
@@ -211,10 +211,10 @@ export async function disposeAllTunnelClients(): Promise<void> {
 
 export async function disconnectSessionFromTunnel(session: SlurmSession): Promise<void> {
     await disposeTunnelClient(session.id);
-    await removeSshConfigEntry(session.id, csHostAlias(session.cluster, session.name));
+    await deleteSshConfigEntry(session.id, csHostAlias(session.cluster, session.name));
     session.connectionInfo = undefined;
     updateSession(session);
-    logger.info(`Session ${session.id} disconnected from tunnel.`);
+    logger.info(`Session ${session.id} disconnected from its Dev Tunnel.`);
 }
 
 function getMicrosoftSession(options: vscode.AuthenticationGetSessionOptions & { createIfNone: true }): Thenable<vscode.AuthenticationSession>;

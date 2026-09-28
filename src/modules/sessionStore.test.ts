@@ -51,7 +51,7 @@ test('toPersistedRecord falls back to the session windowPids when none on disk',
     assert.deepEqual(toPersistedRecord(sess('a', { windowPids: [7] }), undefined).windowPids, [7]);
 });
 
-test('toPersistedRecord never writes the batch script, which carries the tunnel host token', () => {
-    const rec = toPersistedRecord(sess('a', { status: 'queued', batchScript: '#!/bin/bash\n--tunnel-host-token SECRET' }));
-    assert.equal(rec.batchScript, undefined);
+test('toPersistedRecord never writes the job script, which carries the Dev Tunnel host token', () => {
+    const rec = toPersistedRecord(sess('a', { status: 'queued', jobScript: '#!/bin/bash\n--tunnel-host-token SECRET' }));
+    assert.equal(rec.jobScript, undefined);
 });

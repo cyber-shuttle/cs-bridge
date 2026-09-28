@@ -1,12 +1,12 @@
 import { createContext } from 'preact';
 import { useContext } from 'preact/hooks';
 import type { CSSProperties, VNode } from 'preact';
-import { METRICS_HISTORY_LEN, type ViewSession } from '@/models';
+import { SAMPLE_HISTORY_LEN, type ViewSession } from '@/models';
 import { dotColor, sessionActions, remainingMs, fmtTime, wallMs, elapsedLabel, type SessionAction } from '@/ui/logic/session';
-import { isRelayLive, isCloseable } from '@/modules/sessionMachine';
+import { isReachable, isDeletable } from '@/modules/sessionMachine';
 import { Row, Stack, Text, Card, ActionIcon, Button, Spinner, Chip } from '@/ui/components/base';
 import { Sparkline } from '@/ui/components/Sparkline';
-import { metricGraphs, graphTitle } from '@/ui/components/MetricGraphs';
+import { usageGraphs, graphTitle } from '@/ui/components/UsageGraphs';
 import { post } from '@/ui/platform/vscode';
 
 interface Props {
@@ -57,12 +57,12 @@ function Divided({ items }: { items: VNode[] }) {
     );
 }
 
-// Raw resource text (e.g. "MEM: 2G", "CPU: 1", "GPU: 1") above each live sparkline when relay-live; a plain row
+// Raw resource text (e.g. "MEM: 2G", "CPU: 1", "GPU: 1") above each live sparkline when reachable; a plain row
 // otherwise. Columns bracketed by vertical separators.
 function ResourceStats({ session }: { session: ViewSession }) {
     const allocated = { memory: session.memory.replace(/\s+/g, '').replace(/B$/i, ''), cpus: session.cpus };
-    const graphs = metricGraphs(session.metrics ?? [], session.gpuCount, allocated);
-    if (!isRelayLive(session.status)) {
+    const graphs = usageGraphs(session.samples ?? [], session.gpuCount, allocated);
+    if (!isReachable(session.status)) {
         return <Divided items={graphs.map(g => <Text key={g.label} size={11}>{g.text}</Text>)} />;
     }
     return (
@@ -70,7 +70,7 @@ function ResourceStats({ session }: { session: ViewSession }) {
             <Stack key={g.label} gap={1} style={{ minWidth: '44px', alignItems: 'flex-start' }}>
                 <Text size={11}>{g.text}</Text>
                 {g.lines[0].values.length >= 2
-                    ? <Sparkline lines={g.lines} slots={METRICS_HISTORY_LEN} title={graphTitle(g)} />
+                    ? <Sparkline lines={g.lines} slots={SAMPLE_HISTORY_LEN} title={graphTitle(g)} />
                     : <div style={{ height: '14px' }} />}
             </Stack>
         ))}
@@ -85,8 +85,8 @@ function StatusText({ session }: { session: ViewSession }) {
         case 'not_started': return <Row style={statusStyle}>Not started</Row>;
         case 'ready_to_connect':
         case 'connected': return <Row style={statusStyle}>{fmtTime(remainingMs(session, now))} left</Row>;
-        case 'preparing': return <Row style={statusStyle}>Establishing secure tunnel…</Row>;
-        case 'unreachable': return <Row style={statusStyle}><Text title={session.errorMessage || undefined}>{session.errorMessage ? `Unreachable: ${session.errorMessage}` : 'Cluster unreachable — retrying…'}</Text></Row>;
+        case 'preparing': return <Row style={statusStyle}>Establishing secure Dev Tunnel…</Row>;
+        case 'unreachable': return <Row style={statusStyle}><Text title={session.errorMessage || undefined}>{session.errorMessage ? `Unreachable: ${session.errorMessage}` : 'SSH host unreachable — retrying…'}</Text></Row>;
         case 'connecting': return <Row style={statusStyle}>Connecting…</Row>;
         case 'submitting': return <Row style={statusStyle}>Submitting…</Row>;
         case 'queued':
@@ -100,7 +100,7 @@ function StatusText({ session }: { session: ViewSession }) {
 
 export function SessionCard({ session, remote }: Props) {
     const statusColor = dotColor(session.status);
-    const canClose = isCloseable(session.status);
+    const canDelete = isDeletable(session.status);
     const actions = sessionActions(session);
     const status = STATUS_ICON[session.status];
 
@@ -111,16 +111,16 @@ export function SessionCard({ session, remote }: Props) {
 
     return (
         <Card>
-            {/* Fixed height keeps the gap to the detail row constant whether or not the close button shows. */}
+            {/* Fixed height keeps the gap to the detail row constant whether or not the delete button shows. */}
             <Row gap={6} style={{ minHeight: '20px' }}>
                 <vscode-icon name={status.name} spin={status.spin || undefined} style={{ color: statusColor, flexShrink: 0, marginRight: '-3px' }}></vscode-icon>
                 <Text weight={600}>{session.cluster}</Text>
                 <Chip label={session.allocation} />
                 <Chip label={session.queue} />
-                {!remote && canClose
+                {!remote && canDelete
                     ? (
                             <Row gap={4} style={{ marginLeft: 'auto' }}>
-                                <ActionIcon name="close" ariaLabel="Close session" size={14} onClick={() => post({ command: 'removeSession', sessionId: session.id })} />
+                                <ActionIcon name="close" ariaLabel="Delete session" size={14} onClick={() => post({ command: 'deleteSession', sessionId: session.id })} />
                             </Row>
                         )
                     : null}

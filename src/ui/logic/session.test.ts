@@ -23,7 +23,7 @@ test('elapsedLabel formats seconds-since, clamping a webview clock momentarily b
     assert.equal(elapsedLabel(5_000, 4_700), '0s'); // now 300ms behind submittedAt → never "-1s"
 });
 
-test('remainingMs counts down from startedAt, else returns the full wall time', () => {
+test('remainingMs counts down from startedAt, else returns the full walltime', () => {
     assert.equal(remainingMs({ wallTime: '01:00:00', startedAt: 1_000 }, 1_000), 3_600_000);
     assert.equal(remainingMs({ wallTime: '01:00:00', startedAt: 1_000 }, 601_000), 3_000_000);
     assert.equal(remainingMs({ wallTime: '01:00:00', startedAt: undefined }, 999_999), 3_600_000);
@@ -58,7 +58,7 @@ test('sessionActions returns the right buttons per status', () => {
     assert.deepEqual(sessionActions(sess('preparing')).map(a => a.kind), ['stop']);
     assert.deepEqual(sessionActions(sess('ready_to_connect')).map(a => a.kind), ['stop', 'connect']);
     assert.deepEqual(sessionActions(sess('unreachable')).map(a => a.kind), ['stop', 'connect']);
-    assert.equal(sessionActions(sess('unreachable'))[1].label, 'Reconnect'); // Connect rebuilds the relay → off the login node
+    assert.equal(sessionActions(sess('unreachable'))[1].label, 'Reconnect'); // Connect rebuilds the Dev Tunnel connection → off the SSH host
     assert.deepEqual(sessionActions(sess('stopped')), [{ kind: 'start', label: 'Start', icon: 'play' }]);
     assert.deepEqual(sessionActions(sess('stopping')).map(a => a.kind), []); // stop in flight: spinner only, no Stop button
 });

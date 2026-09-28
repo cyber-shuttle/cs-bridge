@@ -105,7 +105,7 @@ export function sshCommandToConfig(command: string): SshConfigEntry {
             if (!config.User && username) { config.User = username; }
         }
     }
-    if (!config.Host) { throw new CommandParseError('Missing host in SSH connection string'); }
+    if (!config.Host) { throw new CommandParseError('Missing hostname in SSH connection string'); }
     const { Host, HostName, ...rest } = config;
     return { Host, HostName, ...rest };
 }
@@ -113,10 +113,10 @@ export function sshCommandToConfig(command: string): SshConfigEntry {
 const INVALID_HOST_CHARS = ['\\', '\'', '"', '`', '!', '%', '\r', '\n'];
 
 export function assertValidHost(entry: SshConfigEntry): void {
-    for (const [label, val] of [['host', entry.HostName], ['user', entry.User]] as const) {
+    for (const [label, val] of [['hostname', entry.HostName], ['username', entry.User]] as const) {
         if (!val) { continue; }
-        if (val.startsWith('-')) { throw new CommandParseError(`SSH ${label} name cannot begin with -`); }
+        if (val.startsWith('-')) { throw new CommandParseError(`SSH ${label} cannot begin with -`); }
         const bad = INVALID_HOST_CHARS.find(ch => val.includes(ch));
-        if (bad) { throw new CommandParseError(`SSH ${label} name cannot include the character ${bad}`); }
+        if (bad) { throw new CommandParseError(`SSH ${label} cannot include the character ${bad}`); }
     }
 }

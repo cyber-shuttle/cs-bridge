@@ -7,7 +7,7 @@ export function wallMs(wallTime: string): number {
     return ((p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0)) * 1000;
 }
 
-/** Slurm kills the job at --time, so a passed deadline is authoritative even when the login node is unreachable
+/** Slurm kills the job at --time, so a passed deadline is authoritative even when the SSH host is unreachable
  *  for `sacct`. Assumes death within KillWait of --time; OverTimeLimit clusters may run past it. */
 export function isWallTimeExpired(session: Pick<SlurmSession, 'wallTime' | 'startedAt'>, now: number): boolean {
     const total = wallMs(session.wallTime);
@@ -24,16 +24,16 @@ export interface StatusTransition {
 const TERMINAL: Status[] = ['stopped', 'failed'];
 // 'stopping' is excluded so Stop neither shows nor re-triggers while a stop is already in flight.
 const STOPPABLE: Status[] = ['submitting', 'queued', 'preparing', 'ready_to_connect', 'connecting', 'connected', 'unreachable'];
-const RELAY_LIVE: Status[] = ['ready_to_connect', 'connecting', 'connected'];
-// The relay-live set plus the bring-up that precedes it, so a new relay-live status joins both.
-const CONNECT_PHASE: Status[] = ['preparing', ...RELAY_LIVE];
-// Non-relay-live statuses the monitor polls; an infra failure downgrades these (never a relay-live one) to 'unreachable'.
+const REACHABLE: Status[] = ['ready_to_connect', 'connecting', 'connected'];
+// The reachable set plus the bring-up that precedes it, so a new reachable status joins both.
+const CONNECT_PHASE: Status[] = ['preparing', ...REACHABLE];
+// Non-reachable statuses the monitor polls; an infra failure downgrades these (never a reachable one) to 'unreachable'.
 const MONITORABLE_OFFLINE: Status[] = ['submitting', 'queued', 'preparing', 'unreachable'];
 
 export const isTerminal = (status: Status): boolean => TERMINAL.includes(status);
-export const isCloseable = (status: Status): boolean => isTerminal(status) || status === 'not_started';
+export const isDeletable = (status: Status): boolean => isTerminal(status) || status === 'not_started';
 export const isStoppable = (status: Status): boolean => STOPPABLE.includes(status);
-export const isRelayLive = (status: Status): boolean => RELAY_LIVE.includes(status);
+export const isReachable = (status: Status): boolean => REACHABLE.includes(status);
 
 export const unreachableStatus = (status: Status): Status | undefined =>
     MONITORABLE_OFFLINE.includes(status) ? 'unreachable' : undefined;
@@ -49,7 +49,7 @@ export function computeStatusTransition(current: Status, slurm: SlurmJobStatus):
             // Promote a freshly-running job to 'preparing'; never pull a connect-phase session back (would thrash reattach).
             return CONNECT_PHASE.includes(current) ? {} : { next: 'preparing' };
         case SlurmJobStatus.COMPLETED:
-            // Completed collapses into 'stopped' — the job is gone, the session is restartable, same as a wall-time stop.
+            // Completed collapses into 'stopped' — the job is gone, the session can be started again, same as a walltime stop.
             return { next: 'stopped', stopMonitoring: true };
         case SlurmJobStatus.FAILED:
         case SlurmJobStatus.OUT_OF_MEMORY:
@@ -58,7 +58,7 @@ export function computeStatusTransition(current: Status, slurm: SlurmJobStatus):
             return { next: 'queued' };
         case SlurmJobStatus.TIMEOUT:
         case SlurmJobStatus.CANCELLED:
-            // Wall-time reached or cancelled — the job is gone but the session can be restarted.
+            // Walltime reached or cancelled — the job is gone but the session can be started again.
             return { next: 'stopped', stopMonitoring: true };
         case SlurmJobStatus.UNKNOWN:
         default:

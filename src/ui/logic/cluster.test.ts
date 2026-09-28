@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { SlurmClusterInfo, SlurmPartitionInfo } from '@/models';
+import type { SlurmDiscovery, SlurmPartitionInfo } from '@/models';
 import { partitionsForTab, hasTab, cpuOptions, memoryOptions, gpuOptions, gpuString, parseGpuClass, resolvePick } from './cluster';
 
 const cpuPart: SlurmPartitionInfo = { name: 'cpu', cpuCount: 3, memory: '8192', gres: [] };
 const gpuPart: SlurmPartitionInfo = { name: 'gpu', cpuCount: 16, memory: '0', gres: [{ name: 'a100', count: 2 }] };
-const info: SlurmClusterInfo = { host: 'h', accounts: ['acct'], partitions: [cpuPart, gpuPart] };
+const info: SlurmDiscovery = { alias: 'h', accounts: ['acct'], partitions: [cpuPart, gpuPart] };
 
 test('partitionsForTab splits by presence of gres', () => {
     assert.deepEqual(partitionsForTab(info, 'cpu'), [cpuPart]);

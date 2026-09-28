@@ -4,9 +4,9 @@ import { WebviewProvider } from './webviewProvider';
 import { errMsg } from './logger';
 import { SshManager } from './modules/sshSupport';
 import { sshCommandToConfig, assertValidHost, SshConfigEntry } from './modules/sshCommandParser';
-import { USER_SSH_CONFIG_PATH, addHostToConfigFile, removeHostFromConfigFile } from './modules/sshHostsStore';
+import { USER_SSH_CONFIG_PATH, addHostToConfigFile, deleteHostFromConfigFile } from './modules/sshHostsStore';
 
-// Webview provider for the SSH Hosts view: reads user + read-only system SSH config, writes user hosts to ~/.ssh/config.
+// Webview provider for the SSH Hosts view: reads user + read-only system SSH config, writes user SSH hosts to ~/.ssh/config.
 export class SshHostProvider extends WebviewProvider {
     public static readonly viewType = 'csbridge.hostsView';
     protected readonly viewKind = 'hosts' as const;
@@ -14,7 +14,7 @@ export class SshHostProvider extends WebviewProvider {
     protected handleMessage(data: WebviewMessage): void {
         switch (data.command) {
             case 'ready': this.pushState(); break;
-            case 'removeSshHost': void this.removeSshHost(data.name ?? ''); break;
+            case 'deleteSshHost': void this.deleteSshHost(data.alias ?? ''); break;
             default: this.logger.warn('Unknown command from hosts webview:', data);
         }
     }
@@ -58,19 +58,19 @@ export class SshHostProvider extends WebviewProvider {
         this.pushState();
     }
 
-    private async removeSshHost(name: string): Promise<void> {
+    private async deleteSshHost(alias: string): Promise<void> {
         // Delete controls render only on user-config rows (system is read-only), so the target is always ~/.ssh/config.
         const choice = await vscode.window.showWarningMessage(
-            `Remove SSH host '${name}'?`,
-            { modal: true, detail: 'This removes the Host entry from ~/.ssh/config.' },
-            'Remove',
+            `Delete SSH host '${alias}'?`,
+            { modal: true, detail: 'This deletes it from ~/.ssh/config.' },
+            'Delete',
         );
-        if (choice !== 'Remove') { return; }
+        if (choice !== 'Delete') { return; }
         try {
-            removeHostFromConfigFile(USER_SSH_CONFIG_PATH, name);
+            deleteHostFromConfigFile(USER_SSH_CONFIG_PATH, alias);
         }
         catch (err) {
-            this.showError(`Failed to remove SSH host ${name}`, err);
+            this.showError(`Failed to delete SSH host ${alias}`, err);
         }
         this.pushState();
     }

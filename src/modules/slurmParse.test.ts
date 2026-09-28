@@ -53,7 +53,7 @@ test('parsePartitionLine throws on a malformed line', () => {
     assert.throws(() => parsePartitionLine('only|three|fields'), /Invalid sinfo line/);
 });
 
-test('buildSlurmScript emits the resource #SBATCH directives and the linkspan invocation', () => {
+test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan invocation', () => {
     const session = {
         id: 'sess-1',
         cpus: 4, memory: '8 GB', wallTime: '02:00:00', queue: 'gpu', allocation: 'acct1',
@@ -70,7 +70,7 @@ test('buildSlurmScript emits the resource #SBATCH directives and the linkspan in
     assert.match(script, /^LINKSPAN_TUNNEL_HOST_TOKEN='tok' "\$LINKSPAN_BIN" --port 25000 --tunnel-enable --tunnel-mode devtunnel --tunnel-devtunnel-args '--id tid --cluster use'$/m);
 });
 
-// The allocation every script test starts from; each names only what it varies.
+// The session every script test starts from; each names only what it varies.
 const scriptSession = (overrides: Partial<SlurmSession> = {}): SlurmSession => ({
     cpus: 2, memory: '4 GB', wallTime: '01:00:00', queue: 'cpu', allocation: 'acct1',
     gpuClass: '', gpuCount: 0, ...overrides,
@@ -82,8 +82,8 @@ test('buildSlurmScript omits the GPU directive when no GPU is selected', () => {
     assert.doesNotMatch(script, /--gres=/);
 });
 
-test('buildSlurmScript omits --account for a blank or non-token allocation', () => {
-    for (const allocation of ['', '(No Allocation)']) {
+test('buildSlurmScript omits --account for a blank or non-token Slurm account', () => {
+    for (const allocation of ['', '(no Slurm account)']) {
         const session = scriptSession({ queue: 'debug', allocation });
         assert.doesNotMatch(buildSlurmScript(session, 't'), /--account/);
     }
@@ -92,12 +92,12 @@ test('buildSlurmScript omits --account for a blank or non-token allocation', () 
 test('slurmAccount keeps real account tokens and blanks anything else', () => {
     assert.equal(slurmAccount('acct1'), 'acct1');
     assert.equal(slurmAccount('  bio-lab_2.0 '), 'bio-lab_2.0');
-    assert.equal(slurmAccount('(No Allocation)'), '');
+    assert.equal(slurmAccount('(no Slurm account)'), '');
     assert.equal(slurmAccount(''), '');
     assert.equal(slurmAccount(undefined), '');
 });
 
-test('parseSacctUtil reads allocation fields, ignoring the empty usage on the main row', () => {
+test('parseSacctUtil reads job fields, ignoring the empty usage on the main row', () => {
     const out = '20041571|2|2097152K|1573|3146||';
     assert.deepEqual(parseSacctUtil(out), { cores: 2, reqMem: '2.0 GB', elapsedSec: 1573 });
 });
@@ -127,7 +127,7 @@ test('parseSacctUtil ignores srun poll steps and the empty running batch (no eff
         '20240108|2|2097152K|1641|3282||00:00:00',
         '20240108.batch|2||1641|3282||00:00:00', // batch usage not flushed yet
         '20240108.extern|2||1641|3282||00:00:00',
-        '20240108.0|2||1|2|24K|00:00:00', // our srun metric-poll steps — tiny, must not be read
+        '20240108.0|2||1|2|24K|00:00:00', // our srun usage-poll steps — tiny, must not be read
         '20240108.77|2||0|0|64K|00:00:00',
     ].join('\n');
     assert.deepEqual(parseSacctUtil(out), { cores: 2, reqMem: '2.0 GB', elapsedSec: 1641 });
@@ -137,7 +137,7 @@ test('parseSacctUtil returns an empty object for no output', () => {
     assert.deepEqual(parseSacctUtil(''), {});
 });
 
-test('buildSlurmScript unsets the inherited XDG_RUNTIME_DIR/TMPDIR before launching linkspan', () => {
+test('buildSlurmScript unsets the inherited XDG_RUNTIME_DIR/TMPDIR before launching Linkspan', () => {
     const session = scriptSession();
     const script = buildSlurmScript(session, 't');
 
@@ -145,15 +145,15 @@ test('buildSlurmScript unsets the inherited XDG_RUNTIME_DIR/TMPDIR before launch
     // unset it (and TMPDIR) so the VS Code server falls back to its node-local /tmp default.
     assert.match(script, /^unset XDG_RUNTIME_DIR TMPDIR$/m);
 
-    // linkspan must inherit the cleaned env, so the unset has to precede its invocation.
+    // Linkspan must inherit the cleaned env, so the unset has to precede its invocation.
     assert.ok(script.indexOf('unset XDG_RUNTIME_DIR') < script.indexOf('LINKSPAN_TUNNEL_HOST_TOKEN'),
-        'unset precedes linkspan invocation');
+        'unset precedes Linkspan invocation');
 });
 
-// This table is the twin of cs-control's classifySchedulerState (internal/control/reconcile.go).
-// The two must agree: they watch the same scheduler for the same allocations, and a state only
+// This table is the twin of cs-plane's normalizeState (internal/slurm/slurm.go).
+// The two must agree: they watch the same scheduler for the same jobs, and a state only
 // one of them knows is a state one of them silently holds on. Change both together.
-test('classifies every scheduler state cs-control classifies', () => {
+test('classifies every scheduler state cs-plane classifies', () => {
     const expected: Record<string, SlurmJobStatus> = {
         PENDING: SlurmJobStatus.QUEUED, REQUEUED: SlurmJobStatus.QUEUED, REQUEUE_FED: SlurmJobStatus.QUEUED,
         REQUEUE_HOLD: SlurmJobStatus.QUEUED, SUSPENDED: SlurmJobStatus.QUEUED, STOPPED: SlurmJobStatus.QUEUED,
@@ -176,7 +176,7 @@ test('reads the state out of sacct decoration: a reason suffix and a truncation 
 });
 
 // UNKNOWN is the absence of an observation, not a state: the monitor holds rather than
-// terminalizing, and the wall-time deadline is what eventually settles the session.
+// terminalizing, and the walltime deadline is what eventually settles the session.
 test('an unrecognised scheduler word stays UNKNOWN', () => {
     assert.equal(classifySchedulerState('WAT'), SlurmJobStatus.UNKNOWN);
     assert.equal(classifySchedulerState(''), SlurmJobStatus.UNKNOWN);

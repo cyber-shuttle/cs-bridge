@@ -1,22 +1,22 @@
-import { Metric, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession } from '../models';
+import { Sample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession } from '../models';
 import { Logger, errMsg } from './../logger';
 import { updateSession, setStatus } from '../extensionStore';
 import { recordSessionRun, sacctStats } from '../sessionRunSupport';
 import { SshManager } from './sshSupport';
-import { getMetricsViaSrun, getSlurmJobStatus } from './slurmSupport';
+import { getSampleViaSrun, getSlurmJobStatus } from './slurmSupport';
 import { buildSlurmScript } from './slurmParse';
-import { computeStatusTransition, isRelayLive, isTerminal, isWallTimeExpired, unreachableStatus, StatusTransition } from './sessionMachine';
+import { computeStatusTransition, isReachable, isTerminal, isWallTimeExpired, unreachableStatus, StatusTransition } from './sessionMachine';
 import { checkSlurmAvailability, linkspanIsUpToDate, installLinkspan, submitJobToSlurm } from './slurmLaunch';
-import { disconnectSessionFromTunnel, disposeTunnelClient, ensureDevTunnel, ensureRemoteSession, isTunnelClientConnected, linkspanEndpoint, removeDevTunnel } from './tunnelSupport';
-import { getHealth, getMetrics } from './linkspanSupport';
-import { appendMetric, writeSessionStats, resetLive } from './sessionMetricsStore';
+import { disconnectSessionFromTunnel, disposeTunnelClient, ensureDevTunnel, ensureRemoteSession, isTunnelClientConnected, linkspanEndpoint, deleteDevTunnel } from './tunnelSupport';
+import { getHealth, getSample } from './linkspanSupport';
+import { appendSample, writeSessionStats, resetLive } from './sessionMetricsStore';
 
 const logger = Logger.getInstance();
 // How often to refresh the in-run sacct copy; coarse since usage only flushes at step end.
 const SACCT_REFRESH_MS = 30_000;
-// Consecutive failed probes before we stop trusting the tunnel and cross-check the job over batch sacct.
+// Consecutive failed probes before we stop trusting the Dev Tunnel and cross-check the job over batch sacct.
 const PROBE_GIVEUP = 6;
-// Lets an authoritative sacct verdict win first when reachable (it can lag ~PROBE_GIVEUP polls in the relay-live path).
+// Lets an authoritative sacct verdict win first when the SSH host is reachable (it can lag ~PROBE_GIVEUP polls on the Dev Tunnel path).
 const WALL_TIME_GRACE_MS = 30_000;
 
 // One independent poll loop per active session. No shared lock: each loop mutates
@@ -49,7 +49,7 @@ export class SessionMonitor {
         if (t.stopMonitoring) { this.endSession(session.id); }
     }
 
-    // Tunnel health gave up — only an authoritative sacct terminal state may tear the session down; else it's alive, resume pinging.
+    // Dev Tunnel health gave up — only an authoritative sacct terminal state may tear the session down; else it's alive, resume pinging.
     private async crossCheckSlurmForDeath(session: SlurmSession): Promise<void> {
         try {
             const t = computeStatusTransition(session.status, (await getSlurmJobStatus(session)).status);
@@ -61,7 +61,7 @@ export class SessionMonitor {
         }
     }
 
-    // Probe over the tunnel until PROBE_GIVEUP consecutive failures, then fall back
+    // Probe over the Dev Tunnel until PROBE_GIVEUP consecutive failures, then fall back
     // to an authoritative sacct cross-check. The probe differs by phase.
     private async pingOrCrossCheck(session: SlurmSession, probe: () => Promise<void>): Promise<void> {
         if (this.probeFails(session.id) < PROBE_GIVEUP) { await probe(); }
@@ -72,21 +72,21 @@ export class SessionMonitor {
     // guard, so it needs no in-flight guard of its own.
     private async prepareRemote(session: SlurmSession): Promise<void> {
         try {
-            await ensureDevTunnel(session); // re-mint tunnel id + Connect token (also valid after a reload dropped them)
+            await ensureDevTunnel(session); // re-mint Dev Tunnel id + connect token (also valid after a reload dropped them)
             const { baseUrl, headers } = linkspanEndpoint(session);
-            await getHealth(baseUrl, headers); // poll the tunnel: throws until linkspan is up and answering /health
-            await ensureRemoteSession(session); // linkspan is up — start the sshd and forward it (all over the tunnel)
+            await getHealth(baseUrl, headers); // poll the Dev Tunnel: throws until Linkspan is up and answering /health
+            await ensureRemoteSession(session); // Linkspan is up — start the sshd and forward it (all over the Dev Tunnel)
             if (session.status === 'preparing') { // may have left 'preparing' during the awaits (e.g. user hit Stop)
                 this.probeFailedCounts.delete(session.id); // Step 1 up — clear the prepare-failure tally
-                this.log(session, 'linkspan is ready to connect.');
+                this.log(session, 'Linkspan is ready to connect.');
                 setStatus(session, 'ready_to_connect', ''); // clear any transient-retry warning now that Step 1 is up
             }
         }
         catch (err) {
-            // Linkspan not up yet, or a tunnel API blip: transient rather than job death, so
+            // Linkspan not up yet, or a Dev Tunnels API blip: transient rather than job death, so
             // hold 'preparing' and count it toward the sacct cross-check.
             this.bumpProbeFails(session.id);
-            this.warn(session, `linkspan unreachable (will retry): ${errMsg(err)}`);
+            this.warn(session, `Linkspan unreachable (will retry): ${errMsg(err)}`);
             session.errorMessage = `Preparing remote session: ${errMsg(err)}`;
             updateSession(session);
         }
@@ -104,9 +104,9 @@ export class SessionMonitor {
                 return;
             }
 
-            // Slurm kills the job at its wall time, so a passed deadline with the link
+            // Slurm kills the job at its walltime, so a passed deadline with the Dev Tunnel connection
             // already gone is the job dying on schedule. The grace applies only while the
-            // relay still looks connected: our clock may be ahead of the cluster's, or
+            // Dev Tunnel still looks connected: our clock may be ahead of the cluster's, or
             // KillWait may be running the job a little past --time.
             const now = Date.now();
             if (session.status !== 'stopping' && isWallTimeExpired(session, now)
@@ -116,30 +116,30 @@ export class SessionMonitor {
                 return;
             }
 
-            // Job running but not yet up: drive bring-up over the tunnel rather than Slurm,
+            // Job running but not yet up: drive bring-up over the Dev Tunnel rather than Slurm,
             // cross-checking sacct only after PROBE_GIVEUP failures, so a running session
-            // never SSH-polls the login node.
+            // never SSH-polls the SSH host.
             if (session.status === 'preparing' && session.tunnelId && (session.connectionInfo?.apiPort ?? 0) > 0) {
                 await this.pingOrCrossCheck(session, () => this.prepareRemote(session));
                 return;
             }
 
-            if (session.connectionInfo?.apiTunnelId && isRelayLive(session.status)) {
+            if (session.connectionInfo?.apiTunnelId && isReachable(session.status)) {
                 // Pulling /metrics is the health check: success = alive + a live sample; PROBE_GIVEUP failures
-                // cross-check sacct for death. Transport follows the relay — devtunnel when it owns the tunnel, else srun.
+                // cross-check sacct for death. The sample comes over the Dev Tunnel when this window holds its client, else srun.
                 await this.pingOrCrossCheck(session, async () => {
                     try {
-                        const m = await this.pullMetrics(session);
+                        const m = await this.pullSample(session);
                         this.probeFailedCounts.delete(session.id);
                         // Samples go to the per-session metrics file; only write the record when a persisted field changes.
                         if (session.errorMessage) { session.errorMessage = ''; updateSession(session); }
-                        if (m.memBytes !== undefined) { appendMetric(session.id, { ...m, atMs: Date.now() }); }
+                        if (m.memBytes !== undefined) { appendSample(session.id, { ...m, atMs: Date.now() }); }
                         void this.refreshStats(session);
                     }
                     catch (err) {
-                        if (isRelayLive(session.status)) {
+                        if (isReachable(session.status)) {
                             const attempt = this.bumpProbeFails(session.id);
-                            this.warn(session, `healthcheck (metrics): failed (attempt ${attempt}/${PROBE_GIVEUP}): ${errMsg(err)}`);
+                            this.warn(session, `healthcheck (usage): failed (attempt ${attempt}/${PROBE_GIVEUP}): ${errMsg(err)}`);
                         }
                     }
                 });
@@ -149,23 +149,23 @@ export class SessionMonitor {
             const { status: slurmStatus, elapsedSec } = await getSlurmJobStatus(session);
             this.log(session, `healthcheck (Slurm): status=${slurmStatus}`);
 
-            // Anchor the wall-time countdown to Slurm's reported elapsed run-time, not the poll time.
+            // Anchor the walltime countdown to Slurm's reported elapsed run-time, not the poll time.
             if (slurmStatus === SlurmJobStatus.RUNNING && !session.startedAt) {
                 session.startedAt = Date.now() - elapsedSec * 1000;
                 updateSession(session);
             }
 
             // Pre-running states (submitting/queued/unreachable): sacct drives the transition. RUNNING promotes to
-            // 'preparing', after which the tunnel-side branch above takes over — no more login-node polls.
+            // 'preparing', after which the Dev Tunnel branch above takes over — no more SSH host polls.
             if (slurmStatus === SlurmJobStatus.UNKNOWN) { this.warn(session, `job status=${slurmStatus}`); }
             this.applyTransition(session, computeStatusTransition(session.status, slurmStatus));
         }
         catch (error) {
-            // Login node unreachable (dead ControlMaster, Duo-needed under BatchMode) — not death; stay recoverable.
-            this.warn(session, `cluster unreachable (will retry): ${errMsg(error)}`);
+            // SSH host unreachable (dead ControlMaster, Duo-needed under BatchMode) — not death; stay recoverable.
+            this.warn(session, `SSH host unreachable (will retry): ${errMsg(error)}`);
             const next = unreachableStatus(session.status);
             if (next && session.status !== next) {
-                setStatus(session, next, `Cluster unreachable: ${errMsg(error)}`);
+                setStatus(session, next, `SSH host unreachable: ${errMsg(error)}`);
             }
         }
         finally {
@@ -173,10 +173,10 @@ export class SessionMonitor {
         }
     }
 
-    private pullMetrics(session: SlurmSession): Promise<Metric> {
-        if (!isTunnelClientConnected(session.id)) { return getMetricsViaSrun(session); }
+    private pullSample(session: SlurmSession): Promise<Sample> {
+        if (!isTunnelClientConnected(session.id)) { return getSampleViaSrun(session); }
         const { baseUrl, headers } = linkspanEndpoint(session);
-        return getMetrics(baseUrl, headers);
+        return getSample(baseUrl, headers);
     }
 
     // Throttled sacct refresh, fire-and-forget from the health path (sacctStats swallows its own errors).
@@ -218,20 +218,20 @@ export class SessionMonitor {
 }
 
 export async function prepareLaunch(session: SlurmSession): Promise<void> {
-    // Fresh connection info with this run's API port pinned before ensureDevTunnel: that call is what puts the port
-    // on the tunnel, and the job's devtunnel host has to find it already there.
-    // Trade-off: random high port; ~1/12000 collision on a shared compute node (linkspan log.Fatals if taken, session then fails) — probe a free port on the node if it ever bites.
+    // Fresh connection info with this run's control port pinned before ensureDevTunnel: that call is what puts the port
+    // on the Dev Tunnel, and the job's Dev Tunnel host has to find it already there.
+    // Trade-off: random high port; ~1/12000 collision on a shared compute node (Linkspan log.Fatals if taken, session then fails) — probe a free port on the node if it ever bites.
     session.connectionInfo = { sshPort: 0, sshTunnelId: '', region: '', apiPort: 20000 + Math.floor(Math.random() * 12000) };
     resetLive(session.id); // clear the prior run's live samples + stats, keep the run history
 
-    // Fresh launch: drop the prior run's tunnel so its ports don't accumulate toward Microsoft's PortsPerTunnel (10) cap.
-    await removeDevTunnel(session);
+    // Fresh launch: drop the prior run's Dev Tunnel so its ports don't accumulate toward Microsoft's PortsPerTunnel (10) cap.
+    await deleteDevTunnel(session);
 
     let hostToken: string;
     try { hostToken = await ensureDevTunnel(session); }
     catch (err) { throw new Error(`Failed to create Dev Tunnel: ${errMsg(err)}`); }
 
-    try { session.batchScript = buildSlurmScript(session, hostToken); }
+    try { session.jobScript = buildSlurmScript(session, hostToken); }
     catch (err) { throw new Error(`Failed to generate Slurm script: ${errMsg(err)}`); }
 
     session.errorMessage = '';
@@ -281,7 +281,7 @@ export async function stopSession(session: SlurmSession, monitor: SessionMonitor
             await disconnectSessionFromTunnel(session);
         }
         catch (err) {
-            logger.error(`Session ${session.name}: Failed to disconnect from tunnel: ${err}`);
+            logger.error(`Session ${session.name}: Failed to disconnect from its Dev Tunnel: ${err}`);
         }
     }
     else {

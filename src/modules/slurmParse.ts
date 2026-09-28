@@ -2,7 +2,7 @@ import { GresInfo, Stats, SlurmJobStatus, SlurmPartitionInfo, SlurmSession } fro
 
 // Pure Slurm text helpers (no SSH/vscode), so they unit-test in isolation. See slurmParse.test.ts.
 
-// A Slurm account is a bare token; a blank or a sentinel like "(No Allocation)" yields '' (no --account).
+// A Slurm account is a bare token; a blank or a sentinel like "(no Slurm account)" yields '' (no --account).
 export const slurmAccount = (raw: string | undefined): string => (raw ?? '').trim().match(/^[\w.-]+$/)?.[0] ?? '';
 
 // Distinct accounts from `sacctmgr show associations ... format=Account -P`; it prints one
@@ -40,12 +40,12 @@ export function buildSlurmScript(session: SlurmSession, hostToken: string): stri
         `exec > "$LOG_DIR/linkspan-session-$SLURM_JOB_ID.out" 2> "$LOG_DIR/linkspan-session-$SLURM_JOB_ID.err"`,
         ``,
         `# The compute node has no logind, so the inherited /run/user/$UID (XDG_RUNTIME_DIR) is absent there;`,
-        `# unset it (and TMPDIR) so the VS Code server linkspan launches falls back to its node-local /tmp default.`,
+        `# unset it (and TMPDIR) so the VS Code server Linkspan launches falls back to its node-local /tmp default.`,
         `unset XDG_RUNTIME_DIR TMPDIR`,
         ``,
-        `# --- Run linkspan ---`,
+        `# --- Run Linkspan ---`,
         `LINKSPAN_BIN="$HOME/.cybershuttle/bin/linkspan"`,
-        // Bind the port csbridge pinned at launch so it knows the tunnel URL up front (no log/port discovery).
+        // Bind the port csbridge pinned at launch so it knows the Dev Tunnel URL up front (no log/port discovery).
         `LINKSPAN_TUNNEL_HOST_TOKEN='${hostToken}' "$LINKSPAN_BIN" --port ${session.connectionInfo?.apiPort ?? 0} --tunnel-enable --tunnel-mode devtunnel --tunnel-devtunnel-args '--id ${session.tunnelId ?? ''} --cluster ${session.tunnelCluster ?? ''}'`,
     ];
 
@@ -74,10 +74,10 @@ export function parseSacctStatus(output: string): { status: SlurmJobStatus; elap
     return { status: classifySchedulerState(state), elapsedSec };
 }
 
-// The scheduler's vocabulary in one place, mirroring cs-control's own table. An
+// The scheduler's vocabulary in one place, mirroring cs-plane's own table. An
 // absent state reads as UNKNOWN, which the monitor holds rather than treating as
-// job death, so an unlisted state strands a session until its wall time.
-// SUSPENDED and STOPPED still hold an allocation, so they read as QUEUED.
+// job death, so an unlisted state strands a session until its walltime.
+// SUSPENDED and STOPPED still hold their nodes, so they read as QUEUED.
 const SCHEDULER_STATES: Readonly<Record<string, SlurmJobStatus>> = {
     PENDING: SlurmJobStatus.QUEUED,
     REQUEUED: SlurmJobStatus.QUEUED,

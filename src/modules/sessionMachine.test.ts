@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatusTransition, isTerminal, isCloseable, isStoppable, isRelayLive, unreachableStatus, isReattachable, isWallTimeExpired } from './sessionMachine';
+import { computeStatusTransition, isTerminal, isDeletable, isStoppable, isReachable, unreachableStatus, isReattachable, isWallTimeExpired } from './sessionMachine';
 import { SlurmJobStatus } from '../models';
 
 test('status-category predicates classify each status correctly', () => {
     assert.deepEqual((['stopped', 'failed'] as const).map(isTerminal), [true, true]);
     assert.equal(isTerminal('queued'), false);
 
-    assert.equal(isCloseable('not_started'), true); // terminal + not_started
-    assert.equal(isCloseable('stopped'), true);
-    assert.equal(isCloseable('queued'), false);
+    assert.equal(isDeletable('not_started'), true); // terminal + not_started
+    assert.equal(isDeletable('stopped'), true);
+    assert.equal(isDeletable('queued'), false);
 
     assert.equal(isStoppable('connected'), true); // can stop a live session
     assert.equal(isStoppable('queued'), true);
@@ -17,21 +17,21 @@ test('status-category predicates classify each status correctly', () => {
     assert.equal(isStoppable('not_started'), false); // nothing to stop yet
     assert.equal(isStoppable('stopping'), false); // a stop is already in flight
 
-    assert.deepEqual((['ready_to_connect', 'connecting', 'connected'] as const).map(isRelayLive), [true, true, true]);
-    assert.equal(isRelayLive('preparing'), false);
+    assert.deepEqual((['ready_to_connect', 'connecting', 'connected'] as const).map(isReachable), [true, true, true]);
+    assert.equal(isReachable('preparing'), false);
 
-    // 'unreachable' is a recoverable, non-terminal, stoppable state — not relay-live, not removable.
+    // 'unreachable' is a recoverable, non-terminal, stoppable state — not reachable, not deletable.
     assert.equal(isTerminal('unreachable'), false);
     assert.equal(isStoppable('unreachable'), true);
-    assert.equal(isRelayLive('unreachable'), false);
-    assert.equal(isCloseable('unreachable'), false); // must Stop, not Remove
+    assert.equal(isReachable('unreachable'), false);
+    assert.equal(isDeletable('unreachable'), false); // must Stop, not Delete
 });
 
-test('unreachableStatus downgrades only monitorable-offline statuses; never a relay-live one', () => {
+test('unreachableStatus downgrades only monitorable-offline statuses; never a reachable one', () => {
     for (const s of ['submitting', 'queued', 'preparing', 'unreachable'] as const) {
         assert.equal(unreachableStatus(s), 'unreachable', `${s} should become unreachable`);
     }
-    // Never downgrade a relay-live session for a monitoring-plane blip.
+    // Never downgrade a reachable session for a monitoring-plane blip.
     for (const s of ['ready_to_connect', 'connecting', 'connected'] as const) {
         assert.equal(unreachableStatus(s), undefined, `${s} must not downgrade`);
     }
@@ -59,7 +59,7 @@ test('isWallTimeExpired: a started session past startedAt+wallTime is expired; o
     assert.equal(isWallTimeExpired({ wallTime: wall, startedAt: 1_000 }, 1_000 + 1_799_000), false); // a second short
     // Not yet running (no startedAt anchor): never expired — a pending/queued job has no deadline to enforce.
     assert.equal(isWallTimeExpired({ wallTime: wall, startedAt: undefined }, 9_999_999_999), false);
-    // No/zero wall time configured: nothing to expire against.
+    // No/zero walltime configured: nothing to expire against.
     assert.equal(isWallTimeExpired({ wallTime: '', startedAt: 1_000 }, 9_999_999_999), false);
     assert.equal(isWallTimeExpired({ wallTime: '00:00:00', startedAt: 1_000 }, 9_999_999_999), false);
 });
@@ -81,7 +81,7 @@ test('RUNNING does NOT pull a connect-phase session back to preparing', () => {
 });
 
 test('terminal Slurm states stop monitoring with the right status', () => {
-    // COMPLETED collapses into 'stopped', same as wall-time/cancellation — the job is gone but the session is restartable.
+    // COMPLETED collapses into 'stopped', same as walltime/cancellation — the job is gone but the session can be started again.
     assert.deepEqual(computeStatusTransition('preparing', SlurmJobStatus.COMPLETED), { next: 'stopped', stopMonitoring: true });
     assert.deepEqual(computeStatusTransition('preparing', SlurmJobStatus.CANCELLED), { next: 'stopped', stopMonitoring: true });
     assert.deepEqual(computeStatusTransition('connected', SlurmJobStatus.TIMEOUT), { next: 'stopped', stopMonitoring: true });

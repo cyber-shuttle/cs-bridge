@@ -11,8 +11,8 @@ export const SYSTEM_SSH_CONFIG_PATH = process.platform === 'win32'
     ? path.join(process.env.ALLUSERSPROFILE || process.env.PROGRAMDATA || 'C:\\ProgramData', 'ssh', 'ssh_config')
     : '/etc/ssh/ssh_config';
 
-// SSH client directives that let a session ride out brief relay stalls, but give up within ~45s (15×3) on a
-// dead-ended link so a replacement ssh -D doesn't overlap the old one and re-saturate the relay.
+// SSH client directives that let a session ride out brief Dev Tunnel stalls, but give up within ~45s (15×3) on a
+// dead-ended connection so a replacement ssh -D doesn't overlap the old one and re-saturate the Dev Tunnel.
 export const SSH_RESILIENCE_OPTIONS: ReadonlyArray<readonly [string, string]> = [
     ['ServerAliveInterval', '15'],
     ['ServerAliveCountMax', '3'],
@@ -22,19 +22,19 @@ export const SSH_RESILIENCE_OPTIONS: ReadonlyArray<readonly [string, string]> = 
     ['IPQoS', 'cs0'],
 ];
 
-// The per-session Host alias, which is also the vscode-remote authority suffix VS Code shows verbatim as the remote
-// window's "[SSH: …]" label — so it reads like the target: <cluster>-<last 6 of the session name> (e.g. delta-493119).
-// Never equals a bare cluster name, so it can't shadow the real login host used for Slurm; unique per session in
+// The per-session SSH host's alias, which is also the vscode-remote authority VS Code shows verbatim as the remote
+// window's "[SSH: …]" label — so it reads like the target: <alias>-<last 6 of the session name> (e.g. delta-493119).
+// Never equals a bare SSH host alias, so it can't shadow the real SSH host used for Slurm; unique per session in
 // practice (the name is a creation timestamp). The same function builds the ssh_config Host line, the authority, and
 // the reverse lookup, so all three stay in lockstep.
-export const csHostAlias = (cluster: string, sessionName: string): string =>
-    `${cluster}-${sessionName.slice(-6)}`;
+export const csHostAlias = (alias: string, sessionName: string): string =>
+    `${alias}-${sessionName.slice(-6)}`;
 
-// Per-session block appended to ~/.cybershuttle/ssh_config (4-space indent matches removeSshConfigEntry).
-// hostAlias is always csHostAlias() output.
+// Per-session block appended to ~/.cybershuttle/ssh_config (4-space indent matches deleteSshConfigEntry).
+// alias is always csHostAlias() output.
 export function buildSshConfigBlock(
     sessionId: string,
-    hostAlias: string,
+    alias: string,
     hostname: string,
     port: number,
     user: string,
@@ -43,7 +43,7 @@ export function buildSshConfigBlock(
     return [
         ``,
         `# CS-Bridge auto-generated for session ${sessionId}`,
-        `Host ${hostAlias}`,
+        `Host ${alias}`,
         `    HostName ${hostname}`,
         `    Port ${port}`,
         `    User ${user}`,
@@ -91,7 +91,7 @@ export function parseHostsFromConfigText(text: string): SshHost[] {
         const raw = Array.isArray(section.value) ? section.value[0] : section.value;
         const alias = typeof raw === 'string' ? raw.trim().split(/\s+/)[0] : '';
         if (!alias || alias.includes('*') || alias.includes('?')) { continue; }
-        const host: SshHost = { name: alias };
+        const host: SshHost = { alias };
         const extraDirectives: string[] = [];
         for (const child of section.config) {
             if (child.type !== LineType.DIRECTIVE) { continue; }
@@ -113,18 +113,18 @@ export function addHostToConfigText(text: string, entry: SshConfigEntry): string
     return config.toString();
 }
 
-export function removeHostFromConfigText(text: string, name: string): string {
+export function deleteHostFromConfigText(text: string, alias: string): string {
     const config = parse(text);
-    config.remove({ Host: name });
+    config.remove({ Host: alias });
     return config.toString();
 }
 
 export function mergeHostsByPriority(...lists: SshHost[][]): SshHost[] {
-    const byName = new Map<string, SshHost>();
+    const byAlias = new Map<string, SshHost>();
     for (const host of lists.flat()) {
-        if (!byName.has(host.name)) { byName.set(host.name, host); } // keep-first: earlier lists win
+        if (!byAlias.has(host.alias)) { byAlias.set(host.alias, host); } // keep-first: earlier lists win
     }
-    return [...byName.values()];
+    return [...byAlias.values()];
 }
 
 export function addHostToConfigFile(filePath: string, entry: SshConfigEntry): void {
@@ -132,6 +132,6 @@ export function addHostToConfigFile(filePath: string, entry: SshConfigEntry): vo
     lockedUpdateTextFile(filePath, text => addHostToConfigText(text ?? '', entry), 0o600);
 }
 
-export function removeHostFromConfigFile(filePath: string, name: string): void {
-    lockedUpdateTextFile(filePath, text => (text === undefined ? null : removeHostFromConfigText(text, name)), 0o600);
+export function deleteHostFromConfigFile(filePath: string, alias: string): void {
+    lockedUpdateTextFile(filePath, text => (text === undefined ? null : deleteHostFromConfigText(text, alias)), 0o600);
 }
