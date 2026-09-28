@@ -39,6 +39,10 @@ export default class AWSClient {
     protected regions: string[] = [];
     protected types: string[] = [];
     protected images: string[][] = [["ami-0001e312b82212f65", "Amazon Linux"], ["ami-025d99823a4caad37", "Ubunti 24.04 LTS"]];
+    private secretKey: string = ""
+    private accessKey: string = ""
+    private sessionToken: string = ""
+
     private clients: Record<string, EC2Client> = {};
 
 
@@ -68,7 +72,13 @@ export default class AWSClient {
         return this.defaultClient !== null
     }
 
+    private getRegionKeyName(region: string): string {
+        return `${this.KEY_NAME}-${region}`
+    }
 
+    private getRegionKeyPath(region: string): string {
+        return `${this.PRIVATE_KEY_PATH}-${region}`
+    }
 
     public async initEC2Client(region: string): Promise<void> {
 
@@ -116,8 +126,25 @@ export default class AWSClient {
         this.defaultClient = client
         this.clients[region] = client
     }
+
+    protected getClientForRegion(region: string): EC2Client {
+        if (region in this.clients) {
+            return this.clients[region]
+        } else {
+            return new EC2Client({
+                region: region,
+                credentials: {
+                    accessKeyId: this.accessKey,
+                    secretAccessKey: this.secretKey,
+                    sessionToken: this.sessionToken,
+                },
+            });
+        }
+    }
+
     // Entire workflow for launching EC2 instance
-    public async launchEC2Instance(image: string, type: string): Promise<void> {
+    public async launchEC2Instance(image: string, type: string, region: string): Promise<void> {
+
 
         vscode.window.withProgress(
             {
@@ -129,24 +156,24 @@ export default class AWSClient {
             async (progress) => {
                 try {
                     progress.report({ message: "Generating SSH Key Pair..." });
-                    await this.generateSSHKeyPair()
+                    await this.generateSSHKeyPair(region)
                     await sleep(2500)
                     progress.report({ message: "Check Security Groups" });
-                    const securityGroupID = await this.getSSHSecurityGroup()
+                    const securityGroupID = await this.getSSHSecurityGroup(region)
                     await sleep(2500)
                     if (securityGroupID === "") {
 
                         progress.report({ message: "Did not find existing security group for CS-Bridge" });
                         await sleep(2500)
                         progress.report({ message: "Creating new Security Group" });
-                        await this.creatSSHSecurityGroup()
+                        await this.creatSSHSecurityGroup(region)
                         await sleep(2500)
                     } else {
                         progress.report({ message: "Found existing CS-Bridge Security Group" });
                         await sleep(2500)
                     }
                     progress.report({ message: "Creating Instnace..." });
-                    this.createInstance(image, type, this.KEY_NAME, securityGroupID);
+                    this.createInstance(image, type, this.getRegionKeyName(region), securityGroupID, region);
                     sleep(3000);
                     progress.report({ message: "Instance is running." });
                 } catch (error: any) {
@@ -158,14 +185,12 @@ export default class AWSClient {
 
     // Create EC2 Instance
     // add options for image, and instance type later
-    protected async createInstance(imageID: string, instanceType: string, keyName: string, securityGroupID: string): Promise<void> {
-        if (this.defaultClient === null) {
-            throw new Error("EC2 Client is not initialized")
-        }
+    protected async createInstance(imageID: string, instanceType: string, keyName: string, securityGroupID: string, region: string): Promise<void> {
+        const client = this.getClientForRegion(region)
         const instanceID = crypto.randomUUID().slice(0, 5)
         try {
 
-            await this.defaultClient.send(new RunInstancesCommand({
+            await client.send(new RunInstancesCommand({
                 ImageId: imageID,
                 InstanceType: instanceType as _InstanceType,
                 KeyName: keyName,
@@ -188,21 +213,24 @@ export default class AWSClient {
 
     }
 
-    private async generateSSHKeyPair(): Promise<void> {
+    private async generateSSHKeyPair(region: string): Promise<void> {
+        const keyName = this.getRegionKeyName(region)
+        const keyPath = this.getRegionKeyPath(region)
+        const client = this.getClientForRegion(region)
         try {
-            if (!existsSync(this.PRIVATE_KEY_PATH)) {
-                this.logger.info(`Creating key pair: ${this.KEY_NAME}...`);
-                const keyPairResponse = await this.defaultClient?.send(
+            if (!existsSync(keyPath)) {
+                this.logger.info(`Creating key pair: ${keyName}...`);
+                const keyPairResponse = await client.send(
                     new CreateKeyPairCommand({
-                        KeyName: this.KEY_NAME,
+                        KeyName: keyName,
                         KeyType: "ed25519",
                     }),
                 );
 
                 const privateKey = keyPairResponse?.KeyMaterial;
                 if (privateKey !== undefined) {
-                    writeFileSync(this.PRIVATE_KEY_PATH, privateKey, { mode: 0o600 });
-                    this.logger.info(`Private key safely written to ${this.PRIVATE_KEY_PATH}`);
+                    writeFileSync(keyPath, privateKey, { mode: 0o600 });
+                    this.logger.info(`Private key safely written to ${keyPath}`);
                 } else {
                     this.logger.info("Error: Response from key pair generation is undefined");
                 }
@@ -220,16 +248,14 @@ export default class AWSClient {
         }
     }
 
-    public async remmoveKeyPair(keyName: string): Promise<void> {
-        if (this.defaultClient === null) {
-            throw new Error("EC2 Client is not initialized")
-        }
+    public async remmoveKeyPair(keyName: string, region: string): Promise<void> {
+        const client = this.getClientForRegion(region)
         try {
             this.logger.info("Removing Key Pair from AWS");
             const command = new DeleteKeyPairCommand({ KeyName: keyName });
-            await this.defaultClient?.send(command);
+            await client.send(command);
             this.logger.info("Removing local copy of key");
-            unlinkSync(this.PRIVATE_KEY_PATH);
+            unlinkSync(this.getRegionKeyPath(region));
         } catch (error) {
             if (error instanceof EC2ServiceException) {
                 this.logger.error(`AWS Error [${error.name}]: ${error.message}`);
@@ -239,11 +265,8 @@ export default class AWSClient {
         }
     }
     // Get Existing Security For CS-Brige
-    public async getSSHSecurityGroup(): Promise<string> {
-        if (this.defaultClient === null) {
-
-            throw new Error("EC2 Client is not initialized")
-        }
+    public async getSSHSecurityGroup(region: string): Promise<string> {
+        const client = this.getClientForRegion(region)
         const params = {
             Filters: [
                 {
@@ -255,7 +278,7 @@ export default class AWSClient {
 
         try {
             const command = new DescribeSecurityGroupsCommand(params);
-            const data = await this.defaultClient.send(command);
+            const data = await client.send(command);
 
             const securityGroups = data.SecurityGroups;
             if (this.securityGroupName.length === 0) {
@@ -273,17 +296,16 @@ export default class AWSClient {
 
     }
     // Create Security For SSH Access
-    public async creatSSHSecurityGroup(): Promise<string> {
-        if (this.defaultClient === null) {
-            throw new Error("EC2 Client is not initialized")
-        }
+    public async creatSSHSecurityGroup(region: string): Promise<string> {
+        const client = this.getClientForRegion(region)
+
         try {
             const createCommand = new CreateSecurityGroupCommand({
                 GroupName: this.securityGroupName,
                 Description: "Security group - CS-Bridge SSH access",
             });
 
-            const createResponse = await this.defaultClient.send(createCommand);
+            const createResponse = await client.send(createCommand);
             const groupID = createResponse.GroupId;
             this.logger.info(`Created Security Group with ID: ${groupID}`);
 
@@ -304,7 +326,7 @@ export default class AWSClient {
                 ]
             });
 
-            await this.defaultClient.send(sshGroupCommand);
+            await client.send(sshGroupCommand);
             this.logger.info("Inbound SSH rule attached to the new group.");
             return groupID ?? ""
 
@@ -315,10 +337,8 @@ export default class AWSClient {
         }
     }
 
-    public async doInstanceActions(action: InstanceActions, instanceID: string, instanceName: string): Promise<void> {
-        if (this.defaultClient === null) {
-            throw new Error("EC2 Client is not initialized")
-        }
+    public async doInstanceActions(action: InstanceActions, instanceID: string, instanceName: string, region: string): Promise<void> {
+        const client = this.getClientForRegion(region)
 
         let command = null;
         let msg = "no action"
@@ -341,7 +361,7 @@ export default class AWSClient {
         }
 
         try {
-            await this.defaultClient.send(command);
+            await client.send(command);
 
             switch (action) {
                 case InstanceActions.Stop:
@@ -371,7 +391,7 @@ export default class AWSClient {
         }
     }
 
-    public async removeInstance(instanceID: string, instanceName: string): Promise<void> {
+    public async removeInstance(instanceID: string, instanceName: string, region: string): Promise<void> {
         this.logger.info("Start Removing Instance")
         const confirmed = await confirmModal('Remove Instnace?', 'Remove',
             'This stops and terminates the instance')
@@ -379,7 +399,7 @@ export default class AWSClient {
             this.logger.info("Cancel remove")
             return;
         }
-        await this.doInstanceActions(InstanceActions.Remove, instanceID, instanceName)
+        await this.doInstanceActions(InstanceActions.Remove, instanceID, instanceName, region)
     }
 
     public getInstances(): CloudInstanceInfo[] {
@@ -388,15 +408,8 @@ export default class AWSClient {
 
 
     public async pollInstances(): Promise<void> {
-        if (this.defaultClient === null) {
-            throw new Error("EC2 Client is not initialized")
-        }
         const instances: CloudInstanceInfo[] = [];
 
-        const config = {
-            client: this.defaultClient,
-            pageSize: 15,
-        };
         const params = {
             Filters: [
                 {
@@ -410,52 +423,61 @@ export default class AWSClient {
             ]
         }
         this.logger.info("Fetching instances ....")
-        try {
-            const paginator = paginateDescribeInstances(config, params);
 
-            for await (const page of paginator) {
-                if (page.Reservations) {
-                    for (const reservation of page.Reservations) {
-                        if (reservation.Instances) {
-                            reservation.Instances.map(instance => {
-                                const inst: CloudInstanceInfo = {
-                                    instanceID: instance.InstanceId ?? "",
-                                    instanceType: instance.InstanceType ?? "",
-                                    name: instance.Tags?.find(value => value.Key == "Name")?.Value ?? "",
-                                    state: instance.State?.Name ?? "",
-                                    publicIp: instance.PublicIpAddress ?? "",
-                                    vendor: "aws"
-                                }
-                                instances.push(inst)
+        for (const [region, client] of Object.entries(this.clients)) {
 
-                            })
+            this.logger.info(`For Region ${region}`)
+            const config = {
+                client: client,
+                pageSize: 15,
+            };
+            try {
+                const paginator = paginateDescribeInstances(config, params);
+
+                for await (const page of paginator) {
+                    if (page.Reservations) {
+                        for (const reservation of page.Reservations) {
+                            if (reservation.Instances) {
+                                reservation.Instances.map(instance => {
+                                    const inst: CloudInstanceInfo = {
+                                        instanceID: instance.InstanceId ?? "",
+                                        instanceType: instance.InstanceType ?? "",
+                                        name: instance.Tags?.find(value => value.Key == "Name")?.Value ?? "",
+                                        state: instance.State?.Name ?? "",
+                                        publicIp: instance.PublicIpAddress ?? "",
+                                        vendor: "aws",
+                                        region: region
+                                    }
+                                    instances.push(inst)
+
+                                })
+                            }
                         }
                     }
                 }
+
+                this.instances = instances
+            } catch (error) {
+                this.logger.error("Get instances failed:", error);
             }
 
-            this.instances = instances
-            this.logger.info("Cloud SSH Hosts: ", this.hosts)
-            this.logger.info("Cloud Instances: ", this.instances)
-        } catch (error) {
-            this.logger.error("Get instances failed:", error);
+
         }
-
     }
 
-    public openTerminal(ip: string): void {
+    public openTerminal(ip: string, region: string): void {
         const hostString = `ec2-user@${ip}`
-        vscode.window.createTerminal({ name: ip, shellPath: 'ssh', shellArgs: [...SshManager.getInstance().buildControlMasterArgs(ip), "-i", this.PRIVATE_KEY_PATH, hostString] }).show();
+        vscode.window.createTerminal({ name: ip, shellPath: 'ssh', shellArgs: [...SshManager.getInstance().buildControlMasterArgs(ip), "-i", this.getRegionKeyPath(region), hostString] }).show();
 
     }
 
-    public async openRemoteSession(id: string, name: string, ip: string): Promise<void> {
+    public async openRemoteSession(id: string, name: string, ip: string, region: string): Promise<void> {
         this.hosts = SshManager.getInstance().getCSHosts()
         this.logger.info("Checking SSH Config")
         if (this.hosts.find(host => host.hostname === ip)) {
             this.logger.info("Found existing entry")
         } else {
-            await addSshConfigEntryAWS(id, name, ip, 22, this.PRIVATE_KEY_PATH)
+            await addSshConfigEntryAWS(id, name, ip, 22, this.getRegionKeyPath(region))
             this.hosts = SshManager.getInstance().getCSHosts()
         }
 
@@ -545,7 +567,5 @@ export default class AWSClient {
             region: this.regions.map(region => [region, region])
         }
     }
-
-
 
 }

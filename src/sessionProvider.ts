@@ -39,7 +39,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private sharedReady = false;
     private awsClient = new AWSClient()
     private cloudPollInterval: NodeJS.Timeout | null = null;
-    private pollIntervalTime = 10000
+    private pollIntervalTime = 20000
     private cloudForm: CloudFormState = null
     private cloudFormOptions: Record<string, CloudFormOptions> = {
         "aws": {
@@ -128,36 +128,36 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 this.pushState()
             }, this.pollIntervalTime);
         },
-        launchCloudInstance:async (_data) => {
+        launchCloudInstance: async (_data) => {
             const { cloudLaunchParams } = _data
             if (cloudLaunchParams?.vendor === "AWS") {
-                await this.awsClient.launchEC2Instance(cloudLaunchParams.image, cloudLaunchParams.type)
+                await this.awsClient.launchEC2Instance(cloudLaunchParams.image, cloudLaunchParams.type, cloudLaunchParams.region)
                 this.cloudForm = null
                 this.pushState()
 
             }
         },
         stopCloudInstance: (_data) => {
-            if (_data.instanceId) {
-                this.awsClient.doInstanceActions(InstanceActions.Stop, _data.instanceId, "")
+            if (_data.instanceId && _data.region) {
+                this.awsClient.doInstanceActions(InstanceActions.Stop, _data.instanceId, "", _data.region)
             }
         },
         restartCloudInstance: (_data) => {
-            if (_data.instanceId) {
-                this.awsClient.doInstanceActions(InstanceActions.Start, _data.instanceId, "")
+            if (_data.instanceId && _data.region) {
+                this.awsClient.doInstanceActions(InstanceActions.Start, _data.instanceId, "", _data.region)
             }
         },
         removeCloudInstance: (_data,) => {
-            if (_data.instanceId && _data.instanceName) {
-                this.awsClient.removeInstance(_data.instanceId, _data.instanceName)
+            if (_data.instanceId && _data.instanceName && _data.region) {
+                this.awsClient.removeInstance(_data.instanceId, _data.instanceName, _data.region)
             }
         },
-        sshIntoCloudInstance: (_data) => this.awsClient.openTerminal(_data.instanceIp ?? ""),
+        sshIntoCloudInstance: (_data) => this.awsClient.openTerminal(_data.instanceIp ?? "", _data.region ?? ""),
         startRemoteForloudInstance: async (_data) => {
-            if (_data.instanceId && _data.instanceName && _data.instanceIp) {
+            if (_data.instanceId && _data.instanceName && _data.instanceIp && _data.region) {
 
                 this.logger.info("Launching Remote Session")
-                await this.awsClient.openRemoteSession(_data.instanceId, _data.instanceName, _data.instanceIp)
+                await this.awsClient.openRemoteSession(_data.instanceId, _data.instanceName, _data.instanceIp, _data.region)
             }
         },
 

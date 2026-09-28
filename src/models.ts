@@ -163,6 +163,7 @@ export interface SessionsState {
     alert: { title: string; message: string } | null;
     isCloud: boolean
     cloudSessions: CloudInstanceInfo[]
+    // hasActiveSessions: boolean
     cloudForm: CloudFormState
     cloudFormOptions: CloudFormOptions
 }
@@ -183,6 +184,7 @@ export interface WebviewMessage {
     instanceIp?: string;
     instanceId?: string;
     instanceName?: string;
+    region?: string;
     cloudLaunchParams?: CloudLaunchParams
 }
 
@@ -193,6 +195,7 @@ export interface CloudInstanceInfo {
     instanceType: string;
     publicIp: string;
     vendor: string
+    region: string
 }
 
 export interface CloudProviderState {
