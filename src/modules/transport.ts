@@ -10,7 +10,6 @@ import { Tunnels, deleteDevTunnel, devTunnels, ensureDevTunnel, getMicrosoftAcco
 import { LinkManagementClient, LinkRelayClient } from './linkTunnel';
 
 export interface Transport extends Tunnels {
-    readonly linkspanMinimum?: string;
     signedIn(): Promise<boolean>; // without prompting
     hasTunnel(session: SlurmSession): boolean;
     prepare(session: SlurmSession): Promise<LinkspanLaunch>; // before sbatch: reserve the run's tunnel
@@ -32,7 +31,6 @@ const devTunnel = {
 
 class Link implements Transport {
     label = 'cs-plane link';
-    linkspanMinimum = '0.22.0'; // the first with --tunnel-mode link
 
     constructor(private readonly plane: Plane) { }
 

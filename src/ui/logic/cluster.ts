@@ -34,9 +34,9 @@ export function memoryOptions(partition: SlurmPartitionInfo | undefined): string
     return (valid.length ? valid : [4]).map(g => `${g} GB`);
 }
 
-export function gpuOptions(partition: SlurmPartitionInfo | undefined, tab: ResourceTab): GpuOptions {
+export function gpuOptions(partition: SlurmPartitionInfo | undefined, tab: ResourceTab, type = ''): GpuOptions {
     if (tab !== 'gpu' || !partition || !hasGres(partition)) { return { counts: [], types: [] }; }
-    const max = partition.gres[0].count;
+    const max = (partition.gres.find(g => g.name === type) ?? partition.gres[0]).count;
     return {
         counts: Array.from({ length: max }, (_, i) => i + 1),
         types: partition.gres.map(g => g.name),

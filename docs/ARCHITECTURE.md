@@ -34,28 +34,27 @@ Local VS Code                              Remote HPC cluster
    CPUs, memory, GPUs and walltime. Partitions, Slurm accounts and limits come from `sinfo` and `sacctmgr` over SSH
    (`slurmSupport.ts`).
 2. **Dev Tunnel first.** `prepareLaunch` pins a random control port, creates the Dev Tunnel, and mints a host
-   token for the job (`sessionSupport.ts`, `tunnelSupport.ts`). `buildSlurmScript` bakes the port, the token and
-   the Dev Tunnel id into the job script (`slurmParse.ts`).
+   token for the job (`sessionSupport.ts`, `tunnelSupport.ts`). `buildSlurmScript` bakes the port and the Dev Tunnel
+   id into the job script; the token travels in the sbatch environment (`slurmParse.ts`).
 3. **Slurm gate.** `checkSlurmAvailability` runs `sinfo` on the SSH host; a non-zero exit aborts the launch. Slurm is
    mandatory (`slurmLaunch.ts`).
-4. **Agent install.** If `~/.cybershuttle/bin/linkspan` is missing or older than 0.21.0, `installLinkspan`
-   fetches `linkspan_Linux_<arch>.tar.gz` from the Linkspan GitHub release, stages it, and moves it into place mode
-   `0700`. `uname -m` values `x86_64`, `aarch64` and `arm64` map to the two published assets
+4. **Agent install.** If `~/.cybershuttle/bin/linkspan` is missing, behind the latest release or below 0.22.0,
+   `installLinkspan` fetches `linkspan_Linux_<arch>.tar.gz` from the Linkspan GitHub release, stages it, and moves it
+   into place mode `0700`. `uname -m` values `x86_64`, `aarch64` and `arm64` map to the two published assets
    (`linkspan_Linux_x86_64.tar.gz`, `linkspan_Linux_arm64.tar.gz`); anything else is refused by name.
-5. **Submit.** The script is base64-piped into `sbatch`, so the host token never lands on the cluster filesystem.
-   The parsed job id is kept on the session record and the in-memory script is dropped (`slurmLaunch.ts`).
+5. **Submit.** The script is base64-piped into `sbatch`, and the host token rides `LINKSPAN_TUNNEL_HOST_TOKEN=… sbatch
+   --export=ALL`, so it never lands on the cluster filesystem. The parsed job id is kept on the session record and the
+   in-memory script is dropped (`slurmLaunch.ts`).
 6. **Poll.** `SessionMonitor` runs one `setInterval` per active session — no central loop. Before the job runs it
    polls `sacct` and applies `computeStatusTransition`; once it runs it pings Linkspan over the Dev Tunnel and
    falls back to a `sacct` cross-check only after repeated health failures (`sessionSupport.ts`, `sessionMachine.ts`).
-7. **Remote sshd.** `ensureRemoteSession` asks Linkspan to start an SSH server that accepts one public key, then
-   registers its port on the Dev Tunnel. The session reaches `ready_to_connect`. `createSshServer` is not idempotent,
-   so re-creation is guarded: an sshd Linkspan reports in a non-`failed` state is reused only while this machine
-   still holds that session's private key; either condition failing mints a new sshd and a new key pair. Skipping
-   the guard leaks compute-node daemons.
-8. **Connect.** `connectDevTunnel` composes the step: `connectSessionToTunnel` opens an in-process
-   `TunnelRelayTunnelClient` bound to `127.0.0.1:N` and returns that port, `addSshConfigEntry` writes the
-   per-session SSH host, and only on success does `openOrFocusWindow` open
-   `vscode-remote://ssh-remote+<alias>/…`.
+7. **Remote sshd.** `ensureRemoteSession` asks Linkspan for an SSH server that accepts the session's public key,
+   named by a `ref` derived from that key, so Linkspan answers a repeat with the server already running. The session
+   reaches `ready_to_connect`.
+8. **Connect.** `connectDevTunnel` composes the step: `connectSessionToTunnel` forwards the control port through an
+   in-process `TunnelRelayTunnelClient` and binds `127.0.0.1:N`, whose every connection rides Linkspan's
+   `/api/v1/forward/{sshPort}`, and returns that port; `addSshConfigEntry` writes the per-session SSH host, and only
+   on success does `openOrFocusWindow` open `vscode-remote://ssh-remote+<alias>/…`.
 9. **Attach.** VS Code's remote-SSH URI handler runs the OS `ssh` binary against that alias, installs VS Code
    Server, and attaches the window to the compute node. CS Bridge pins that alias's
    `remote.SSH.serverInstallPath` to node-local `/tmp/cs-vscode/<sessionId>`, keeping the server off the shared

@@ -97,7 +97,7 @@ export type ViewSession = SlurmSession & { isCurrent: boolean; windowAlive: bool
 export const SAMPLE_HISTORY_LEN = 20; // rolling live-sample window, also the sparkline slot count
 export const POLLING_INTERVAL_MS = 5000;
 
-// A resource sample from Linkspan's /metrics. atMs (when taken) is set once stored, for rate derivation.
+// A resource sample from Linkspan's /usage. atMs (when taken) is set once stored, for rate derivation.
 export interface Sample {
     memBytes?: number;
     cpuUsageUsec?: number;

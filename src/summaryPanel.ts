@@ -18,14 +18,13 @@ export async function enqueuePendingSummary(context: vscode.ExtensionContext, id
     await context.globalState.update(PENDING_KEY, queue.slice(-MAX_PENDING));
 }
 
-export async function consumePendingSummary(context: vscode.ExtensionContext, extensionUri: vscode.Uri): Promise<SlurmSession | undefined> {
+export async function consumePendingSummary(context: vscode.ExtensionContext, extensionUri: vscode.Uri): Promise<void> {
     const queue = context.globalState.get<string[]>(PENDING_KEY, []);
     if (queue.length === 0) { return undefined; }
     const [id, ...rest] = queue;
     await context.globalState.update(PENDING_KEY, rest);
     const session = getSession(id);
     if (session) { openSummaryPanel(extensionUri, session); }
-    return session;
 }
 
 export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession, runSnapshot?: RunSnapshot): void {

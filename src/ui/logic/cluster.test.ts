@@ -24,6 +24,12 @@ test('memoryOptions caps GB steps at the partition memory, falls back when unkno
     assert.deepEqual(memoryOptions(gpuPart), ['4 GB', '8 GB', '16 GB', '32 GB', '64 GB', '128 GB']); // 0 → fallback
 });
 
+test('gpuOptions caps the count at what the chosen type offers', () => {
+    const mixed: SlurmPartitionInfo = { name: 'mix', cpuCount: 16, memory: '0', gres: [{ name: 'gpu:a100', count: 4 }, { name: 'gpu:v100', count: 2 }] };
+    assert.deepEqual(gpuOptions(mixed, 'gpu', 'gpu:v100').counts, [1, 2]);
+    assert.deepEqual(gpuOptions(mixed, 'gpu').counts, [1, 2, 3, 4]);
+});
+
 test('gpuOptions only yields counts/types on the gpu tab', () => {
     assert.deepEqual(gpuOptions(gpuPart, 'gpu'), { counts: [1, 2], types: ['a100'] });
     assert.deepEqual(gpuOptions(gpuPart, 'cpu'), { counts: [], types: [] });

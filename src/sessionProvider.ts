@@ -76,8 +76,9 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     public async reattachLiveSessions(): Promise<void> {
         if (this.remoteSessionId) { return; }
         for (const s of getAllSessions()) {
-            // Skip a 'stopping' session: a remote Stop handed it off for the summary consumer to finish; monitoring would fight it.
-            if (s.status !== 'stopping' && s.jobId && !isTerminal(s.status)) { this.monitor.startMonitoring(s); }
+            // A persisted 'stopping' is an unfinished Stop: a reload interrupted it, or a remote window handed it off.
+            if (s.status === 'stopping') { this.finishInterruptedStop(s); }
+            else if (s.jobId && !isTerminal(s.status)) { this.monitor.startMonitoring(s); }
         }
         for (const s of getAllSessions()) {
             // Reconnecting an expired (or stopping) session would only flash "connecting…" then fail back; leave it be.
@@ -401,8 +402,8 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         this.finishInterruptedStop(session);
     }
 
-    // The real stop (via stopSession), shared by the sidebar Stop and the summary consumer finishing a handed-off session.
-    public finishInterruptedStop(session: SlurmSession): void {
+    // The real stop (via stopSession), shared by the sidebar Stop and activation resuming an unfinished one.
+    private finishInterruptedStop(session: SlurmSession): void {
         this.runSessionTask(session, 'stop', () => stopSession(session, this.monitor),
             'Please check the cluster to ensure the job has stopped and clean up any resources if necessary.');
     }

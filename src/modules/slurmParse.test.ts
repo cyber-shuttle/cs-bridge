@@ -44,6 +44,10 @@ test('parsePartitionLine parses a GPU GRES entry with socket suffix', () => {
     });
 });
 
+test('parsePartitionLine keeps only GPU GRES, skipping others whatever their count syntax', () => {
+    assert.deepEqual(parsePartitionLine('mix|16|64000|gpu:a100:4(S:0-1),tmpdisk:100G,shard:gpu:8').gres, [{ name: 'gpu:a100', count: 4 }]);
+});
+
 test('parsePartitionLine splits multiple comma-separated GRES at the top level only', () => {
     const p = parsePartitionLine('big|128|515000|gpu:a100:2(S:2,5),gpu:v100:4');
     assert.deepEqual(p.gres, [{ name: 'gpu:a100', count: 2 }, { name: 'gpu:v100', count: 4 }]);
@@ -67,7 +71,8 @@ test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan in
     assert.match(script, /^#SBATCH --partition=gpu$/m);
     assert.match(script, /^#SBATCH --account=acct1$/m);
     assert.match(script, /^#SBATCH --gres=gpu:a100$/m);
-    assert.match(script, /^LINKSPAN_TUNNEL_HOST_TOKEN='tok' "\$LINKSPAN_BIN" --port 25000 --tunnel-enable --tunnel-mode devtunnel --tunnel-devtunnel-args '--id tid --cluster use'$/m);
+    assert.match(script, /^"\$LINKSPAN_BIN" --port 25000 --tunnel-enable --tunnel-mode devtunnel --tunnel-devtunnel-args '--id tid --cluster use'$/m);
+    assert.doesNotMatch(script, /TOKEN|tok'/);
 });
 
 test('buildSlurmScript launches a link session with its URL and no token', () => {
@@ -153,7 +158,7 @@ test('buildSlurmScript unsets the inherited XDG_RUNTIME_DIR/TMPDIR before launch
     assert.match(script, /^unset XDG_RUNTIME_DIR TMPDIR$/m);
 
     // Linkspan must inherit the cleaned env, so the unset has to precede its invocation.
-    assert.ok(script.indexOf('unset XDG_RUNTIME_DIR') < script.indexOf('LINKSPAN_TUNNEL_HOST_TOKEN'),
+    assert.ok(script.indexOf('unset XDG_RUNTIME_DIR') < script.indexOf('"$LINKSPAN_BIN" --port'),
         'unset precedes Linkspan invocation');
 });
 

@@ -46,13 +46,13 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
     const partition = parts.find(p => p.name === partName) ?? parts[0];
     const cpus = cpuOptions(partition).map(String);
     const mems = memoryOptions(partition);
-    const gpus = gpuOptions(partition, tab);
+    const gpuType = resolvePick(gpuTypePick, gpuOptions(partition, tab).types, '');
+    const gpus = gpuOptions(partition, tab, gpuType);
     const gpuCounts = gpus.counts.map(String);
 
-    const cpu = resolvePick(cpuPick, cpus, '1');
+    const cpu = resolvePick(cpuPick, cpus, '2');
     const memory = resolvePick(memoryPick, mems, '8 GB');
     const gpuCount = resolvePick(gpuCountPick, gpuCounts, '0');
-    const gpuType = resolvePick(gpuTypePick, gpus.types, '');
 
     const switchTab = (t: ResourceTab) => {
         setTab(t);

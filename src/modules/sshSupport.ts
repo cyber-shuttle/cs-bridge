@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as vscode from 'vscode';
-import { spawn, spawnSync, ChildProcess } from 'child_process';
+import { execFileSync, spawn, spawnSync, ChildProcess } from 'child_process';
 import * as crypto from 'crypto';
 import { Logger, errMsg } from '../logger';
 import { lock, release, lockedUpdateTextFile } from './fsSupport';
@@ -349,16 +349,16 @@ export async function addSshConfigEntry(session: SlurmSession, localPort: number
     return alias;
 }
 
-// Mint the session key pair locally and return only the public half; the private key never leaves this machine.
-export function createSessionKeyPair(sessionId: string): string {
-    fs.mkdirSync(CS_SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
-    deleteSessionPrivateKey(sessionId);
+// The session key's public half, minting the pair on first use; the private key never leaves this machine.
+export function sessionPublicKey(sessionId: string): string {
     const keyPath = sessionKeyPath(sessionId);
-    const generated = spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', keyPath], { encoding: 'utf-8' });
-    if (generated.error || generated.status !== 0) { throw new Error(`Failed to generate SSH key: ${generated.error?.message ?? generated.stderr.trim()}`); }
-    const publicKey = fs.readFileSync(`${keyPath}.pub`, 'utf-8').trim();
-    fs.unlinkSync(`${keyPath}.pub`);
-    return publicKey;
+    const keygen = (...args: string[]) => execFileSync('ssh-keygen', args, { encoding: 'utf-8', stdio: 'pipe' }).trim();
+    if (!hasSessionKey(sessionId)) {
+        fs.mkdirSync(CS_SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
+        keygen('-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', keyPath);
+        fs.unlinkSync(`${keyPath}.pub`);
+    }
+    return keygen('-y', '-f', keyPath);
 }
 
 export const hasSessionKey = (sessionId: string): boolean => fs.existsSync(sessionKeyPath(sessionId));

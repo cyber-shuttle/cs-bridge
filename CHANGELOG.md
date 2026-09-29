@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+Requires Linkspan 0.22.0.
+
 ### Added
 
 - **Sign In to CyberShuttle** and **Sign Out of CyberShuttle** commands.
@@ -20,6 +22,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Renamed labels**: the **Stats** view is **Run History**, with **Refresh Run History** and **Clear Run History**
   commands; the session form's **Allocation** and **Wall Time** are **Slurm account** and **Walltime**, and
   **(No Allocation)** is **(no Slurm account)**; **Remove** is **Delete** in the session and SSH host dialogs.
+
+### Fixed
+
+- **Live usage** reads `/api/v1/usage`, Linkspan 0.22.0's name for `/metrics`.
+- **Linkspan upgrades** match cs-plane: an install behind the latest release is replaced, a build ahead of it kept.
+- **A reload during Stop** no longer strands the session in `stopping`; the next activation finishes the stop.
+- **The Dev Tunnel host token** reaches the job through the sbatch environment, not the job script.
+- **SSH over a Dev Tunnel** rides Linkspan's `/api/v1/forward`; the Dev Tunnel carries only the control port, and a
+  reconnect reuses its SSH server.
+- **GPU partitions** list only `gpu` GRES, tolerate others such as `tmpdisk:100G`, and cap the count per type.
+- **Link sessions** wait for Linkspan's link without an error, request at least 2 cores, and recover after a refused
+  socket.
 
 ## [0.1.8] - 2026-09-24
 

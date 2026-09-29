@@ -1,5 +1,6 @@
 import { Sample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession } from '../models';
 import { Logger, errMsg } from './../logger';
+import { PlaneError } from '../plane';
 import { updateSession, setStatus } from '../extensionStore';
 import { recordSessionRun, sacctStats } from '../sessionRunSupport';
 import { SshManager } from './sshSupport';
@@ -89,6 +90,7 @@ export class SessionMonitor {
             // Linkspan not up yet, or a Dev Tunnels API blip: transient rather than job death, so
             // hold 'preparing' and count it toward the sacct cross-check.
             this.bumpProbeFails(session.id);
+            if (err instanceof PlaneError && err.code === 'session_access_unavailable') { this.log(session, `waiting for Linkspan's link to cs-plane`); return; }
             this.warn(session, `Linkspan unreachable (will retry): ${errMsg(err)}`);
             session.errorMessage = `Preparing remote session: ${errMsg(err)}`;
             updateSession(session);
@@ -128,7 +130,7 @@ export class SessionMonitor {
             }
 
             if (session.connectionInfo?.apiTunnelId && isReachable(session.status)) {
-                // Pulling /metrics is the health check: success = alive + a live sample; PROBE_GIVEUP failures
+                // Pulling /usage is the health check: success = alive + a live sample; PROBE_GIVEUP failures
                 // cross-check sacct for death. The sample comes over the Dev Tunnel when this window holds its client, else srun.
                 await this.pingOrCrossCheck(session, async () => {
                     try {
@@ -240,7 +242,7 @@ export async function launchSession(session: SlurmSession, monitor: SessionMonit
     logger.info(sessionLine(session.name, `initiating launch`));
     const run = SshManager.getInstance();
     await checkSlurmAvailability(session, run, logger);
-    if (!await linkspanIsUpToDate(session, run, logger, monitor.transportFor(session).linkspanMinimum)) {
+    if (!await linkspanIsUpToDate(session, run, logger)) {
         await installLinkspan(session, run, logger);
     }
     await submitJobToSlurm(session, run, logger, sbatchEnv);
@@ -258,10 +260,11 @@ export async function stopSession(session: SlurmSession, monitor: SessionMonitor
             const stopCommand = `scancel ${session.jobId}`;
             logger.info(sessionLine(session.name, `sending stop command: ${stopCommand}`));
             const stopResult = await SshManager.getInstance().runRemoteCommand(session.cluster, stopCommand);
-            if (stopResult.code !== 0) {
+            const slurm = stopResult.code === 0 ? undefined : await getSlurmJobStatus(session).then(r => r.status, () => SlurmJobStatus.UNKNOWN);
+            if (slurm && !computeStatusTransition('stopping', slurm).stopMonitoring) {
                 throw new Error(`Session ${session.name}: failed to send stop command: ${stopResult.stderr}`);
             }
-            logger.info(sessionLine(session.name, `stop command sent successfully`));
+            logger.info(sessionLine(session.name, stopResult.code === 0 ? `stop command sent successfully` : `job already ended`));
         }
         else {
             logger.warn(sessionLine(session.name, `has no job ID; marking stopped without scancel.`));

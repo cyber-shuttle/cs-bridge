@@ -13,9 +13,11 @@ import {
     TunnelConnectionOptions,
 } from '@microsoft/dev-tunnels-connections';
 import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
-import { createSessionKeyPair, hasSessionKey, deleteSshConfigEntry } from './sshSupport';
+import { sessionPublicKey, deleteSshConfigEntry } from './sshSupport';
 import { csHostAlias } from './sshHostsStore';
-import { createSshServer, getSshServers, LinkspanSshStatus, sshdPort } from './linkspanSupport';
+import { ensureSshServer } from './linkspanSupport';
+import { ForwardRelayClient } from './linkTunnel';
+import { w3cwebsocket } from 'websocket';
 
 const DEV_TUNNELS_APP_ID = '46da2f7e-b5ef-422a-88d4-2a7f9de6a0b2';
 const DEV_TUNNELS_SCOPE = `${DEV_TUNNELS_APP_ID}/.default`;
@@ -31,13 +33,11 @@ interface TunnelManagement {
 }
 
 interface TunnelRelayClient {
-    acceptLocalConnectionsForForwardedPorts: boolean;
     readonly connectionStatus: string;
     readonly forwardedPorts?: { find(predicate: (port: { remotePort: number | null }) => boolean): { localPort: number | null } | undefined };
     readonly connectionStatusChanged?: TunnelRelayTunnelClient['connectionStatusChanged'];
     readonly keepAliveFailed?: TunnelRelayTunnelClient['keepAliveFailed'];
     connect(tunnel: Tunnel, options?: TunnelConnectionOptions): Promise<void>;
-    refreshPorts(): Promise<void>;
     waitForForwardedPort(remotePort: number): Promise<void>;
     dispose(): Promise<void>;
 }
@@ -45,8 +45,8 @@ interface TunnelRelayClient {
 export interface Tunnels {
     readonly label: string;
     management(): TunnelManagement;
-    relayClient(management: TunnelManagement): TunnelRelayClient;
-    ensureTunnel(session: SlurmSession, ...ports: number[]): Promise<unknown>;
+    relayClient(management: TunnelManagement, session: SlurmSession): TunnelRelayClient;
+    ensureTunnel(session: SlurmSession): Promise<unknown>;
     withLinkspan<T>(session: SlurmSession, call: (baseUrl: string, headers: Record<string, string>) => Promise<T>): Promise<T>;
     deleteTunnel(session: SlurmSession): Promise<void>;
 }
@@ -71,9 +71,9 @@ export function linkspanEndpoint(session: SlurmSession): { baseUrl: string; head
     };
 }
 
-// Makes the Dev Tunnel carry apiPort plus any extra ports, and returns the host token: we keep the Entra bearer local
-// and register every port ourselves, so the node only ever holds a token scoped to hosting this one Dev Tunnel.
-export async function ensureDevTunnel(session: SlurmSession, ...ports: number[]): Promise<string> {
+// Makes the Dev Tunnel carry apiPort, the only port it needs, and returns the host token: we keep the Entra bearer local
+// and register the port ourselves, so the node only ever holds a token scoped to hosting this Dev Tunnel.
+export async function ensureDevTunnel(session: SlurmSession): Promise<string> {
     const mgmt = buildTunnelManagementClient();
     const ci = session.connectionInfo ?? (session.connectionInfo = { sshPort: 0, sshTunnelId: '', region: '' });
     const opts = { includePorts: true, tokenScopes: [TunnelAccessScopes.Host, TunnelAccessScopes.Connect] };
@@ -92,19 +92,44 @@ export async function ensureDevTunnel(session: SlurmSession, ...ports: number[])
     updateSession(session);
 
     // Nothing reaches the job on a port the Dev Tunnel does not carry, and a failure here is the session's failure.
-    for (const portNumber of [ci.apiPort, ...ports]) {
-        if (!portNumber || tunnel.ports?.some(p => p.portNumber === portNumber)) { continue; }
-        await mgmt.createTunnelPort(tunnel, { portNumber, protocol: 'auto' }, { tokenScopes: [TunnelAccessScopes.Host] });
+    if (ci.apiPort && !tunnel.ports?.some(p => p.portNumber === ci.apiPort)) {
+        await mgmt.createTunnelPort(tunnel, { portNumber: ci.apiPort, protocol: 'auto' }, { tokenScopes: [TunnelAccessScopes.Host] });
     }
     const hostToken = tunnel.accessTokens?.[TunnelAccessScopes.Host];
     if (!hostToken) { throw new Error('Dev Tunnel did not return a host token.'); }
     return hostToken;
 }
 
+async function forwardedLocalPort(client: Pick<TunnelRelayClient, 'waitForForwardedPort' | 'forwardedPorts'>, port: number) {
+    await client.waitForForwardedPort(port);
+    return client.forwardedPorts?.find(p => p.remotePort === port)?.localPort ?? port;
+}
+
+// The SDK forwards only Linkspan's control port; the sshd rides its /api/v1/forward, bridged as for link.
+class DevTunnelRelayClient extends ForwardRelayClient {
+    get connectionStatusChanged() { return this.sdk.connectionStatusChanged; }
+    get keepAliveFailed() { return this.sdk.keepAliveFailed; }
+
+    constructor(private readonly sdk: TunnelRelayTunnelClient, private readonly apiPort: number) {
+        super(w3cwebsocket);
+        sdk.connectionStatusChanged((e) => { this.connectionStatus = e.status; });
+    }
+
+    async connect(tunnel: Tunnel, options?: TunnelConnectionOptions) {
+        await this.sdk.connect(tunnel, options);
+        this.forwardUrl = `ws://127.0.0.1:${await forwardedLocalPort(this.sdk, this.apiPort)}/api/v1/forward/`;
+    }
+
+    async dispose() {
+        await super.dispose();
+        await this.sdk.dispose();
+    }
+}
+
 export const devTunnels = {
     label: 'Dev Tunnel',
     management: buildTunnelManagementClient,
-    relayClient: (management: TunnelManagementHttpClient) => new TunnelRelayTunnelClient(management),
+    relayClient: (management: TunnelManagementHttpClient, session: SlurmSession) => new DevTunnelRelayClient(new TunnelRelayTunnelClient(management), session.connectionInfo?.apiPort ?? 0),
     ensureTunnel: ensureDevTunnel,
     withLinkspan: (session, call) => {
         const { baseUrl, headers } = linkspanEndpoint(session);
@@ -133,31 +158,16 @@ export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Pr
     await t.ensureTunnel(session); // refreshes the tunnel id and connect token
     const ci = session.connectionInfo!; // ensureTunnel guarantees connectionInfo
 
-    // Reuse the sshd Linkspan reports (its port is stable across restarts) as long as we still hold its key; else create
-    // a fresh one — only create returns the key we SSH with. A "failed" sshd has given up, so it doesn't count as reusable.
-    // Best-effort: if the probe stalls (flaky Dev Tunnel) but we're already forwarded on the current Dev Tunnel with a known port,
-    // proceed with that rather than failing the whole connect — the reconcile is an optimization, not a gate.
-    let sshd: LinkspanSshStatus | undefined;
-    try { sshd = (await t.withLinkspan(session, getSshServers)).find(s => s.state !== 'failed'); }
+    // Best-effort: if Linkspan stalls (flaky Dev Tunnel) while this Dev Tunnel already holds a known port, proceed with it.
+    try { ci.sshPort = (await t.withLinkspan(session, (baseUrl, headers) => ensureSshServer(baseUrl, headers, sessionPublicKey(session.id)))).bind_port; }
     catch (err) {
         if (ci.sshTunnelId === ci.apiTunnelId && ci.sshPort) { return; }
         throw err;
     }
-    const port = sshd ? sshdPort(sshd) : 0;
-    if (port && hasSessionKey(session.id)) {
-        ci.sshPort = port;
-    }
-    else {
-        const created = await t.withLinkspan(session, (baseUrl, headers) => createSshServer(baseUrl, headers, createSessionKeyPair(session.id)));
-        logger.info(`SSH server for session ${session.id} created on port ${created.bind_port}.`);
-        ci.sshPort = created.bind_port;
-        updateSession(session);
-    }
 
-    await t.ensureTunnel(session, ci.sshPort); // the tunnel must carry the sshd port before ssh is pointed at it
     ci.sshTunnelId = ci.apiTunnelId!;
     updateSession(session);
-    logger.info(`SSH port ${ci.sshPort} published on ${t.label} ${ci.apiTunnelId} for session ${session.id}.`);
+    logger.info(`SSH server for session ${session.id} is on port ${ci.sshPort}, reached through ${t.label} ${ci.apiTunnelId}.`);
 }
 
 export function hasTunnelClient(sessionId: string): boolean {
@@ -196,8 +206,7 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
 
     // Register before connecting so a re-entrant connect can't orphan the prior client and a failed connect stays disposable.
     await disposeTunnelClient(session.id);
-    const client = t.relayClient(mgmtClient);
-    client.acceptLocalConnectionsForForwardedPorts = true;
+    const client = t.relayClient(mgmtClient, session);
     // Surface Dev Tunnel connection health: a stalled/reconnecting Dev Tunnel is otherwise invisible, and this tells contention from raw Dev Tunnel bandwidth.
     client.connectionStatusChanged?.(e => logger.info(`Session ${session.id}: Dev Tunnel ${e.previousStatus} → ${e.status}${e.disconnectError ? ` (${e.disconnectError.message})` : ''}`));
     client.keepAliveFailed?.((e) => {
@@ -215,11 +224,7 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
             enableReconnect: true,
             keepAliveIntervalInSeconds: 15, // probe the upstream WebSocket so a half-open Dev Tunnel is detected and reconnected fast (default 0 = off)
         });
-        // the sshd port is added after Linkspan starts hosting the Dev Tunnel, so refresh before waiting for it
-        try { await client.refreshPorts(); }
-        catch (err) { logger.warn(`refreshPorts failed for session ${session.id}:`, err); }
-        await client.waitForForwardedPort(sshPort);
-        localPort = client.forwardedPorts?.find(p => p.remotePort === sshPort)?.localPort ?? sshPort;
+        localPort = await forwardedLocalPort(client, sshPort);
     }
     catch (err) {
         await disposeTunnelClient(session.id);
