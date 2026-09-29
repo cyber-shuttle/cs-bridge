@@ -85,7 +85,7 @@ function StatusText({ session }: { session: ViewSession }) {
         case 'not_started': return <Row style={statusStyle}>Not started</Row>;
         case 'ready_to_connect':
         case 'connected': return <Row style={statusStyle}>{fmtTime(remainingMs(session, now))} left</Row>;
-        case 'preparing': return <Row style={statusStyle}>Establishing secure Dev Tunnel…</Row>;
+        case 'preparing': return <Row style={statusStyle}>Starting Linkspan…</Row>;
         case 'unreachable': return <Row style={statusStyle}><Text title={session.errorMessage || undefined}>{session.errorMessage ? `Unreachable: ${session.errorMessage}` : 'SSH host unreachable — retrying…'}</Text></Row>;
         case 'connecting': return <Row style={statusStyle}>Connecting…</Row>;
         case 'submitting': return <Row style={statusStyle}>Submitting…</Row>;

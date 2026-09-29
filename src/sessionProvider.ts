@@ -84,7 +84,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         for (const s of getAllSessions()) {
             // Reconnecting an expired (or stopping) session would only flash "connecting…" then fail back; leave it be.
             if (s.status !== 'stopping' && isReattachable(s.status, !!s.connectionInfo?.sshTunnelId) && !hasTunnelClient(s.id) && !isWallTimeExpired(s, Date.now())) {
-                if (await this.transports.transportFor(s).signedIn()) { void this.connectDevTunnel(s); } // don't force a sign-in popup at startup
+                if (await this.transports.transportFor(s).signedIn()) { void this.connectTransport(s); } // don't force a sign-in popup at startup
             }
         }
     }
@@ -293,8 +293,8 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         }
     }
 
-    // Step 2 core: (re)build the in-process Dev Tunnel connection from the persisted refs. No window — reattach and connect share this.
-    private async connectDevTunnel(session: SlurmSession): Promise<boolean> {
+    // Step 2 core: (re)build the in-process connection from the persisted refs. No window — reattach and connect share this.
+    private async connectTransport(session: SlurmSession): Promise<boolean> {
         if (this.connecting.has(session.id)) {
             this.logger.info(`Connect already in progress for session ${session.id}; ignoring re-entrant request`);
             return false;
@@ -332,13 +332,13 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         }
     }
 
-    // Auto-recover a half-open Dev Tunnel: rebuild Step 2 (connectDevTunnel disposes the dead client, reconnects, rewrites the
+    // Auto-recover a half-open Dev Tunnel: rebuild Step 2 (connectTransport disposes the dead client, reconnects, rewrites the
     // ssh_config port) while the session is still reachable and within its walltime. Its own guard blocks re-entry.
     private async reconnectDevTunnel(sessionId: string): Promise<void> {
         const session = getSession(sessionId);
         if (!session || !isReachable(session.status) || isWallTimeExpired(session, Date.now())) { return; }
         this.logger.warn(`Session ${session.id}: Dev Tunnel half-open — rebuilding it.`);
-        await this.connectDevTunnel(session);
+        await this.connectTransport(session);
     }
 
     // 'opening' holds the session's spinner until the new window's extension registers a windowPid (60s fallback).
@@ -366,7 +366,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 this.openOrFocusWindow(session);
                 return;
             }
-            if (await this.connectDevTunnel(session)) { this.openOrFocusWindow(session); }
+            if (await this.connectTransport(session)) { this.openOrFocusWindow(session); }
         }
         finally { void this.pushState(); }
     }

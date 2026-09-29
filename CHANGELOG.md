@@ -22,9 +22,7 @@ Requires Linkspan 0.22.0.
 ### Changed
 
 - **Add SSH Host** takes the SSH command, then an alias pre-filled from it, and confirms with a notification.
-- **One term per concept** across the UI, logs, errors and documentation, matching cs-plane, cs-jupyter and Linkspan:
-  SSH host (not login node, remote host or host), Slurm account (not allocation), job script, walltime, run history, usage,
-  Slurm accounting, Dev Tunnel (not relay), Linkspan and delete (not remove).
+- **One term per concept** across the UI, logs, errors and documentation, matching cs-plane, cs-jupyter and Linkspan.
 - **Renamed labels**: the **Stats** view is **Run History**, with **Refresh Run History** and **Clear Run History**
   commands; the session form's **Allocation** and **Wall Time** are **Slurm account** and **Walltime**, and
   **(No Allocation)** is **(no Slurm account)**; **Remove** is **Delete** in the session and SSH host dialogs.
@@ -38,8 +36,6 @@ Requires Linkspan 0.22.0.
 - **SSH over a Dev Tunnel** rides Linkspan's `/api/v1/forward`; the Dev Tunnel carries only the control port, and a
   reconnect reuses its SSH server.
 - **GPU partitions** list only `gpu` GRES, tolerate others such as `tmpdisk:100G`, and cap the count per type.
-- **Link sessions** wait for Linkspan's link without an error, request at least 2 cores, and recover after a refused
-  socket.
 
 ## [0.1.8] - 2026-09-24
 

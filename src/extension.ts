@@ -11,7 +11,6 @@ import { SshManager } from './modules/sshSupport';
 import { Transports } from './modules/transport';
 import { RemoteSessionController } from './remoteSessionController';
 import { consumePendingSummary } from './summaryPanel';
-import { watchFeatures } from './features';
 import { CsBridgeMenu } from './menu';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -46,7 +45,6 @@ export async function activate(context: vscode.ExtensionContext) {
     const statsProvider = new StatsProvider(context.extensionUri);
     const menu = new CsBridgeMenu(plane, sessionProvider, sshHostProvider, transports);
     context.subscriptions.push(
-        watchFeatures(),
         sessionProvider,
         vscode.window.registerWebviewViewProvider(SessionProvider.viewType, sessionProvider),
         vscode.window.registerWebviewViewProvider(SshHostProvider.viewType, sshHostProvider),
