@@ -66,6 +66,12 @@
 		},
 		"configuration": {
 			"properties": {
+				"csbridge.experimentalFeatures": {
+					"type": "boolean",
+					"default": false,
+					"tags": ["experimental"],
+					"description": "Enable experimental features that are not yet stable."
+				},
 				"csbridge.transport": {
 					"type": "string",
 					"enum": [
@@ -73,7 +79,7 @@
 						"link"
 					],
 					"default": "devtunnel",
-					"description": "How a session's Linkspan is reached, from its next start."
+					"description": "How a session's Linkspan is reached, from its next start. `link` is experimental and applies only with `csbridge.experimentalFeatures`."
 				}
 			}
 		},
@@ -159,6 +165,14 @@
 				}
 			],
 			"commandPalette": [
+				{
+					"command": "csbridge.signIn",
+					"when": "csbridge.feature.cybershuttle"
+				},
+				{
+					"command": "csbridge.signOut",
+					"when": "csbridge.feature.cybershuttle"
+				},
 				{
 					"command": "csbridge.switchAccount",
 					"when": "false"

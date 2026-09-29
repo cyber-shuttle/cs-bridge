@@ -60,13 +60,26 @@ Local VS Code                              Remote HPC cluster
    `remote.SSH.serverInstallPath` to node-local `/tmp/cs-vscode/<sessionId>`, keeping the server off the shared
    network home where stalls miss the ptyHost heartbeat.
 
-## The link transport
+## Experimental features
 
-With `csbridge.transport` set to `link`, a session's run goes through cs-plane (`plane.ts`) instead of a Dev Tunnel; the
-record's `transport` and `planeId` fields select and key it. `linkTunnel.ts` mirrors the Dev Tunnels SDK's management
-and relay clients over cs-plane, so `tunnelSupport.ts`'s session-level functions run on either. A `Transport`
-(`transport.ts`) is that client pair plus the launch and the run's release; `transportFor` picks one, and nothing else
-branches on `transport`.
+`features.ts` names each feature and its stage. An experimental feature runs only with `csbridge.experimentalFeatures`,
+and every gate calls `enabled('<feature>')`; `package.json` hides its commands through the `csbridge.feature.<feature>`
+context key. A gate covers entry points only, so turning the switch off never strands a live run. Markdown tags an
+experimental feature **(experimental)** after its name, plain in a heading.
+
+| Step | Change |
+|---|---|
+| Start experimental | add the feature as `'experimental'`, gate its entry points and tag its prose |
+| Graduate | mark it `'stable'`, which turns every gate on for everyone, and drop its tags |
+| Retire the flag | delete the entry and inline each `enabled()` call naming it |
+
+## The link transport (experimental)
+
+With `csbridge.experimentalFeatures` on and `csbridge.transport` set to `link`, a session's run goes through cs-plane
+(`plane.ts`) instead of a Dev Tunnel; the record's `transport` and `planeId` fields select and key it. `linkTunnel.ts`
+mirrors the Dev Tunnels SDK's management and relay clients over cs-plane, so `tunnelSupport.ts`'s session-level
+functions run on either. A `Transport` (`transport.ts`) is that client pair plus the launch and the run's release;
+`transportFor` picks one, and nothing else branches on `transport`.
 
 | Step | Link behaviour |
 |---|---|
@@ -95,10 +108,9 @@ Four layers, and nothing reaches past its neighbour.
   window, where it owns the walltime status bar and the hand-back to a local window.
 - **`src/modules/*.ts`** — the capability layer. SSH (`sshSupport`, `sshShell`, `sshHostsStore`, `sshCommandParser`),
   Slurm (`slurmLaunch`, `slurmParse`, `slurmSupport`), Linkspan's HTTP client (`linkspanSupport`), Dev Tunnels
-  (`tunnelSupport`), their cs-plane counterparts (`linkTunnel`), the transport choice (`transport`), the status domain
-  (`sessionMachine`), lifecycle composition (`sessionSupport`) and the on-disk
-  stores. Modules that do not import `vscode` unit-test directly; the ones that do cannot be imported under the test
-  runner at all.
+  (`tunnelSupport`), their cs-plane counterparts **(experimental)** (`linkTunnel`), the transport choice (`transport`),
+  the status domain (`sessionMachine`), lifecycle composition (`sessionSupport`) and the on-disk stores. Modules that
+  do not import `vscode` unit-test directly; the ones that do cannot be imported under the test runner at all.
 - **`src/ui/`** — Preact webviews, one esbuild bundle per view. `logic/` is pure and tested, `components/` renders,
   `platform/vscode.ts` is the only thing that talks to the webview host (`post()` out, `useWebviewState()` in).
 - **`resources/`, `scripts/`** — the activity-bar icons, and the `SSH_ASKPASS` helpers (`askpass.js`, `askpass.sh`).

@@ -10,9 +10,10 @@ Requires Linkspan 0.22.0.
 
 ### Added
 
-- **Sign In to CyberShuttle** and **Sign Out of CyberShuttle** commands.
-- **`csbridge.transport`**: `devtunnel` (default) or `link`, which reaches Linkspan through cs-plane. `link` needs
-  CyberShuttle sign-in and VS Code 1.101 or newer.
+- **`csbridge.experimentalFeatures`** (off by default) enables experimental features that are not yet stable.
+- **Sign In to CyberShuttle** and **Sign Out of CyberShuttle** commands **(experimental)**.
+- **`csbridge.transport`**: `devtunnel` (default) or `link` **(experimental)**, which reaches Linkspan through cs-plane
+  and needs CyberShuttle sign-in and VS Code 1.101 or newer.
 
 ### Changed
 

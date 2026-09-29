@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { enabled } from './features';
 import { uuidv7 } from 'uuidv7';
 import { errMsg } from './logger';
 import { HostRuntime, SlurmSession, SessionsState, WebviewMessage } from './models';
@@ -440,7 +441,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         if (!session) { return; }
         try {
             await this.release(session); // the previous run's, before a transport switch hides it
-            session.transport = vscode.workspace.getConfiguration('csbridge').get('transport');
+            session.transport = enabled('cybershuttle') ? vscode.workspace.getConfiguration('csbridge').get('transport') : 'devtunnel';
             this.previewSbatchEnv = await prepareLaunch(session, this.transports.transportFor(session));
         }
         catch (err) {
