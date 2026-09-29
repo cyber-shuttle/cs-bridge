@@ -20,6 +20,7 @@ Requires Linkspan 0.22.0.
 
 ### Changed
 
+- **Add SSH Host** takes the SSH command, then an alias pre-filled from it, and confirms with a notification.
 - **One term per concept** across the UI, logs, errors and documentation, matching cs-plane, cs-jupyter and Linkspan:
   SSH host (not login node, remote host or host), Slurm account (not allocation), job script, walltime, run history, usage,
   Slurm accounting, Dev Tunnel (not relay), Linkspan and delete (not remove).

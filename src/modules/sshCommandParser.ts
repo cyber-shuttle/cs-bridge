@@ -110,10 +110,10 @@ export function sshCommandToConfig(command: string): SshConfigEntry {
     return { Host, HostName, ...rest };
 }
 
-const INVALID_HOST_CHARS = ['\\', '\'', '"', '`', '!', '%', '\r', '\n'];
+const INVALID_HOST_CHARS = ['\\', '\'', '"', '`', '!', '%', '\r', '\n', ' '];
 
 export function assertValidHost(entry: SshConfigEntry): void {
-    for (const [label, val] of [['hostname', entry.HostName], ['username', entry.User]] as const) {
+    for (const [label, val] of [['alias', entry.Host], ['hostname', entry.HostName], ['username', entry.User]] as const) {
         if (!val) { continue; }
         if (val.startsWith('-')) { throw new CommandParseError(`SSH ${label} cannot begin with -`); }
         const bad = INVALID_HOST_CHARS.find(ch => val.includes(ch));

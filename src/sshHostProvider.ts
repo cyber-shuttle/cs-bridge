@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { HostsState, WebviewMessage } from './models';
 import { WebviewProvider } from './webviewProvider';
 import { SshManager } from './modules/sshSupport';
-import { sshCommandToConfig, assertValidHost } from './modules/sshCommandParser';
+import { SshConfigEntry, assertValidHost } from './modules/sshCommandParser';
 import { USER_SSH_CONFIG_PATH, addHostToConfigFile, deleteHostFromConfigFile } from './modules/sshHostsStore';
 
 // Webview provider for the SSH Hosts view: reads user + read-only system SSH config, writes user SSH hosts to ~/.ssh/config.
@@ -29,11 +29,11 @@ export class SshHostProvider extends WebviewProvider {
         this.pushState();
     }
 
-    public addSshHost(command: string): void {
-        const entry = sshCommandToConfig(command);
+    public addSshHost(entry: SshConfigEntry): void {
         assertValidHost(entry);
         addHostToConfigFile(USER_SSH_CONFIG_PATH, entry);
         this.pushState();
+        void vscode.window.showInformationMessage(`Added SSH host ${entry.Host}.`);
     }
 
     private async deleteSshHost(alias: string): Promise<void> {
