@@ -17,7 +17,7 @@ type DevicePoll = { status: 'pending'; intervalSeconds: number } | { status: 'co
 type Credential = Tokens & { expiresAt: number };
 
 export class PlaneError extends Error {
-    constructor(public readonly status: number, message: string) { super(message); }
+    constructor(public readonly status: number, message: string, public readonly code?: string) { super(message); }
 }
 
 export class Plane {
@@ -85,8 +85,8 @@ export class Plane {
     private async request(path: string, method: string, body?: unknown, token?: string): Promise<unknown> {
         const headers = { 'Content-Type': 'application/json', ...token && { Authorization: `Bearer ${token}` } };
         const response = await this.fetchImpl(`${PLANE_URL}/${path}`, { method, headers, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
-        const value = await response.json().catch(() => { }) as { error?: { message?: string } } | undefined;
-        if (!response.ok) { throw new PlaneError(response.status, value?.error?.message ?? `cs-plane returned ${response.status}.`); }
+        const value = await response.json().catch(() => { }) as { error?: { code?: string; message?: string } } | undefined;
+        if (!response.ok) { throw new PlaneError(response.status, value?.error?.message ?? `cs-plane returned ${response.status}.`, value?.error?.code); }
         return value;
     }
 }

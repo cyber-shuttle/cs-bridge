@@ -63,9 +63,7 @@ export async function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(new RemoteSessionController(context, id));
     }
     else {
-        void consumePendingSummary(context, context.extensionUri).then((session) => {
-            if (session?.status === 'stopping') { sessionProvider.finishInterruptedStop(session); }
-        });
+        void consumePendingSummary(context, context.extensionUri);
     }
 
     // on first-time install, show a toast with an "Open" action to reveal the sidebar panel.

@@ -12,11 +12,11 @@ export async function getSlurmJobStatus(slurmSession: SlurmSession): Promise<{ s
     return parseSacctStatus(commandResult.stdout.trim());
 }
 
-// Linkspan's /metrics on its loopback control port from inside the job. --input none is load-bearing: srun forwards
+// Linkspan's /usage on its loopback control port from inside the job. --input none is load-bearing: srun forwards
 // stdin to the task, which would otherwise swallow the persistent shell's completion marker (sshShell) and hang.
 export async function getSampleViaSrun(session: SlurmSession): Promise<Sample> {
     const command = `srun --jobid=${session.jobId} --overlap --quiet --input none `
-        + `curl -sf --max-time 4 http://127.0.0.1:${session.connectionInfo?.apiPort}/api/v1/metrics`;
+        + `curl -sf --max-time 4 http://127.0.0.1:${session.connectionInfo?.apiPort}/api/v1/usage`;
     const res = await SshManager.getInstance().runRemoteCommand(session.cluster, command, { batch: true });
     if (res.code !== 0) { throw new Error(`live usage via srun failed (${res.code}): ${res.stderr}`); }
     return JSON.parse(res.stdout) as Sample;

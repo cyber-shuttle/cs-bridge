@@ -31,7 +31,7 @@ export async function checkSlurmAvailability(session: SlurmSession, run: RemoteR
 // once that release ships and never ties another build. Anything else is not a version. cs-plane matches this.
 const INSTALLED = /^(\d+)\.(\d+)\.(\d+)(\.[0-9a-f]{7,40})?$/;
 const RELEASED = /^(\d+)\.(\d+)\.(\d+)$/;
-const MINIMUM = '0.21.0';
+const MINIMUM = '0.22.0'; // the first with /usage and --tunnel-mode link
 
 export function keepsInstalledLinkspan(local: string, latest: string): boolean {
     const here = INSTALLED.exec(local);
@@ -44,21 +44,22 @@ export function keepsInstalledLinkspan(local: string, latest: string): boolean {
     return !here[4];
 }
 
-// A version-check failure returns false (→ reinstall) rather than throwing, so it never fails the launch.
-export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunner, log: LogSink, minimum = MINIMUM): Promise<boolean> {
-    const localVersionResult = await run.runRemoteCommand(session.cluster, `~/.cybershuttle/bin/linkspan --version 2>/dev/null || echo ""`);
+// A version-check failure returns false (→ reinstall) rather than throwing, so it never fails the launch. As in
+// cs-plane, the latest tag decides, and the floor counts a build as its release.
+export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<boolean> {
+    const localVersionResult = await run.runRemoteCommand(session.cluster, `printf 'installed=%s\\nlatest=%s\\n' "$(~/.cybershuttle/bin/linkspan --version 2>/dev/null | head -1)" "$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cyber-shuttle/linkspan/releases/latest 2>/dev/null | sed 's#.*/##')"`);
 
     if (localVersionResult.code !== 0) {
         log.error(`Failed to check Linkspan version on SSH host ${session.cluster} (exit ${localVersionResult.code})`);
         return false;
     }
 
-    const localVersion = localVersionResult.stdout.trim().replace(/^v/, '');
-    if (keepsInstalledLinkspan(localVersion, minimum)) {
-        log.info(`Linkspan ${localVersion} on SSH host ${session.cluster} is at or ahead of ${minimum}; keeping it`);
+    const [installed, latest] = ['installed', 'latest'].map(key => (localVersionResult.stdout.match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1] ?? '').replace(/[v\s]/g, ''));
+    if (keepsInstalledLinkspan(installed, latest) && keepsInstalledLinkspan(installed.replace(/\.[0-9a-f]{7,40}$/, ''), MINIMUM)) {
+        log.info(`Linkspan ${installed} on SSH host ${session.cluster} is current (latest ${latest || 'unknown'}); keeping it`);
         return true;
     }
-    log.info(`Linkspan is not installed or older than ${minimum} on SSH host ${session.cluster}. Local version: ${localVersion}`);
+    log.info(`Linkspan on SSH host ${session.cluster} is missing, behind ${latest || 'the latest release'} or below ${MINIMUM}. Local version: ${installed}`);
     return false;
 }
 
@@ -124,7 +125,7 @@ export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner,
     const jobIdMatch = output.match(/Submitted batch job (\d+)/);
     if (!jobIdMatch) { throw new Error(`Failed to parse job ID from sbatch output: ${output}`); }
 
-    session.jobScript = undefined; // held the Dev Tunnel host token; sbatch has it now
+    session.jobScript = undefined;
     session.jobId = jobIdMatch[1];
     session.submittedAt = Date.now();
     log.info(`Job submitted successfully with Job ID: ${session.jobId}`);

@@ -1,7 +1,7 @@
 // The link transport's tunnel clients, shaped like the Dev Tunnels SDK's so tunnelSupport's session-level functions
-// drive either pair. The tunnel is a cs-plane session and its connect token is cs-plane's `/access` capability. The
-// relay client has no upstream connection of its own: each forwarded port is a 127.0.0.1 listener whose every accepted
-// socket rides a fresh WebSocket to cs-plane's forward.
+// drive either pair. The tunnel is a cs-plane session and its connect token is cs-plane's `/access` capability. A
+// ForwardRelayClient has no upstream connection of its own: each forwarded port is a 127.0.0.1 listener whose every
+// accepted socket rides a fresh WebSocket to a forward URL: cs-plane's for link, Linkspan's over a Dev Tunnel.
 import * as net from 'node:net';
 import { SlurmSession } from '../models';
 import { Plane, PlaneError, PLANE_URL } from '../plane';
@@ -33,29 +33,19 @@ export class LinkManagementClient {
     }
 }
 
-export class LinkRelayClient {
-    acceptLocalConnectionsForForwardedPorts = true;
+export class ForwardRelayClient {
     connectionStatus = 'none';
     readonly forwardedPorts: { remotePort: number; localPort: number }[] = [];
     private readonly listeners: Promise<net.Server>[] = [];
     private readonly sockets = new Set<net.Socket>();
     private disposed = false;
-    private forwardUrl = '';
-    private token = '';
+    protected forwardUrl = '';
+    protected protocols: string[] = [];
 
-    constructor(private readonly WebSocket: typeof globalThis.WebSocket | undefined = globalThis.WebSocket) { }
-
-    async connect(tunnel: Tunnel) {
-        if (!this.WebSocket) { throw new Error('The link transport needs VS Code 1.101 or newer.'); }
-        this.forwardUrl = `${PLANE_URL.replace(/^http/, 'ws')}/sessions/${tunnel.tunnelId}/forward/`;
-        this.token = tunnel.accessTokens?.connect ?? '';
-        this.connectionStatus = 'connected';
-    }
-
-    async refreshPorts() { }
+    constructor(protected readonly WebSocket: typeof globalThis.WebSocket | undefined = globalThis.WebSocket) { }
 
     async waitForForwardedPort(remotePort: number) {
-        if (this.disposed) { throw new Error('The link relay client is disposed.'); }
+        if (this.disposed) { throw new Error('The relay client is disposed.'); }
         this.listeners.push(this.listen(remotePort));
         await this.listeners.at(-1);
     }
@@ -76,15 +66,24 @@ export class LinkRelayClient {
     }
 
     private bridge(local: net.Socket, remotePort: number) {
-        const remote = new this.WebSocket!(`${this.forwardUrl}${remotePort}`, ['cybershuttle.v1', `capability.${this.token}`]);
+        const remote = new this.WebSocket!(`${this.forwardUrl}${remotePort}`, this.protocols);
         let opened = false;
         this.sockets.add(local);
         remote.binaryType = 'arraybuffer';
         // No backpressure: SSH channel windows bound the ssh stream, and Linkspan's API responses are small.
-        remote.onopen = () => { opened = true; local.on('data', chunk => remote.send(chunk)); };
+        remote.onopen = () => { opened = true; this.connectionStatus = 'connected'; local.on('data', chunk => remote.send(chunk)); };
         remote.onmessage = ({ data }) => local.write(Buffer.from(data));
         // A socket that never opened was refused (a revoked token or a session no longer READY).
         remote.onclose = () => { if (!opened) { this.connectionStatus = 'disconnected'; } local.destroy(); };
         local.on('close', () => { this.sockets.delete(local); remote.close(); }).on('error', () => { });
+    }
+}
+
+export class LinkRelayClient extends ForwardRelayClient {
+    async connect(tunnel: Tunnel) {
+        if (!this.WebSocket) { throw new Error('The link transport needs VS Code 1.101 or newer.'); }
+        this.forwardUrl = `${PLANE_URL.replace(/^http/, 'ws')}/sessions/${tunnel.tunnelId}/forward/`;
+        this.protocols = ['cybershuttle.v1', `capability.${tunnel.accessTokens?.connect ?? ''}`];
+        this.connectionStatus = 'connected';
     }
 }
