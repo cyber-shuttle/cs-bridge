@@ -11,8 +11,9 @@ import { SshManager } from './modules/sshSupport';
 import { Transports } from './modules/transport';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { enabled } from './features';
+import { sshCommandToConfig } from './modules/sshCommandParser';
 
-type Page = { title: string; placeholder?: string; items?: Item[]; submit?: (value: string) => void };
+type Page = { title: string; placeholder?: string; value?: string; items?: Item[]; submit?: (value: string) => Build | void };
 type Build = () => Page;
 type Item = vscode.QuickPickItem & { run?: () => unknown; open?: Build };
 
@@ -40,13 +41,14 @@ export class CsBridgeMenu {
             });
             nested(stack.length > 1);
         };
-        const go = (build: Build) => { stack.push(build); pick.value = ''; render(); };
-        pick.onDidTriggerButton(() => { stack.pop(); pick.value = ''; render(); });
+        const show = () => { render(); pick.value = page.value ?? ''; };
+        const go = (build: Build) => { stack.push(build); show(); };
+        pick.onDidTriggerButton(() => { stack.pop(); show(); });
         pick.onDidAccept(() => {
             if (page.submit) {
                 const value = pick.value.trim();
                 if (!value) { return; }
-                try { page.submit(value); pick.hide(); }
+                try { const next = page.submit(value); if (next) { go(next); return; } pick.hide(); }
                 catch (err) { fail(err); }
                 return;
             }
@@ -101,7 +103,13 @@ export class CsBridgeMenu {
     private readonly addHost: Build = () => ({
         title: 'Add SSH Host',
         placeholder: 'SSH connection command, e.g. ssh hello@microsoft.com -A',
-        submit: command => this.sshHosts.addSshHost(command),
+        submit: (command) => {
+            const entry = sshCommandToConfig(command);
+            return () => ({
+                title: 'Add SSH Host: Alias', value: entry.Host, placeholder: 'Press Enter to use this alias, or type your own',
+                submit: alias => this.sshHosts.addSshHost({ ...entry, Host: alias }),
+            });
+        },
     });
 
     private readonly transport: Build = () => ({

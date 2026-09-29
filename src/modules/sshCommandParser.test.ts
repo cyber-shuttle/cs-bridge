@@ -74,6 +74,10 @@ test('assertValidHost rejects backtick in User', () => {
     assert.throws(() => assertValidHost({ Host: 'h', HostName: 'h', User: 'a`id`' }), CommandParseError);
 });
 
+test('assertValidHost rejects an alias ~/.ssh/config would split into patterns', () => {
+    assert.throws(() => assertValidHost({ Host: 'my host', HostName: 'h' }), CommandParseError);
+});
+
 test('-W is consumed without overwriting the RemoteForward that -R set', () => {
     const config = sshCommandToConfig('ssh -R 9000:localhost:9000 -W inner:22 host');
     assert.equal(config.RemoteForward, '9000:localhost:9000');
