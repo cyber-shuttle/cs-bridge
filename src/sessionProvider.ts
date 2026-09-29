@@ -8,8 +8,9 @@ import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
 import { addSession, deleteSession, getSession, getAllSessions, updateSession, setStatus, watchSessions, liveAndCleanup } from './extensionStore';
 import { readRecentSamples, watchSessionMetrics } from './modules/sessionMetricsStore';
-import { connectSessionToTunnel, deleteDevTunnel, disposeAllTunnelClients, disposeTunnelClient, ensureRemoteSession, getMicrosoftAccountLabel, hasTunnelClient, switchDevTunnelAccount } from './modules/tunnelSupport';
+import { connectSessionToTunnel, disposeAllTunnelClients, disposeTunnelClient, ensureRemoteSession, getMicrosoftAccountLabel, hasTunnelClient, switchDevTunnelAccount } from './modules/tunnelSupport';
 import { stopSession, SessionMonitor, launchSession, prepareLaunch } from './modules/sessionSupport';
+import { Transports } from './modules/transport';
 import { validateSlurmConfig } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
 import { isTerminal, isDeletable, isStoppable, isReattachable, isReachable, isWallTimeExpired } from './modules/sessionMachine';
@@ -31,16 +32,20 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private readonly hostRuntime = new Map<string, HostRuntime>();
     private draftAlias: string | null = null;
     private previewSession: SlurmSession | null = null;
+    private previewSbatchEnv: Record<string, string> = {}; // a previewed run's secrets
     private readonly shared: vscode.Disposable[] = [];
     private readonly connecting = new Set<string>();
     private readonly opening = new Set<string>();
-    private readonly monitor = new SessionMonitor();
+    private readonly monitor;
     private sharedReady = false;
 
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
-    constructor(extensionUri: vscode.Uri, private readonly remoteSessionId?: string) {
+    constructor(extensionUri: vscode.Uri, private readonly transports: Transports, private readonly remoteSessionId?: string) {
         super(extensionUri);
+        this.monitor = new SessionMonitor(transports.transportFor);
     }
+
+    private release(session: SlurmSession | null) { return session && this.transports.transportFor(session).release(session); }
 
     protected onResolved(): void {
         this.initSharedSubscriptions();
@@ -74,11 +79,10 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             // Skip a 'stopping' session: a remote Stop handed it off for the summary consumer to finish; monitoring would fight it.
             if (s.status !== 'stopping' && s.jobId && !isTerminal(s.status)) { this.monitor.startMonitoring(s); }
         }
-        if (await getMicrosoftAccountLabel() === null) { return; } // don't force a sign-in popup at startup
         for (const s of getAllSessions()) {
             // Reconnecting an expired (or stopping) session would only flash "connecting…" then fail back; leave it be.
             if (s.status !== 'stopping' && isReattachable(s.status, !!s.connectionInfo?.sshTunnelId) && !hasTunnelClient(s.id) && !isWallTimeExpired(s, Date.now())) {
-                void this.connectDevTunnel(s);
+                if (await this.transports.transportFor(s).signedIn()) { void this.connectDevTunnel(s); } // don't force a sign-in popup at startup
             }
         }
     }
@@ -89,10 +93,9 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         void disposeAllTunnelClients(); // window close: free local ports (remote stays, reaped by Linkspan)
     }
 
-    // A dismissal only clears one field, so each is named by the field it clears.
     private readonly dismissals: Record<string, () => void> = {
         dismissDraftSession: () => { this.draftAlias = null; },
-        dismissPreview: () => { this.previewSession = null; },
+        dismissPreview: () => { void this.release(this.previewSession); this.previewSession = null; this.previewSbatchEnv = {}; },
         dismissAlert: () => { this.alert = null; },
     };
 
@@ -178,7 +181,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         }
 
         await disposeTunnelClient(sessionId);
-        await deleteDevTunnel(session);
+        await this.transports.remove(session);
         try {
             await deleteSshConfigEntry(sessionId, csHostAlias(session.cluster, session.name));
         }
@@ -309,10 +312,11 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             return false;
         }
         this.connecting.add(session.id);
+        const transport = this.transports.transportFor(session);
         try {
             setStatus(session, 'connecting');
-            await ensureRemoteSession(session); // idempotent; refreshes Dev Tunnel creds for reattach
-            const localPort = await connectSessionToTunnel(session, () => void this.reconnectDevTunnel(session.id));
+            await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
+            const localPort = await connectSessionToTunnel(transport, session, () => void this.reconnectDevTunnel(session.id));
             // These awaits can run tens of seconds against a dead node; if the monitor terminalized meanwhile (session
             // auto-refreshes in place), drop the Dev Tunnel connection rather than overwrite its verdict.
             if (isTerminal(session.status) || isWallTimeExpired(session, Date.now())) {
@@ -326,12 +330,12 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             return true;
         }
         catch (error) {
-            this.logger.error(`Error connecting the Dev Tunnel for session ${session.id}:`, error);
+            this.logger.error(`Error connecting the ${transport.label} for session ${session.id}:`, error);
             await disposeTunnelClient(session.id);
             // Same terminal guard as the success path: don't resurrect a session the monitor stopped mid-connect.
             if (!isTerminal(session.status)) {
                 // Step 1 still up (sshTunnelId persisted) -> connection-only failure, retry from ready_to_connect; else unreachable.
-                setStatus(session, session.connectionInfo?.sshTunnelId ? 'ready_to_connect' : 'unreachable', `Failed to connect Dev Tunnel: ${errMsg(error)}`);
+                setStatus(session, session.connectionInfo?.sshTunnelId ? 'ready_to_connect' : 'unreachable', `Failed to connect ${transport.label}: ${errMsg(error)}`);
             }
             return false;
         }
@@ -406,11 +410,13 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private submitSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'launch', false);
         if (!session) { return; }
+        const sbatchEnv = this.previewSession?.id === sessionId ? this.previewSbatchEnv : {};
         this.previewSession = null;
+        this.previewSbatchEnv = {};
         session.startedAt = undefined; // fresh launch: re-anchor the walltime countdown when the new job starts running
         setStatus(session, 'submitting', '');
         void this.pushState();
-        this.runSessionTask(session, 'launch', () => launchSession(session, this.monitor),
+        this.runSessionTask(session, 'launch', () => launchSession(session, this.monitor, sbatchEnv),
             'Please clean up any resources on the cluster if necessary.');
     }
 
@@ -423,6 +429,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             this.logger.error(`${detail} (id ${session.id})`, error);
             vscode.window.showErrorMessage(`${detail}. ${cleanupHint}`);
             setStatus(session, 'failed', detail);
+            void this.release(session);
             void this.pushState();
         });
     }
@@ -431,7 +438,9 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         const session = this.requireSession(sessionId, 'prepare launch', false);
         if (!session) { return; }
         try {
-            await prepareLaunch(session);
+            await this.release(session); // the previous run's, before a transport switch hides it
+            session.transport = vscode.workspace.getConfiguration('csbridge').get('transport');
+            this.previewSbatchEnv = await prepareLaunch(session, this.transports.transportFor(session));
         }
         catch (err) {
             vscode.window.showErrorMessage(errMsg(err));
@@ -440,6 +449,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             this.logger.error('Failed to prepare session launch:', err);
             throw err; // the dispatch's .catch re-pushes state so the session shows the error
         }
+        if (this.previewSession?.id !== sessionId) { void this.release(this.previewSession); }
         this.previewSession = session;
         void this.pushState();
     }

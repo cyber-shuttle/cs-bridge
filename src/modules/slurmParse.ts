@@ -14,7 +14,21 @@ export function parseAccounts(output: string): string[] {
     return [...new Set(names)];
 }
 
-export function buildSlurmScript(session: SlurmSession, hostToken: string): string {
+const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+export const envAssignments = (env: Record<string, string>) => Object.entries(env).map(([k, v]) => `${k}=${shellQuote(v)} `).join('');
+
+export interface LinkspanLaunch { tunnelArgs: string; scriptEnv: string; sbatchEnv: Record<string, string> }
+
+export const devTunnelLaunch = (session: SlurmSession, hostToken: string): LinkspanLaunch => ({
+    tunnelArgs: `--tunnel-mode devtunnel --tunnel-devtunnel-args '--id ${session.tunnelId ?? ''} --cluster ${session.tunnelCluster ?? ''}'`,
+    scriptEnv: `LINKSPAN_TUNNEL_HOST_TOKEN='${hostToken}' `, sbatchEnv: {},
+});
+
+export const linkLaunch = (url: string, token: string): LinkspanLaunch => ({
+    tunnelArgs: `--tunnel-mode link --tunnel-link-args ${shellQuote(`--url ${url}`)}`, scriptEnv: '', sbatchEnv: { LINKSPAN_LINK_TOKEN: token },
+});
+
+export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch): string {
     const memSlurm = session.memory.replace(/\s+/g, '');
     const account = slurmAccount(session.allocation);
 
@@ -45,8 +59,8 @@ export function buildSlurmScript(session: SlurmSession, hostToken: string): stri
         ``,
         `# --- Run Linkspan ---`,
         `LINKSPAN_BIN="$HOME/.cybershuttle/bin/linkspan"`,
-        // Bind the port csbridge pinned at launch so it knows the Dev Tunnel URL up front (no log/port discovery).
-        `LINKSPAN_TUNNEL_HOST_TOKEN='${hostToken}' "$LINKSPAN_BIN" --port ${session.connectionInfo?.apiPort ?? 0} --tunnel-enable --tunnel-mode devtunnel --tunnel-devtunnel-args '--id ${session.tunnelId ?? ''} --cluster ${session.tunnelCluster ?? ''}'`,
+        // Bind the API port pinned at launch (no log/port discovery).
+        `${launch.scriptEnv}"$LINKSPAN_BIN" --port ${session.connectionInfo?.apiPort ?? 0} --tunnel-enable ${launch.tunnelArgs}`,
     ];
 
     return scriptLines.join('\n');

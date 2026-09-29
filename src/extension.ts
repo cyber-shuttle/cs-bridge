@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
-import { Logger } from './logger';
+import { Logger, errMsg } from './logger';
 import { initSessionStore, mutateWindowPids, getAllSessions } from './extensionStore';
 import { csHostAlias } from './modules/sshHostsStore';
 import { isPidAlive } from './modules/fsSupport';
+import { Plane } from './plane';
 import { SessionProvider } from './sessionProvider';
 import { SshHostProvider } from './sshHostProvider';
 import { StatsProvider } from './statsProvider';
 import { SshManager } from './modules/sshSupport';
+import { Transports } from './modules/transport';
 import { RemoteSessionController } from './remoteSessionController';
 import { consumePendingSummary } from './summaryPanel';
 
@@ -35,7 +37,8 @@ export async function activate(context: vscode.ExtensionContext) {
     void vscode.commands.executeCommand('setContext', 'csbridge.remote', isRemoteWindow);
 
     SshManager.initInstance(context.extensionUri);
-    const sessionProvider = new SessionProvider(context.extensionUri, id);
+    const plane = new Plane(context.secrets);
+    const sessionProvider = new SessionProvider(context.extensionUri, new Transports(plane), id);
     const sshHostProvider = new SshHostProvider(context.extensionUri);
     const statsProvider = new StatsProvider(context.extensionUri);
     context.subscriptions.push(
@@ -45,6 +48,8 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.registerWebviewViewProvider(StatsProvider.viewType, statsProvider),
         vscode.commands.registerCommand('csbridge.newSession', () => sessionProvider.startNewSession()),
         vscode.commands.registerCommand('csbridge.switchAccount', () => sessionProvider.switchAccount()),
+        vscode.commands.registerCommand('csbridge.signIn', () => signIn(plane)),
+        vscode.commands.registerCommand('csbridge.signOut', () => plane.signOut()),
         vscode.commands.registerCommand('csbridge.addHost', () => sshHostProvider.addSshHost()),
         vscode.commands.registerCommand('csbridge.refreshHosts', () => sshHostProvider.refreshSshHosts()),
         vscode.commands.registerCommand('csbridge.refreshStats', () => statsProvider.refresh()),
@@ -82,6 +87,18 @@ function currentWindowSessionId(): string | undefined {
     // The alias carries no id, so reconstruct each session's and match. Safe here: extensionKind:ui runs this window's
     // extension host locally, so it can read the local session store (already initialized above).
     return getAllSessions().find(s => csHostAlias(s.cluster, s.name) === alias)?.id;
+}
+
+async function signIn(plane: Plane) {
+    try {
+        const code = await plane.startSignIn();
+        await vscode.env.openExternal(vscode.Uri.parse(code.verificationUriComplete));
+        if (await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `Waiting for CyberShuttle sign-in with code ${code.userCode}`, cancellable: true },
+            (_progress, token) => plane.awaitSignIn(code, () => token.isCancellationRequested),
+        )) { vscode.window.showInformationMessage('Signed in to CyberShuttle.'); }
+    }
+    catch (err) { vscode.window.showErrorMessage(`CyberShuttle sign-in failed: ${errMsg(err)}`); }
 }
 
 export function deactivate() {

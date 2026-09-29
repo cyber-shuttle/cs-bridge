@@ -61,6 +61,23 @@ Local VS Code                              Remote HPC cluster
    `remote.SSH.serverInstallPath` to node-local `/tmp/cs-vscode/<sessionId>`, keeping the server off the shared
    network home where stalls miss the ptyHost heartbeat.
 
+## The link transport
+
+With `csbridge.transport` set to `link`, a session's run goes through cs-plane (`plane.ts`) instead of a Dev Tunnel; the
+record's `transport` and `planeId` fields select and key it. `linkTunnel.ts` mirrors the Dev Tunnels SDK's management
+and relay clients over cs-plane, so `tunnelSupport.ts`'s session-level functions run on either. A `Transport`
+(`transport.ts`) is that client pair plus the launch and the run's release; `transportFor` picks one, and nothing else
+branches on `transport`.
+
+| Step | Link behaviour |
+|---|---|
+| Sign-in | CILogon device grant brokered by cs-plane; the credential lives in SecretStorage |
+| Prepare | `prepareLaunch` defines the cs-plane session once (`planeId`), stops any live run, attaches with `tunnelModes: ["link"]`; the job script gets `--tunnel-mode link --tunnel-link-args '--url …'` |
+| Submit | Linkspan 0.22.0 or newer; the link token rides `LINKSPAN_LINK_TOKEN=… sbatch --export=ALL` over the persistent shell's stdin |
+| Forward | `/access` gives the connect token, held in memory; each forwarded port is a `127.0.0.1` listener whose every connection opens a WebSocket to `/sessions/{id}/forward/{port}`; VS Code 1.101 or newer for Node's built-in WebSocket |
+| Poll, connect | as for a Dev Tunnel, with Linkspan's API reached through a forward of its control port |
+| Stop, delete | release (`POST /stop`) the cs-plane session; delete also `DELETE`s it |
+
 ## The per-session SSH host
 
 `csHostAlias(alias, sessionName)` is `<alias>-<last 6 characters of the session name>` — for example
@@ -79,7 +96,8 @@ Four layers, and nothing reaches past its neighbour.
   window, where it owns the walltime status bar and the hand-back to a local window.
 - **`src/modules/*.ts`** — the capability layer. SSH (`sshSupport`, `sshShell`, `sshHostsStore`, `sshCommandParser`),
   Slurm (`slurmLaunch`, `slurmParse`, `slurmSupport`), Linkspan's HTTP client (`linkspanSupport`), Dev Tunnels
-  (`tunnelSupport`), the status domain (`sessionMachine`), lifecycle composition (`sessionSupport`) and the on-disk
+  (`tunnelSupport`), their cs-plane counterparts (`linkTunnel`), the transport choice (`transport`), the status domain
+  (`sessionMachine`), lifecycle composition (`sessionSupport`) and the on-disk
   stores. Modules that do not import `vscode` unit-test directly; the ones that do cannot be imported under the test
   runner at all.
 - **`src/ui/`** — Preact webviews, one esbuild bundle per view. `logic/` is pure and tested, `components/` renders,

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSlurmScript, classifySchedulerState, parseAccounts, parsePartitionLine, parseSacctStatus, parseSacctUtil, slurmAccount } from './slurmParse';
+import { buildSlurmScript, devTunnelLaunch, linkLaunch, classifySchedulerState, parseAccounts, parsePartitionLine, parseSacctStatus, parseSacctUtil, slurmAccount } from './slurmParse';
 import { SlurmJobStatus, SlurmSession } from '../models';
 
 test('parseAccounts de-duplicates per-partition associations', () => {
@@ -60,7 +60,7 @@ test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan in
         gpuClass: 'gpu:a100', gpuCount: 1, tunnelId: 'tid', tunnelCluster: 'use',
         connectionInfo: { apiPort: 25000, sshPort: 0, sshTunnelId: '', region: '' },
     } as SlurmSession;
-    const script = buildSlurmScript(session, 'tok');
+    const script = buildSlurmScript(session, devTunnelLaunch(session, 'tok'));
     assert.match(script, /^#SBATCH --nodes=1$/m);
     assert.match(script, /^#SBATCH --cpus-per-task=4$/m);
     assert.match(script, /^#SBATCH --mem=8GB$/m);
@@ -70,22 +70,29 @@ test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan in
     assert.match(script, /^LINKSPAN_TUNNEL_HOST_TOKEN='tok' "\$LINKSPAN_BIN" --port 25000 --tunnel-enable --tunnel-mode devtunnel --tunnel-devtunnel-args '--id tid --cluster use'$/m);
 });
 
+test('buildSlurmScript launches a link session with its URL and no token', () => {
+    const script = buildSlurmScript(scriptSession(), linkLaunch('wss://u', 'secret'));
+    assert.match(script, /^"\$LINKSPAN_BIN" --port 0 --tunnel-enable --tunnel-mode link --tunnel-link-args '--url wss:\/\/u'$/m);
+    assert.doesNotMatch(script, /TOKEN|secret/);
+});
+
 // The session every script test starts from; each names only what it varies.
 const scriptSession = (overrides: Partial<SlurmSession> = {}): SlurmSession => ({
     cpus: 2, memory: '4 GB', wallTime: '01:00:00', queue: 'cpu', allocation: 'acct1',
     gpuClass: '', gpuCount: 0, ...overrides,
 } as SlurmSession);
+const launch = devTunnelLaunch(scriptSession(), 't');
 
 test('buildSlurmScript omits the GPU directive when no GPU is selected', () => {
     const session = scriptSession();
-    const script = buildSlurmScript(session, 't');
+    const script = buildSlurmScript(session, launch);
     assert.doesNotMatch(script, /--gres=/);
 });
 
 test('buildSlurmScript omits --account for a blank or non-token Slurm account', () => {
     for (const allocation of ['', '(no Slurm account)']) {
         const session = scriptSession({ queue: 'debug', allocation });
-        assert.doesNotMatch(buildSlurmScript(session, 't'), /--account/);
+        assert.doesNotMatch(buildSlurmScript(session, launch), /--account/);
     }
 });
 
@@ -139,7 +146,7 @@ test('parseSacctUtil returns an empty object for no output', () => {
 
 test('buildSlurmScript unsets the inherited XDG_RUNTIME_DIR/TMPDIR before launching Linkspan', () => {
     const session = scriptSession();
-    const script = buildSlurmScript(session, 't');
+    const script = buildSlurmScript(session, launch);
 
     // The compute node has no logind, so the inherited /run/user/<uid> XDG_RUNTIME_DIR is absent there;
     // unset it (and TMPDIR) so the VS Code server falls back to its node-local /tmp default.
