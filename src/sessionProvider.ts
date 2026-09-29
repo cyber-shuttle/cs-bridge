@@ -204,20 +204,6 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         void this.pushState();
     }
 
-    public async startNewSession(): Promise<void> {
-        const hosts = SshManager.getInstance().getMergedHosts();
-        if (hosts.length === 0) {
-            vscode.window.showInformationMessage('No SSH hosts configured yet — add one from the SSH Hosts view first.');
-            return;
-        }
-        const pick = await vscode.window.showQuickPick(
-            hosts.map(h => ({ label: h.alias, description: h.hostname ? `${h.user ? h.user + '@' : ''}${h.hostname}` : undefined })),
-            { title: 'New session', placeHolder: 'Select an SSH host to configure a session on' },
-        );
-        if (!pick) { return; }
-        this.startSessionDraft(pick.label);
-    }
-
     public startSessionDraft(alias: string): void {
         this.draftAlias = alias;
         void vscode.commands.executeCommand('csbridge.sessionsView.focus');

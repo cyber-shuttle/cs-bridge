@@ -85,24 +85,8 @@
 		},
 		"commands": [
 			{
-				"command": "csbridge.switchAccount",
-				"title": "Switch Dev Tunnels Account",
-				"category": "CS Bridge",
-				"icon": "$(account)"
-			},
-			{
-				"command": "csbridge.signIn",
-				"title": "Sign In to CyberShuttle",
-				"category": "CS Bridge"
-			},
-			{
-				"command": "csbridge.signOut",
-				"title": "Sign Out of CyberShuttle",
-				"category": "CS Bridge"
-			},
-			{
-				"command": "csbridge.newSession",
-				"title": "New Session",
+				"command": "csbridge.menu",
+				"title": "Open Menu",
 				"category": "CS Bridge",
 				"icon": "$(add)"
 			},
@@ -131,16 +115,18 @@
 				"icon": "$(clear-all)"
 			}
 		],
+		"keybindings": [
+			{
+				"key": "escape",
+				"command": "workbench.action.quickInputBack",
+				"when": "inQuickOpen && csbridge.menuNested"
+			}
+		],
 		"menus": {
 			"view/title": [
 				{
-					"command": "csbridge.switchAccount",
+					"command": "csbridge.menu",
 					"group": "navigation@0",
-					"when": "view == csbridge.sessionsView && !csbridge.remote"
-				},
-				{
-					"command": "csbridge.newSession",
-					"group": "navigation@1",
 					"when": "view == csbridge.sessionsView && !csbridge.remote"
 				},
 				{
@@ -166,20 +152,8 @@
 			],
 			"commandPalette": [
 				{
-					"command": "csbridge.signIn",
-					"when": "csbridge.feature.cybershuttle"
-				},
-				{
-					"command": "csbridge.signOut",
-					"when": "csbridge.feature.cybershuttle"
-				},
-				{
-					"command": "csbridge.switchAccount",
-					"when": "false"
-				},
-				{
-					"command": "csbridge.newSession",
-					"when": "false"
+					"command": "csbridge.menu",
+					"when": "!csbridge.remote"
 				},
 				{
 					"command": "csbridge.addHost",

@@ -127,7 +127,7 @@ class DevTunnelRelayClient extends ForwardRelayClient {
 }
 
 export const devTunnels = {
-    label: 'Dev Tunnel',
+    label: 'Microsoft DevTunnel',
     management: buildTunnelManagementClient,
     relayClient: (management: TunnelManagementHttpClient, session: SlurmSession) => new DevTunnelRelayClient(new TunnelRelayTunnelClient(management), session.connectionInfo?.apiPort ?? 0),
     ensureTunnel: ensureDevTunnel,
