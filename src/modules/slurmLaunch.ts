@@ -101,7 +101,7 @@ export async function installLinkspan(session: SlurmSession, run: RemoteRunner, 
     log.info(`Linkspan installed successfully on SSH host ${session.cluster}`);
 }
 
-// --test-only runs the site submit filter without queueing; the body never runs, so a blank credential is fine.
+// --test-only runs the site submit filter without queueing.
 export async function validateSlurmConfig(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
     const scriptB64 = Buffer.from(buildSlurmScript(session, devTunnelLaunch(session, ''))).toString('base64');
     const result = await run.runRemoteCommand(session.cluster, `echo '${scriptB64}' | base64 -d | sbatch --test-only`);

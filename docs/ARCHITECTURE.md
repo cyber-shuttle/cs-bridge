@@ -63,9 +63,8 @@ Local VS Code                              Remote HPC cluster
 ## Experimental features
 
 `features.ts` names each feature and its stage. An experimental feature runs only with `csbridge.experimentalFeatures`,
-and every gate calls `enabled('<feature>')`; `package.json` hides its commands through the `csbridge.feature.<feature>`
-context key. A gate covers entry points only, so turning the switch off never strands a live run. Markdown tags an
-experimental feature **(experimental)** after its name, plain in a heading.
+and every gate calls `enabled('<feature>')`. A gate covers entry points only, so turning the switch off never strands a
+live run. Markdown tags an experimental feature **(experimental)** after its name, plain in a heading.
 
 | Step | Change |
 |---|---|

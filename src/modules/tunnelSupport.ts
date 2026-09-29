@@ -61,16 +61,6 @@ function buildTunnelManagementClient(): TunnelManagementHttpClient {
     );
 }
 
-// The base URL + auth headers a Dev Tunnel mandates for reaching Linkspan's API on this session's Dev Tunnel. linkspanSupport
-// does the calling; the two compose at the caller.
-export function linkspanEndpoint(session: SlurmSession): { baseUrl: string; headers: Record<string, string> } {
-    const ci = session.connectionInfo;
-    return {
-        baseUrl: `https://${ci?.apiTunnelId}-${ci?.apiPort}.${ci?.region}.devtunnels.ms/api/v1`,
-        headers: { 'X-Tunnel-Authorization': `tunnel ${ci?.apiTunnelAccessToken}` },
-    };
-}
-
 // Makes the Dev Tunnel carry apiPort, the only port it needs, and returns the host token: we keep the Entra bearer local
 // and register the port ourselves, so the node only ever holds a token scoped to hosting this Dev Tunnel.
 export async function ensureDevTunnel(session: SlurmSession): Promise<string> {
@@ -131,10 +121,8 @@ export const devTunnels = {
     management: buildTunnelManagementClient,
     relayClient: (management: TunnelManagementHttpClient, session: SlurmSession) => new DevTunnelRelayClient(new TunnelRelayTunnelClient(management), session.connectionInfo?.apiPort ?? 0),
     ensureTunnel: ensureDevTunnel,
-    withLinkspan: (session, call) => {
-        const { baseUrl, headers } = linkspanEndpoint(session);
-        return call(baseUrl, headers);
-    },
+    withLinkspan: ({ connectionInfo: ci }, call) => call(`https://${ci?.apiTunnelId}-${ci?.apiPort}.${ci?.region}.devtunnels.ms/api/v1`,
+        { 'X-Tunnel-Authorization': `tunnel ${ci?.apiTunnelAccessToken}` }),
     deleteTunnel: deleteDevTunnel,
 } satisfies Tunnels;
 
@@ -151,9 +139,8 @@ export async function deleteDevTunnel(session: SlurmSession): Promise<void> {
     updateSession(session);
 }
 
-// Step 1: an sshd forwarded on the session's current API Dev Tunnel. Linkspan is the source of truth for the sshd, so we
-// reconcile to what it reports rather than trusting local port/forward state — self-healing a stale port after a
-// Linkspan restart, or a forward stranded on a re-minted Dev Tunnel. Idempotent.
+// Step 1: the session's sshd. Linkspan answers a repeat with the running one, so asking each time self-heals a port a
+// Linkspan restart changed.
 export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Promise<void> {
     await t.ensureTunnel(session); // refreshes the tunnel id and connect token
     const ci = session.connectionInfo!; // ensureTunnel guarantees connectionInfo

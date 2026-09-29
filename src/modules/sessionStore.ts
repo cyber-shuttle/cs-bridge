@@ -31,7 +31,7 @@ export function mergeFromDisk(mem: SlurmSession[], disk: SlurmSession[]): boolea
     return changed;
 }
 
-// Persisted record: jobScript dropped, windowPids kept from disk so a write can't clobber another window's pids.
+// Persisted record: windowPids kept from disk so a write can't clobber another window's pids.
 export function toPersistedRecord(session: SlurmSession, diskWindowPids?: number[]): SlurmSession {
-    return { ...session, jobScript: undefined, connectionInfo: persistableConnectionInfo(session.connectionInfo), windowPids: diskWindowPids ?? session.windowPids };
+    return { ...session, connectionInfo: persistableConnectionInfo(session.connectionInfo), windowPids: diskWindowPids ?? session.windowPids };
 }

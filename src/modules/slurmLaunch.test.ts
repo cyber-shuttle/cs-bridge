@@ -117,7 +117,6 @@ test('validateSlurmConfig hands sbatch --test-only the job script and surfaces t
         /Slurm on SSH host cl rejected the session configuration: ERROR: Unknown project acct1/);
 });
 
-// sbatchEnv reaches sbatch as its environment, exported to the job, never as an argument or in the script.
 test('submitJobToSlurm feeds sbatch the script and sbatchEnv, recording the job id', async () => {
     const { run, home } = host({ sbatch: 'cat > "$HOME/script"; printf %s "$LINKSPAN_LINK_TOKEN" > "$HOME/token"; echo "$*" > "$HOME/args"; echo "Submitted batch job 4242"' });
     const s = session({ jobScript: '#!/bin/bash\necho hi' });
