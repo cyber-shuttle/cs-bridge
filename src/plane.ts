@@ -41,6 +41,10 @@ export class Plane {
 
     signOut() { return this.save(); }
     async signedIn() { return !!await this.load(); }
+    async account() {
+        const credential = await this.load();
+        return credential && JSON.parse(Buffer.from(credential.idToken.split('.')[1], 'base64url').toString()).email as string | undefined;
+    }
 
     createSession(session: SlurmSession) { return this.api('sessions', 'POST', toSpec(session)) as Promise<{ id: string }>; }
     attachLink(id: string) { return this.api(`sessions/${id}/attach`, 'POST', { tunnelModes: ['link'] }) as Promise<{ port: number; link: { url: string; token: string } }>; }
@@ -54,7 +58,7 @@ export class Plane {
             this.refreshing ??= this.refresh(credential).finally(() => { this.refreshing = undefined; });
             await this.refreshing;
         }
-        if (!this.credential) { throw new PlaneError(401, 'Sign in to CyberShuttle first (CS Bridge: Sign In to CyberShuttle).'); }
+        if (!this.credential) { throw new PlaneError(401, 'Sign in to CyberShuttle first (CS Bridge: Open Menu).'); }
         try { return await this.request(path, method, body, this.credential.idToken); }
         catch (err) {
             if (err instanceof PlaneError && err.status === 401) { await this.signOut(); }

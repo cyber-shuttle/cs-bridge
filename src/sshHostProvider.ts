@@ -1,9 +1,8 @@
 import * as vscode from 'vscode';
 import { HostsState, WebviewMessage } from './models';
 import { WebviewProvider } from './webviewProvider';
-import { errMsg } from './logger';
 import { SshManager } from './modules/sshSupport';
-import { sshCommandToConfig, assertValidHost, SshConfigEntry } from './modules/sshCommandParser';
+import { sshCommandToConfig, assertValidHost } from './modules/sshCommandParser';
 import { USER_SSH_CONFIG_PATH, addHostToConfigFile, deleteHostFromConfigFile } from './modules/sshHostsStore';
 
 // Webview provider for the SSH Hosts view: reads user + read-only system SSH config, writes user SSH hosts to ~/.ssh/config.
@@ -30,31 +29,10 @@ export class SshHostProvider extends WebviewProvider {
         this.pushState();
     }
 
-    public async addSshHost(): Promise<void> {
-        const command = (await vscode.window.showInputBox({
-            title: 'Enter SSH Connection Command',
-            placeHolder: 'E.g. ssh hello@microsoft.com -A',
-            ignoreFocusOut: true,
-        }))?.trim();
-        if (!command) { return; }
-
-        let entry: SshConfigEntry;
-        try {
-            entry = sshCommandToConfig(command);
-            assertValidHost(entry);
-        }
-        catch (err) {
-            vscode.window.showErrorMessage(errMsg(err));
-            return;
-        }
-
-        try {
-            addHostToConfigFile(USER_SSH_CONFIG_PATH, entry);
-        }
-        catch (err) {
-            this.showError('Failed to save SSH host', err);
-            return;
-        }
+    public addSshHost(command: string): void {
+        const entry = sshCommandToConfig(command);
+        assertValidHost(entry);
+        addHostToConfigFile(USER_SSH_CONFIG_PATH, entry);
         this.pushState();
     }
 

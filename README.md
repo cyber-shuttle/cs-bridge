@@ -46,7 +46,7 @@ CS Bridge requires VS Code 1.98 or newer, a Slurm cluster reachable from `~/.ssh
 
 A cluster is entered through an SSH host, but work runs on compute nodes that Slurm allocates. CS Bridge installs [Linkspan](https://github.com/cyber-shuttle/linkspan), a small agent, on the cluster and runs it inside each job; Linkspan hosts a Microsoft Dev Tunnel from the compute node, which is how VS Code reaches it without any inbound port.
 
-With `csbridge.experimentalFeatures` on, the `csbridge.transport` setting also offers `link` **(experimental)**: after **CS Bridge: Sign In to CyberShuttle**, Linkspan opens a WebSocket to cs-plane instead of a Dev Tunnel, and **Connect** forwards SSH through cs-plane. It needs VS Code 1.101 or newer.
+With `csbridge.experimentalFeatures` on, the `csbridge.transport` setting also offers `link` **(experimental)**: after signing in to CyberShuttle from **CS Bridge: Open Menu**, Linkspan opens a WebSocket to cs-plane instead of a Dev Tunnel, and **Connect** forwards SSH through cs-plane. It needs VS Code 1.101 or newer.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/02-sessions.png" alt="Sessions sidebar" width="480">
 

@@ -11,7 +11,10 @@ Requires Linkspan 0.22.0.
 ### Added
 
 - **`csbridge.experimentalFeatures`** (off by default) enables experimental features that are not yet stable.
-- **Sign In to CyberShuttle** and **Sign Out of CyberShuttle** commands **(experimental)**.
+- **CS Bridge: Open Menu**, also the Sessions view's **+**: new session, add SSH host, default transport
+  **(experimental)**, and Microsoft DevTunnel and CyberShuttle **(experimental)** sign-in and sign-out. Enter opens,
+  Escape goes back. It replaces **New Session** and **Switch Dev Tunnels Account**; the SSH Hosts view's **+** opens it
+  at **Add SSH Host**.
 - **`csbridge.transport`**: `devtunnel` (default) or `link` **(experimental)**, which reaches Linkspan through cs-plane
   and needs CyberShuttle sign-in and VS Code 1.101 or newer.
 

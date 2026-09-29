@@ -10,6 +10,7 @@ import { Tunnels, deleteDevTunnel, devTunnels, ensureDevTunnel, getMicrosoftAcco
 import { LinkManagementClient, LinkRelayClient } from './linkTunnel';
 
 export interface Transport extends Tunnels {
+    readonly description: string;
     signedIn(): Promise<boolean>; // without prompting
     hasTunnel(session: SlurmSession): boolean;
     prepare(session: SlurmSession): Promise<LinkspanLaunch>; // before sbatch: reserve the run's tunnel
@@ -18,6 +19,7 @@ export interface Transport extends Tunnels {
 
 const devTunnel = {
     ...devTunnels,
+    description: 'Stable, relayed by Microsoft\'s network',
     signedIn: async () => await getMicrosoftAccountLabel() !== null,
     hasTunnel: session => !!session.tunnelId,
     async prepare(session) {
@@ -30,7 +32,8 @@ const devTunnel = {
 } satisfies Transport;
 
 class Link implements Transport {
-    label = 'cs-plane link';
+    label = 'Cybershuttle Link';
+    description = 'Experimental, relayed by Cybershuttle';
 
     constructor(private readonly plane: Plane) { }
 
@@ -82,7 +85,7 @@ export class Transports {
 
     constructor(plane: Plane) { this.link = new Link(plane); }
 
-    readonly transportFor = (session: SlurmSession) => session.transport === 'link' ? this.link : devTunnel;
+    readonly transportFor = (session: Pick<SlurmSession, 'transport'>) => session.transport === 'link' ? this.link : devTunnel;
 
     async remove(session: SlurmSession) {
         for (const t of [devTunnel, this.link]) { await t.deleteTunnel(session); }
