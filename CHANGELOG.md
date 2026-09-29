@@ -10,6 +10,7 @@ Requires Linkspan 0.22.0.
 
 ### Added
 
+- **Terminal** on each SSH host opens `ssh <alias>` in a VS Code terminal, over the SSH host's shared connection.
 - **`csbridge.experimentalFeatures`** (off by default) enables experimental features that are not yet stable.
 - **CS Bridge: Open Menu**, also the Sessions view's **+**: new session, add SSH host, default transport
   **(experimental)**, and Microsoft DevTunnel and CyberShuttle **(experimental)** sign-in and sign-out. Enter opens,
