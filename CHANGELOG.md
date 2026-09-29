@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-29
+
 Requires Linkspan 0.22.0.
 
 ### Added
@@ -274,7 +276,8 @@ Initial release of **CS Bridge** — remote HPC development from VS Code. Publis
 - Status bar countdown and progress toasts for active sessions
 - esbuild-based build producing a single bundled, minified `out/extension.js` (`tsc` used for type-checking only)
 
-[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.1.8...HEAD
+[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.0...HEAD
+[0.2.0]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.1.8...0.2.0
 [0.1.8]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.1.7...0.1.8
 [0.1.7]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.1.5...0.1.6
