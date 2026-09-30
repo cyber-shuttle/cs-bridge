@@ -5,6 +5,7 @@ import {
     parseHostsFromConfigText,
     addHostToConfigText,
     deleteHostFromConfigText,
+    editHostInConfigText,
     mergeHostsByPriority,
     buildSshConfigBlock,
     csHostAlias,
@@ -55,6 +56,12 @@ test('addHostToConfigText prepends newest above existing', () => {
 test('deleteHostFromConfigText deletes the named entry', () => {
     const text = addHostToConfigText('', { Host: 'h', HostName: 'h' });
     assert.deepEqual(parseHostsFromConfigText(deleteHostFromConfigText(text, 'h')), []);
+});
+
+test('editHostInConfigText rewrites alias, hostname and user in place, keeping the rest of the block', () => {
+    const text = '# lab\nHost d\n    HostName old\n    User a\n    ForwardAgent yes\n\nHost other\n    HostName o\n';
+    assert.equal(editHostInConfigText(text, 'd', { Host: 'd2', HostName: 'new' }), '# lab\nHost d2\n    HostName new\n    ForwardAgent yes\n\nHost other\n    HostName o\n');
+    assert.throws(() => editHostInConfigText(text, 'd', { Host: 'other', HostName: 'o' }), /already exists/);
 });
 
 test('buildSshConfigBlock emits the six SSH resilience options', () => {

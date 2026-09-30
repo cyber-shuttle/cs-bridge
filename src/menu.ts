@@ -29,7 +29,7 @@ export class CsBridgeMenu {
         private readonly sshHosts: SshHostProvider, private readonly transports: Transports,
     ) { void this.refreshAccounts(); }
 
-    open(start: 'root' | 'addHost' = 'root'): void {
+    open(start: Build = this.root): void {
         const pick = vscode.window.createQuickPick<Item>();
         const stack: Build[] = [];
         let page: Page;
@@ -58,7 +58,7 @@ export class CsBridgeMenu {
             (async () => item?.run?.())().catch(fail).finally(() => this.refreshAccounts());
         });
         pick.onDidHide(() => { stack.length = 0; nested(false); pick.dispose(); });
-        go(start === 'addHost' ? this.addHost : this.root);
+        go(start);
         pick.show();
         void this.refreshAccounts().then(() => { if (stack.at(-1) === this.root) { render(); } });
     }
@@ -100,17 +100,32 @@ export class CsBridgeMenu {
         };
     };
 
-    private readonly addHost: Build = () => ({
+    readonly addHost: Build = () => ({
         title: 'Add SSH Host',
         placeholder: 'SSH connection command, e.g. ssh hello@microsoft.com -A',
         submit: (command) => {
             const entry = sshCommandToConfig(command);
             return () => ({
                 title: 'Add SSH Host: Alias', value: entry.Host, placeholder: 'Press Enter to use this alias, or type your own',
-                submit: alias => this.sshHosts.addSshHost({ ...entry, Host: alias }),
+                submit: alias => this.sshHosts.saveSshHost({ ...entry, Host: alias }),
             });
         },
     });
+
+    readonly editHost = (alias: string): Build => () => {
+        const host = SshManager.getInstance().getMergedHosts().find(h => h.alias === alias)!;
+        return {
+            title: 'Edit SSH Host: Alias', value: alias, placeholder: 'Press Enter to keep this alias, or type a new one',
+            submit: newAlias => () => ({
+                title: 'Edit SSH Host: Destination', value: [host.user, host.hostname].filter(Boolean).join('@'),
+                placeholder: '[user@]hostname',
+                submit: (destination) => {
+                    const [HostName, User] = destination.split('@').reverse();
+                    this.sshHosts.saveSshHost({ Host: newAlias, HostName, ...User && { User } }, alias);
+                },
+            }),
+        };
+    };
 
     private readonly transport: Build = () => ({
         title: 'Default Transport',
