@@ -3,7 +3,7 @@ import { HostsState, WebviewMessage } from './models';
 import { WebviewProvider } from './webviewProvider';
 import { SshManager } from './modules/sshSupport';
 import { SshConfigEntry, assertValidHost } from './modules/sshCommandParser';
-import { USER_SSH_CONFIG_PATH, addHostToConfigFile, deleteHostFromConfigFile } from './modules/sshHostsStore';
+import { USER_SSH_CONFIG_PATH, addHostToConfigFile, deleteHostFromConfigFile, editHostInConfigFile } from './modules/sshHostsStore';
 
 // Webview provider for the SSH Hosts view: reads user + read-only system SSH config, writes user SSH hosts to ~/.ssh/config.
 export class SshHostProvider extends WebviewProvider {
@@ -15,6 +15,7 @@ export class SshHostProvider extends WebviewProvider {
             case 'ready': this.pushState(); break;
             case 'deleteSshHost': void this.deleteSshHost(data.alias ?? ''); break;
             case 'openTerminal': this.openTerminal(data.alias ?? ''); break;
+            case 'editSshHost': void vscode.commands.executeCommand('csbridge.editHost', data.alias); break;
             default: this.logger.warn('Unknown command from hosts webview:', data);
         }
     }
@@ -35,11 +36,12 @@ export class SshHostProvider extends WebviewProvider {
         this.pushState();
     }
 
-    public addSshHost(entry: SshConfigEntry): void {
+    public saveSshHost(entry: SshConfigEntry, alias?: string): void {
         assertValidHost(entry);
-        addHostToConfigFile(USER_SSH_CONFIG_PATH, entry);
+        if (alias) { editHostInConfigFile(USER_SSH_CONFIG_PATH, alias, entry); }
+        else { addHostToConfigFile(USER_SSH_CONFIG_PATH, entry); }
         this.pushState();
-        void vscode.window.showInformationMessage(`Added SSH host ${entry.Host}.`);
+        void vscode.window.showInformationMessage(`${alias ? 'Updated' : 'Added'} SSH host ${entry.Host}.`);
     }
 
     private async deleteSshHost(alias: string): Promise<void> {

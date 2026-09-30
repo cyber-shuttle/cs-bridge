@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { parse, LineType } from 'ssh-config';
+import { parse, LineType, type Directive, type Section } from 'ssh-config';
 import { SshHost } from '../models';
 import { SshConfigEntry } from './sshCommandParser';
 import { lockedUpdateTextFile } from './fsSupport';
@@ -119,6 +119,21 @@ export function deleteHostFromConfigText(text: string, alias: string): string {
     return config.toString();
 }
 
+export function editHostInConfigText(text: string, alias: string, edit: SshConfigEntry): string {
+    const config = parse(text);
+    const section = config.find({ Host: alias }) as Section | undefined;
+    if (!section) { throw new Error(`SSH host ${alias} is not in ~/.ssh/config.`); }
+    if (edit.Host !== alias && config.find({ Host: edit.Host })) { throw new Error(`SSH host ${edit.Host} already exists.`); }
+    section.value = edit.Host;
+    for (const [param, value] of [['User', edit.User], ['HostName', edit.HostName]] as const) {
+        const i = section.config.findIndex(line => 'param' in line && line.param === param);
+        const line = (section.config[i] ?? { type: LineType.DIRECTIVE, before: section.config[0]?.before ?? '    ', after: '\n', separator: ' ', param }) as Directive;
+        if (i >= 0) { section.config.splice(i, 1); }
+        if (value) { section.config.splice(Math.max(i, 0), 0, { ...line, value }); }
+    }
+    return config.toString();
+}
+
 export function mergeHostsByPriority(...lists: SshHost[][]): SshHost[] {
     const byAlias = new Map<string, SshHost>();
     for (const host of lists.flat()) {
@@ -130,6 +145,10 @@ export function mergeHostsByPriority(...lists: SshHost[][]): SshHost[] {
 export function addHostToConfigFile(filePath: string, entry: SshConfigEntry): void {
     fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
     lockedUpdateTextFile(filePath, text => addHostToConfigText(text ?? '', entry), 0o600);
+}
+
+export function editHostInConfigFile(filePath: string, alias: string, edit: SshConfigEntry): void {
+    lockedUpdateTextFile(filePath, text => editHostInConfigText(text ?? '', alias, edit), 0o600);
 }
 
 export function deleteHostFromConfigFile(filePath: string, alias: string): void {
