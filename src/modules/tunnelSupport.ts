@@ -103,7 +103,7 @@ async function getDevTunnelAuthToken(): Promise<string> {
     }
     catch (err) {
         logger.error('Failed to get Dev Tunnels auth token:', err);
-        throw new Error('Dev Tunnels authentication is required. Please sign in to your Microsoft account.');
+        throw new Error('Dev Tunnels authentication is required. Please sign in to your Microsoft account.', { cause: err });
     }
 }
 

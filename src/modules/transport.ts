@@ -61,7 +61,7 @@ const devTunnel = {
         // Fresh launch: drop the prior run's Dev Tunnel so its ports don't accumulate toward Microsoft's PortsPerTunnel (10) cap.
         await deleteDevTunnel(session);
         try { return devTunnelLaunch(session, await ensureDevTunnel(session)); }
-        catch (err) { throw new Error(`Failed to create Dev Tunnel: ${errMsg(err)}`); }
+        catch (err) { throw new Error(`Failed to create Dev Tunnel: ${errMsg(err)}`, { cause: err }); }
     },
     release: async () => { },
 } satisfies Transport;
@@ -98,7 +98,7 @@ class Link implements Transport {
             session.connectionInfo!.controlPort = port;
             return linkLaunch(link.url, link.token);
         }
-        catch (err) { throw new Error(`Failed to attach the cs-plane session: ${errMsg(err)}`); }
+        catch (err) { throw new Error(`Failed to attach the cs-plane session: ${errMsg(err)}`, { cause: err }); }
     }
 
     // Idempotent: a terminal cs-plane session answers unchanged.
