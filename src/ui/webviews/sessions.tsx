@@ -46,22 +46,6 @@ function CloudConfigCard({ state, icon, muted, onDismiss }: { state: SessionsSta
     );
 }
 
-function gpuInitial(gpuClass: string): Partial<HostFormInitial> {
-    const gpu = parseGpuClass(gpuClass);
-    return gpu ? { tab: 'gpu', gpuType: gpu.gpuType, gpuCount: gpu.gpuCount } : { tab: 'cpu' };
-}
-
-function editInitial(session: ViewSession): HostFormInitial {
-    return {
-        ...gpuInitial(session.gpuClass),
-        partName: session.queue,
-        allocation: session.allocation,
-        cpu: String(session.cpus),
-        memory: session.memory,
-        wall: session.wallTime,
-    };
-}
-
 function ScriptPreviewOverlay({ state }: { state: SessionsState }) {
     const s = state.previewSession;
     if (!s) { return null; }

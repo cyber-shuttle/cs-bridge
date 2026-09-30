@@ -11,7 +11,6 @@ import { SshManager } from './modules/sshSupport';
 import { Transports } from './modules/transport';
 import { getMicrosoftAccountLabel, switchDevTunnelAccount } from './modules/tunnelSupport';
 import { enabled } from './features';
-import { sshCommandToConfig } from './modules/sshCommandParser';
 
 type Page = { title: string; placeholder?: string; value?: string; items?: Item[]; submit?: (value: string) => Build | void };
 type Build = () => Page;
@@ -71,11 +70,13 @@ export class CsBridgeMenu {
     private readonly root: Build = () => {
         const { email, microsoft } = this;
         const cybershuttle = enabled('cybershuttle');
-        return {
+        const options = {
             title: 'CS Bridge',
             items: [
                 { label: '$(add) Create New SSH Session', open: this.hosts },
                 { label: '$(server) Add SSH Host', open: this.addHost },
+                { label: '$(cloud) Add Cloudbank Token', run: () => this.sessions.initCloudClient() },
+
                 ...cybershuttle ? [{ label: '$(arrow-swap) Default Transport', description: this.of(this.current()).label, open: this.transport }] : [],
                 { label: 'Accounts', kind: vscode.QuickPickItemKind.Separator },
                 ...cybershuttle ? [email === null
@@ -86,6 +87,12 @@ export class CsBridgeMenu {
                     : { label: '$(sign-out) Sign Out of Microsoft DevTunnel', description: microsoft, run: () => vscode.commands.executeCommand('_signOutOfAccount', { providerId: 'microsoft', accountLabel: microsoft }) },
             ],
         };
+
+        if (this.sessions.isCloudReady()) {
+            options.items.push({ label: "$(cloud) Start Cloud Instance", run: () => this.sessions.startCloudForm() })
+        }
+
+        return options
     };
 
     private readonly hosts: Build = () => {
@@ -103,12 +110,9 @@ export class CsBridgeMenu {
     readonly addHost: Build = () => ({
         title: 'Add SSH Host',
         placeholder: 'SSH connection command, e.g. ssh hello@microsoft.com -A',
-        submit: (command) => {
-            const entry = sshCommandToConfig(command);
-            return () => ({
-                title: 'Add SSH Host: Alias', value: entry.Host, placeholder: 'Press Enter to use this alias, or type your own',
-                submit: alias => this.sshHosts.saveSshHost({ ...entry, Host: alias }),
-            });
+        submit: (_) => {
+            this.sessions.initCloudClient()
+
         },
     });
 
@@ -148,3 +152,4 @@ async function signIn(plane: Plane) {
         (_progress, token) => plane.awaitSignIn(code, () => token.isCancellationRequested),
     )) { vscode.window.showInformationMessage('Signed in to CyberShuttle.'); }
 }
+

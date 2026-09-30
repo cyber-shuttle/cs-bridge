@@ -14,7 +14,7 @@ import { stopSession, SessionMonitor, launchSession, prepareLaunch } from './mod
 import { Transports, connectSessionToTunnel, disposeAllTunnelClients, disposeTunnelClient, ensureRemoteSession, hasTunnelClient } from './modules/transport';
 import { validateSlurmConfig } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
-import { isTerminal, isCloseable, isStoppable, isReattachable, isRelayLive, isWallTimeExpired } from './modules/sessionMachine';
+import { isTerminal, isDeletable, isStoppable, isReachable, isWallTimeExpired } from './modules/sessionMachine';
 import AWSClient from "./modules/aws"
 
 // forceNew=false relies on VS Code deduping by workspace identity: it focuses the window already holding this URI.
@@ -469,5 +469,22 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         if (this.previewSession?.id !== sessionId) { void this.release(this.previewSession); }
         this.previewSession = session;
         void this.pushState();
+    }
+    public async initCloudClient(): Promise<void> {
+        await this.awsClient.initEC2Client("us-east-1")
+        this.pushState()
+    }
+
+    public isCloudReady(): boolean {
+        return this.awsClient.isReady()
+    }
+
+    public async startCloudForm(): Promise<void> {
+        this.cloudForm = "loading"
+        this.logger.info(this.cloudForm)
+        this.pushState()
+        this.cloudFormOptions.aws = await this.awsClient.getOptions()
+        this.cloudForm = "ready"
+        await this.pushState()
     }
 }
