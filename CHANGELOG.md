@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-30
+
 ### Changed
 
 - **Sessions, run history and SSH keys** move from `~/.cybershuttle` to VS Code's extension storage on first
@@ -316,7 +318,8 @@ Initial release of **CS Bridge** — remote HPC development from VS Code. Publis
 - Status bar countdown and progress toasts for active sessions
 - esbuild-based build producing a single bundled, minified `out/extension.js` (`tsc` used for type-checking only)
 
-[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.2...HEAD
+[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.3...HEAD
+[0.2.3]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.2...0.2.3
 [0.2.2]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.1...0.2.2
 [0.2.1]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.1.8...0.2.0
