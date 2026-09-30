@@ -233,7 +233,7 @@ export async function prepareLaunch(session: SlurmSession, transport: Transport)
     const launch = await transport.prepare(session);
 
     try { session.jobScript = buildSlurmScript(session, launch); }
-    catch (err) { throw new Error(`Failed to generate Slurm script: ${errMsg(err)}`); }
+    catch (err) { throw new Error(`Failed to generate Slurm script: ${errMsg(err)}`, { cause: err }); }
 
     session.errorMessage = '';
     updateSession(session);

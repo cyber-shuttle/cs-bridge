@@ -12,7 +12,7 @@ const SOURCE_ORDER: Record<string, number> = { user: 0, system: 1 };
 function DetailRow({ label, children }: { label: string; children: ComponentChildren }) {
     return (
         <Row gap={6} style={{ alignItems: 'baseline' }}>
-            <Text muted size={11} style={{ width: 64, flexShrink: 0 }}>{label}</Text>
+            <Text muted size={11} style={{ width: '64px', flexShrink: 0 }}>{label}</Text>
             <div style={{ minWidth: 0, fontSize: '12px', wordBreak: 'break-all' }}>{children}</div>
         </Row>
     );

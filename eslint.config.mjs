@@ -1,8 +1,9 @@
 import js from '@eslint/js';
+import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 import stylistic from '@stylistic/eslint-plugin';
 
-export default tseslint.config(
+export default defineConfig(
     { ignores: ['out/**', 'dist/**', 'node_modules/**', '**/*.d.ts'] },
     {
         files: ['**/*.ts', '**/*.tsx'],
