@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 
-export function isPidAlive(pid: number | undefined): boolean {
-    if (pid === undefined) { return false; }
+function isPidAlive(pid: number): boolean {
     // signal 0 is the POSIX null-signal probe - doesn't actually send anything; throws ESRCH if pid is gone.
     try { process.kill(pid, 0); return true; }
     catch { return false; }
@@ -36,21 +35,9 @@ export function release(filepath: string): void {
     catch { /* already gone */ }
 }
 
-// Single-object JSON read; atomic writers make torn reads impossible, so this is lock-free. Missing → undefined.
 export function readJson<T>(file: string): T | undefined {
     try { return JSON.parse(fs.readFileSync(file, 'utf-8')) as T; }
     catch { return undefined; }
-}
-
-// Per-file locked read-modify-write (atomic temp+rename). `mutate` returns the value to write, or null to skip.
-export function lockedUpdateJson<T>(file: string, mutate: (cur: T | undefined) => T | null, onError?: (err: unknown) => void): void {
-    lock(file);
-    try {
-        const next = mutate(readJson<T>(file));
-        if (next !== null) { writeJson(file, next); }
-    }
-    catch (err) { onError?.(err); }
-    finally { release(file); }
 }
 
 // Atomic temp+rename write; callers that share the file hold its lock.

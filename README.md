@@ -68,12 +68,10 @@ The full design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 **Local**
 
-- `~/.cybershuttle/schema.json` records the version of the files below; CS Bridge migrates older ones on activation.
-- `~/.cybershuttle/sessions/` holds one `<sessionId>.json` per session.
-- `~/.cybershuttle/runs/` holds the run history and usage of each session.
-- `~/.cybershuttle/ssh_config` defines the per-session SSH aliases and is included from `~/.ssh/config`.
-- `~/.cybershuttle/ssh_keys/` holds the per-session SSH keys.
-- `~/.cybershuttle/ssh_control/` holds the ControlMaster sockets.
+- VS Code's extension storage holds the sessions, their run history and usage, window heartbeats, the per-session
+  SSH keys, and the `ssh_config` of per-session SSH aliases that `~/.ssh/config` includes. CS Bridge moves
+  its files from `~/.cybershuttle` there on activation, and VS Code removes them on uninstall.
+- The temp folder holds the ControlMaster sockets.
 - VS Code keeps the Microsoft account token in the operating system keychain.
 - VS Code's SecretStorage keeps the credential of CyberShuttle sign-in **(experimental)**.
 
@@ -82,7 +80,8 @@ The full design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - `~/.cybershuttle/bin/linkspan` is installed on first launch.
 - `~/.cybershuttle/logs/` holds the Linkspan output of each session.
 
-To reset, remove `~/.cybershuttle/` on both machines and the `Include` line in `~/.ssh/config`.
+To reset, remove the `cybershuttle.csbridge` folder in VS Code's `User/globalStorage`, its `Include` line in
+`~/.ssh/config`, and `~/.cybershuttle/` on the cluster.
 
 ## Privacy
 

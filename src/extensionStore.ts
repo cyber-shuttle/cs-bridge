@@ -1,58 +1,51 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { Logger } from './logger';
-import { readJson, lockedUpdateJson, deleteFile, isPidAlive, jsonFiles } from './modules/fsSupport';
-import { SlurmSession } from './models';
-import { mergeFromDisk, mergeRecord, toPersistedRecord } from './modules/sessionStore';
+import { SlurmSession, persistableConnectionInfo } from './models';
+import { Files, JsonDir } from './modules/store';
 import { deleteRunsFile } from './modules/runStore';
-import { CS_HOME } from './modules/schema';
 
 const logger = Logger.getInstance();
-let sessions: SlurmSession[] = [];
-let sessionsDir = '';
 
-const recordPath = (id: string): string => path.join(sessionsDir, `${id}.json`);
+let sessions: JsonDir<SlurmSession>;
 
-function readAllRecords(): SlurmSession[] {
-    return jsonFiles(sessionsDir).map(n => readJson<SlurmSession>(path.join(sessionsDir, n))).filter((s): s is SlurmSession => !!s);
-}
+// A window connected to a session rewrites windows/{windowId}.json until it closes. env.sessionId repeats across
+// browser tabs, and a hidden tab's timers can slow to once a minute.
+interface WindowBeat { sessionId: string; at: number }
+let windows: JsonDir<WindowBeat>;
+const BEAT_MS = 20_000;
+const isBeating = (w: WindowBeat) => Date.now() - w.at < 90_000;
+let beat: ReturnType<typeof setInterval> | undefined;
+const windowId = Math.random().toString(36).slice(2);
 
-// Keeps the on-disk windowPids so a record write can't clobber another window's pids.
-function writeRecord(session: SlurmSession): void {
-    lockedUpdateJson<SlurmSession>(recordPath(session.id), cur => toPersistedRecord(session, cur?.windowPids),
-        err => logger.error(`Failed to save session ${session.id}`, err));
-}
-
-export function initSessionStore(): string {
-    sessionsDir = path.join(CS_HOME, 'sessions');
-    fs.mkdirSync(sessionsDir, { recursive: true });
-    sessions = readAllRecords();
-    for (const s of sessions) {
+export async function initSessionStore(files: Files, onError: (err: unknown) => void) {
+    sessions = new JsonDir<SlurmSession>(files, 'sessions', onError,
+        // Keeps the object the monitor holds, and this window's live connection details, which are never written.
+        (cur, next) => (cur ? Object.assign(cur, next, { connectionInfo: cur.connectionInfo ?? next.connectionInfo }) : next),
+        s => ({ ...s, connectionInfo: persistableConnectionInfo(s.connectionInfo) }));
+    windows = new JsonDir<WindowBeat>(files, 'windows', onError);
+    await Promise.all([sessions.load(), windows.load()]);
+    for (const s of sessions.values()) {
         // The connection is gone after a reload; demote so the UI offers Connect (which reattaches from the persisted refs).
         if (s.status === 'connected' || s.status === 'connecting') { s.status = 'ready_to_connect'; }
     }
-    logger.info(`Loaded ${sessions.length} session(s) from ${sessionsDir}`);
-    return sessionsDir;
+    for (const [id, w] of windows.entries()) { if (!isBeating(w)) { windows.delete(id); } }
+    logger.info(`Loaded ${sessions.values().length} session(s)`);
+    return [sessions, windows];
 }
 
 export function getAllSessions(): SlurmSession[] {
-    return sessions;
+    return sessions.values();
 }
 
 export function getSession(sessionId: string): SlurmSession | undefined {
-    return sessions.find(s => s.id === sessionId);
+    return sessions.get(sessionId);
 }
 
 export function addSession(session: SlurmSession) {
-    sessions.push(session);
-    writeRecord(session);
+    sessions.set(session.id, session);
 }
 
 export function updateSession(session: SlurmSession) {
-    const index = sessions.findIndex(s => s.id === session.id);
-    if (index === -1) { return; }
-    sessions[index] = session;
-    writeRecord(session);
+    if (sessions.get(session.id)) { sessions.set(session.id, session); }
 }
 
 export function setStatus(session: SlurmSession, status: SlurmSession['status'], errorMessage?: string): void {
@@ -62,51 +55,27 @@ export function setStatus(session: SlurmSession, status: SlurmSession['status'],
 }
 
 export function deleteSession(sessionId: string) {
-    const index = sessions.findIndex(s => s.id === sessionId);
-    if (index !== -1) { sessions.splice(index, 1); }
-    deleteFile(recordPath(sessionId));
+    sessions.delete(sessionId);
     deleteRunsFile(sessionId);
 }
 
-export function mutateWindowPids(sessionId: string, transform: (pids: number[]) => number[]): void {
-    lockedUpdateJson<SlurmSession>(recordPath(sessionId), (cur) => {
-        if (!cur) { return null; }
-        cur.windowPids = transform(cur.windowPids ?? []);
-        const mem = sessions.find(s => s.id === sessionId);
-        if (mem) { mem.windowPids = cur.windowPids; }
-        return cur;
-    }, err => logger.error(`Failed to update windowPids for ${sessionId}`, err));
+export function attachWindow(sessionId: string): void {
+    const write = () => windows.set(windowId, { sessionId, at: Date.now() });
+    write();
+    beat = setInterval(write, BEAT_MS);
 }
 
-export function liveAndCleanup(s: SlurmSession): { isCurrent: boolean; windowAlive: boolean } {
-    const pids = s.windowPids ?? [];
-    const live = pids.filter(isPidAlive);
-    if (live.length !== pids.length) { mutateWindowPids(s.id, () => live); }
-    return { isCurrent: live.includes(process.pid), windowAlive: live.length > 0 };
+export function detachWindow(): Promise<void> | undefined {
+    clearInterval(beat);
+    return windows?.delete(windowId);
 }
 
-// Cross-window sync: reconcile in-memory from disk in place (never swap identity, so monitor/connect refs stay valid).
-// Every open window watches this dir, so the callback fires on every record write in every window — read only the one
-// file that changed (undefined = deleted), never all of them, or an unrelated session's write stutters every window.
-// Changed ids are coalesced over a short window: an atomic temp+rename fires 2-3 raw events per write on macOS, and a
-// burst of writes shouldn't fan out to a burst of re-renders.
-export function watchSessions(callback: () => void): fs.FSWatcher {
-    const changed = new Set<string>();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const flush = (): void => {
-        timer = undefined;
-        let dirty = false;
-        for (const id of changed) { if (mergeRecord(sessions, id, readJson<SlurmSession>(recordPath(id)))) { dirty = true; } }
-        changed.clear();
-        if (dirty) { callback(); }
-    };
-    const watcher = fs.watch(sessionsDir, (_event, filename) => {
-        if (!filename) { if (mergeFromDisk(sessions, readAllRecords())) { callback(); } return; } // platform gave no name
-        if (!filename.endsWith('.json')) { return; }
-        changed.add(filename.slice(0, -'.json'.length));
-        timer ??= setTimeout(flush, 50);
-    });
-    const close = watcher.close.bind(watcher);
-    watcher.close = () => { if (timer) { clearTimeout(timer); timer = undefined; } close(); };
-    return watcher;
+export function windowState(s: SlurmSession): { isCurrent: boolean; windowAlive: boolean } {
+    return { isCurrent: windows.get(windowId)?.sessionId === s.id, windowAlive: windows.values().some(w => w.sessionId === s.id && isBeating(w)) };
+}
+
+// Heartbeats fire it too.
+export function onSessionsChange(listener: () => void): { dispose(): void } {
+    const subs = [sessions.onDidChange(listener), windows.onDidChange(listener)];
+    return { dispose: () => subs.forEach(s => s.dispose()) };
 }

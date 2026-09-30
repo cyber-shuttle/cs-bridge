@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getSession, setStatus, watchSessions } from './extensionStore';
+import { getSession, setStatus, onSessionsChange } from './extensionStore';
 import { isTerminal, isWallTimeExpired } from './modules/sessionMachine';
 import { remainingMs, fmtTime, wallMs } from './ui/logic/session';
 import { enqueuePendingSummary } from './summaryPanel';
@@ -31,9 +31,8 @@ export class RemoteSessionController implements vscode.Disposable {
         if (!this.torndown) { this.item.show(); this.stopItem.show(); }
 
         this.ticker = setInterval(() => this.render(), 1000);
-        // Keeps the in-memory record fresh (merge happens in the watch callback) and catches terminal transitions.
-        const w = watchSessions(() => this.render());
-        this.watcher = { dispose: () => w.close() };
+        // Catches terminal transitions, from this window or another.
+        this.watcher = onSessionsChange(() => this.render());
     }
 
     // Refresh the countdown, and fire the graceful end the moment the session is expired or terminal.

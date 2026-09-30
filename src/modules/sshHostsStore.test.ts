@@ -73,7 +73,7 @@ test('buildSshConfigBlock emits the six SSH resilience options', () => {
     assert.match(block, /^# CS-Bridge auto-generated for session sess1$/m);
     assert.match(block, /^Host delta-493119$/m);
     assert.match(block, /^ {4}Port 50122$/m);
-    assert.match(block, /^ {4}IdentityFile \/keys\/id_cshost-sess1$/m);
+    assert.match(block, /^ {4}IdentityFile "\/keys\/id_cshost-sess1"$/m);
 });
 
 // deleteSshConfigEntry's removal regex only matches 4-space-indented directive lines.

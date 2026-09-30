@@ -7,14 +7,23 @@ import { execFileSync, spawn, spawnSync, ChildProcess } from 'child_process';
 import * as crypto from 'crypto';
 import { Logger, errMsg } from '../logger';
 import { lock, release, lockedUpdateTextFile } from './fsSupport';
-import { CS_HOME } from './schema';
 import { buildShellCommand, extractCommandResult, READY_MARKER, renderAuthHtml } from './sshShell';
 import { USER_SSH_CONFIG_PATH, SYSTEM_SSH_CONFIG_PATH, mergeHostsByPriority, parseHostsFromConfigText, buildSshConfigBlock, csHostAlias, includeIsEffective } from './sshHostsStore';
 
 const logger = Logger.getInstance();
-const CS_SSH_CONFIG_PATH = path.join(CS_HOME, 'ssh_config');
-const CS_SSH_KEYS_DIR = path.join(CS_HOME, 'ssh_keys');
-const CS_SSH_CONTROL_DIR = path.join(CS_HOME, 'ssh_control');
+// The config and keys live in extension storage, which VS Code removes on uninstall. Sockets there would pass the
+// 104-byte socket path limit, so they live in a runtime or temp folder that only this user can reach.
+let CS_SSH_CONFIG_PATH = '';
+let CS_SSH_KEYS_DIR = '';
+let CS_SSH_CONTROL_DIR = '';
+
+// Linux shares /tmp, where another user could create the folder first; one not private to this user is passed over.
+function privateControlDir(): string {
+    const dir = path.join(process.env.XDG_RUNTIME_DIR ?? os.tmpdir(), 'csbridge-ssh');
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const { uid, mode } = fs.statSync(dir);
+    return uid === process.getuid?.() && !(mode & 0o077) ? dir : fs.mkdtempSync(path.join(os.tmpdir(), 'csbridge-'));
+}
 
 const sessionKeyPath = (sessionId: string): string => path.join(CS_SSH_KEYS_DIR, `id_cshost-${sessionId}`);
 
@@ -42,16 +51,16 @@ export class SshManager {
     private readonly queues = new Map<string, Promise<unknown>>();
 
     private constructor(private readonly extensionUri: vscode.Uri) {
-        if (!fs.existsSync(CS_SSH_CONTROL_DIR)) {
-            fs.mkdirSync(CS_SSH_CONTROL_DIR, { recursive: true, mode: 0o700 });
-        }
+        if (process.platform !== 'win32') { CS_SSH_CONTROL_DIR = privateControlDir(); }
 
         if (!fs.existsSync(CS_SSH_KEYS_DIR)) {
             fs.mkdirSync(CS_SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
         }
     }
 
-    public static initInstance(extensionUri: vscode.Uri): SshManager {
+    public static initInstance(extensionUri: vscode.Uri, storageDir: string): SshManager {
+        CS_SSH_CONFIG_PATH = path.join(storageDir, 'ssh_config');
+        CS_SSH_KEYS_DIR = path.join(storageDir, 'ssh_keys');
         if (!SshManager.instance) {
             SshManager.instance = new SshManager(extensionUri);
         }
@@ -293,7 +302,7 @@ export class SshManager {
     private ensureSshInclude(targetPath: string): void {
         const sshDir = path.join(os.homedir(), '.ssh');
         const sshConfigPath = path.join(sshDir, 'config');
-        const includeLine = `Include ${targetPath}`;
+        const includeLine = `Include "${targetPath}"`;
 
         try {
             if (!fs.existsSync(sshDir)) {

@@ -30,7 +30,7 @@ export const SSH_RESILIENCE_OPTIONS: ReadonlyArray<readonly [string, string]> = 
 export const csHostAlias = ({ alias, name }: Pick<SlurmSession, 'alias' | 'name'>): string =>
     `${alias}-${name.slice(-6)}`;
 
-// Per-session block appended to ~/.cybershuttle/ssh_config (4-space indent matches deleteSshConfigEntry).
+// Per-session block appended to the extension's ssh_config (4-space indent matches deleteSshConfigEntry).
 // alias is always csHostAlias() output.
 export function buildSshConfigBlock(
     sessionId: string,
@@ -49,7 +49,7 @@ export function buildSshConfigBlock(
         `    User ${user}`,
         `    StrictHostKeyChecking no`,
         `    UserKnownHostsFile /dev/null`,
-        `    IdentityFile ${identityFile}`,
+        `    IdentityFile "${identityFile}"`,
         ...SSH_RESILIENCE_OPTIONS.map(([key, value]) => `    ${key} ${value}`),
     ].join('\n');
 }

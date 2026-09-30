@@ -7,8 +7,8 @@ import { WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSshConfigEntry, addSshConfigEntry, hasSessionKey, SshManager } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
-import { addSession, deleteSession, getSession, getAllSessions, updateSession, setStatus, watchSessions, liveAndCleanup } from './extensionStore';
-import { readRecentSamples, watchRuns } from './modules/runStore';
+import { addSession, deleteSession, getSession, getAllSessions, updateSession, setStatus, onSessionsChange, windowState } from './extensionStore';
+import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { stopSession, SessionMonitor, launchSession, prepareLaunch } from './modules/sessionSupport';
 import { Transports, connectSessionToTunnel, disposeAllTunnelClients, disposeTunnelClient, ensureRemoteSession, hasTunnelClient } from './modules/transport';
@@ -57,17 +57,14 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         }));
         // A remote window re-renders only when its own session changes.
         let lastMine: string | undefined;
-        const sessionsWatcher = watchSessions(() => {
+        this.shared.push(onSessionsChange(() => {
             const mine = this.remoteSessionId ? JSON.stringify(getSession(this.remoteSessionId)) : undefined;
             if (mine !== undefined && mine === lastMine) { return; }
             lastMine = mine;
             void this.pushState();
-        });
-        this.shared.push({ dispose: () => sessionsWatcher.close() });
-
+        }));
         // Live samples land in the per-session files (bypassing updateSession); pushState reads them at render time.
-        const runsWatcher = watchRuns(() => void this.pushState());
-        this.shared.push({ dispose: () => runsWatcher.close() });
+        this.shared.push(onRunsChange(() => void this.pushState()));
     }
 
     // At activation (sidebar only): resume monitoring and rebuild the tunnel connection (gone after restart) for every live-backend session.
@@ -245,7 +242,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 isRemote: this.remoteSessionId !== undefined,
                 sessions: this.scopedSessions()
                     .map((s) => {
-                        const live = liveAndCleanup(s);
+                        const live = windowState(s);
                         if (live.windowAlive) { this.opening.delete(s.id); }
                         return { ...s, ...live, opening: this.opening.has(s.id), samples: readRecentSamples(s.id) };
                     })
@@ -312,9 +309,9 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         await this.connectTransport(session);
     }
 
-    // 'opening' holds the session's spinner until the new window's extension registers a windowPid (60s fallback).
+    // 'opening' holds the session's spinner until the new window's heartbeat appears (60s fallback).
     private openOrFocusWindow(session: SlurmSession): void {
-        if (liveAndCleanup(session).windowAlive) { return openSessionWindow(session, false); }
+        if (windowState(session).windowAlive) { return openSessionWindow(session, false); }
         this.opening.add(session.id);
         setTimeout(() => { if (this.opening.delete(session.id)) { void this.pushState(); } }, 60_000);
         openSessionWindow(session, true);
@@ -332,8 +329,8 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 return;
             }
             // Already connected with a live remote window — this window's own, or another sidebar's (windowAlive reads the
-            // shared windowPids). Just focus it; a second connection to the same Dev Tunnel is redundant and fights the first.
-            if (session.status === 'connected' && (liveAndCleanup(session).windowAlive || session.connectionInfo?.localPort)) {
+            // shared window heartbeats). Just focus it; a second connection to the same Dev Tunnel is redundant and fights the first.
+            if (session.status === 'connected' && (windowState(session).windowAlive || session.connectionInfo?.localPort)) {
                 this.openOrFocusWindow(session);
                 return;
             }
