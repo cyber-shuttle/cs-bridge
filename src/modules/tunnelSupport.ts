@@ -7,7 +7,6 @@ import { TunnelRelayTunnelClient, TunnelConnectionOptions } from '@microsoft/dev
 import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
 import { ForwardRelayClient, forwardedLocalPort } from './linkTunnel';
 import type { Tunnels } from './transport';
-import { w3cwebsocket } from 'websocket';
 
 const DEV_TUNNELS_APP_ID = '46da2f7e-b5ef-422a-88d4-2a7f9de6a0b2';
 const DEV_TUNNELS_SCOPE = `${DEV_TUNNELS_APP_ID}/.default`;
@@ -52,7 +51,7 @@ class DevTunnelRelayClient extends ForwardRelayClient {
     get keepAliveFailed() { return this.sdk.keepAliveFailed; }
 
     constructor(private readonly sdk: TunnelRelayTunnelClient, private readonly controlPort: number) {
-        super(w3cwebsocket);
+        super();
         sdk.connectionStatusChanged((e) => { this.connectionStatus = e.status; });
     }
 

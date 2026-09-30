@@ -2,49 +2,23 @@ import * as vscode from 'vscode';
 
 export const errMsg = (e: unknown): string => e instanceof Error ? e.message : String(e);
 
-type Level = 'INFO' | 'WARN' | 'ERROR';
+// Below Trace level the channel prints an Error as its message alone, so errors go in as their stacks.
+const withStacks = (args: unknown[]) => args.map(a => a instanceof Error ? a.stack ?? a.message : a);
 
 export class Logger {
     private static instance: Logger | undefined;
-    private outputChannel: vscode.OutputChannel;
-
-    private constructor() {
-        this.outputChannel = vscode.window.createOutputChannel('CS Bridge');
-    }
+    private readonly channel = vscode.window.createOutputChannel('CS Bridge', { log: true });
 
     static getInstance(): Logger {
-        if (!Logger.instance) {
-            Logger.instance = new Logger();
-        }
-        return Logger.instance;
+        return Logger.instance ??= new Logger();
     }
 
-    info(message: string, ...args: unknown[]): void {
-        this.log('INFO', message, ...args);
-    }
-
-    warn(message: string, ...args: unknown[]): void {
-        this.log('WARN', message, ...args);
-    }
-
-    error(message: string, ...args: unknown[]): void {
-        this.log('ERROR', message, ...args);
-    }
+    info(message: string, ...args: unknown[]): void { this.channel.info(message, ...withStacks(args)); }
+    warn(message: string, ...args: unknown[]): void { this.channel.warn(message, ...withStacks(args)); }
+    error(message: string, ...args: unknown[]): void { this.channel.error(message, ...withStacks(args)); }
 
     dispose(): void {
-        this.outputChannel.dispose();
+        this.channel.dispose();
         Logger.instance = undefined;
-    }
-
-    private log(level: Level, message: string, ...args: unknown[]): void {
-        const prefix = `[${new Date().toISOString()}] [${level}] `;
-        // Re-prefix every line so multi-line messages (stack traces, SSH banners) stay aligned.
-        const body = [message, ...args.map((a) => {
-            if (a instanceof Error) { return a.stack ?? a.message; }
-            if (a === null || typeof a !== 'object') { return String(a); }
-            try { return JSON.stringify(a); }
-            catch { return String(a); }
-        })].join(' ');
-        for (const line of body.split('\n')) { this.outputChannel.appendLine(prefix + line); }
     }
 }

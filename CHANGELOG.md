@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **VS Code 1.101** or newer is required.
+- **View controls** are native and follow the VS Code theme.
+- **The CS Bridge output** follows **Developer: Set Log Level**.
+
 ## [0.2.1] - 2026-09-30
 
 ### Added

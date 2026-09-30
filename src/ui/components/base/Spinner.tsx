@@ -1,6 +1,3 @@
-import '@vscode-elements/elements/dist/vscode-progress-ring';
-import { px } from '.';
+import { Icon } from './Icon';
 
-export function Spinner({ size = 14 }: { size?: number }) {
-    return <vscode-progress-ring style={{ height: px(size), width: px(size) }}></vscode-progress-ring>;
-}
+export const Spinner = ({ size = 14 }: { size?: number }) => <Icon name="loading" spin size={size} />;

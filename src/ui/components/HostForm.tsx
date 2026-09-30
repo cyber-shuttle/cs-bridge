@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { SlurmDiscovery, HostRuntime } from '@/models';
 import { partitionsForTab, hasTab, cpuOptions, memoryOptions, gpuOptions, resolvePick, type ResourceTab } from '@/ui/logic/cluster';
-import { Row, Stack, Text, Spinner, Button, SingleSelect, Option } from '@/ui/components/base';
+import { Row, Stack, Text, Spinner, Button, SingleSelect } from '@/ui/components/base';
 import { post } from '@/ui/platform/vscode';
 import { gpuTypeOf } from '@/modules/slurmParse';
 
@@ -22,7 +22,7 @@ function Select({ label, value, onChange, options, children }: { label: string; 
         <Stack gap={2}>
             <Text weight={600} size={12}>{label}</Text>
             <SingleSelect value={value} style={{ width: '100%', maxWidth: 'none' }} onChange={onChange}>
-                {options ? options.map(([v, l]) => <Option key={v} value={v}>{l}</Option>) : children}
+                {options ? options.map(([v, l]) => <option key={v} value={v}>{l}</option>) : children}
             </SingleSelect>
         </Stack>
     );
@@ -87,9 +87,9 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
             <Select label="Slurm account" value={account} onChange={setAccount} options={[['', '(no Slurm account)'], ...info.accounts.map(a => [a, a])]} />
             <Select label="Partition" value={partName} onChange={setPartName}>
                 {parts.map(p => (
-                    <Option key={p.name} value={p.name}>
+                    <option key={p.name} value={p.name}>
                         {p.gres.length ? `${p.name} (${p.cpuCount} CPUs, ${p.gres[0].count} GPUs)` : `${p.name} (${p.cpuCount} CPUs)`}
-                    </Option>
+                    </option>
                 ))}
             </Select>
             <Select label="CPUs" value={cpu} onChange={setCpu} options={cpus.map(c => [c, c])} />

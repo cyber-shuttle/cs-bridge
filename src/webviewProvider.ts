@@ -47,6 +47,19 @@ export async function confirmModal(title: string, confirmLabel: string, detail?:
     return choice === confirmLabel;
 }
 
+// ui/components/base's controls, in VS Code's theme colors.
+const CONTROLS_CSS = `
+.cs-button{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:2px 6px;border:1px solid var(--vscode-button-border,transparent);border-radius:4px;font:inherit;font-size:12px;line-height:16px;color:var(--vscode-button-foreground);background:var(--vscode-button-background);cursor:pointer}
+.cs-button .codicon{font-size:inherit}
+.cs-button:hover{background:var(--vscode-button-hoverBackground)}
+.cs-button.secondary{color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground)}
+.cs-button.secondary:hover{background:var(--vscode-button-secondaryHoverBackground)}
+.cs-button:disabled{opacity:.5;cursor:default;pointer-events:none}
+.cs-action{padding:2px;border:0;border-radius:5px;color:inherit;background:none;cursor:pointer}
+.cs-action:hover{background:var(--vscode-toolbar-hoverBackground)}
+.cs-select{padding:2px 4px;border:1px solid var(--vscode-dropdown-border);border-radius:4px;font:inherit;color:var(--vscode-dropdown-foreground);background:var(--vscode-dropdown-background)}
+:is(.cs-button,.cs-action,.cs-select):focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:1px}`;
+
 // CSP-gated HTML shell that loads the view's esbuild bundle (out/<view>.js) + codicons.
 export function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri, view: ViewKind): string {
     // A CSP nonce is only worth having if it cannot be guessed, so it comes from the CSPRNG.
@@ -60,9 +73,8 @@ export function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri, vi
         <meta charset="UTF-8">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" id="vscode-codicon-stylesheet" href="${codiconCss}" nonce="${nonce}">
-        <!-- vscode-button height is locked by a shadow-DOM line-height; ::part(base) is the only way to make it fit the compact session rows. -->
-        <style nonce="${nonce}">vscode-button::part(base){line-height:16px;}</style>
+        <link rel="stylesheet" href="${codiconCss}" nonce="${nonce}">
+        <style nonce="${nonce}">${CONTROLS_CSS}</style>
     </head>
     <body style="margin:0;padding:0"><div id="root"></div>
     <script nonce="${nonce}" src="${js}"></script>

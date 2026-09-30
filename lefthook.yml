@@ -3,7 +3,7 @@ pre-commit:
   jobs:
     - name: check-types
       glob: "*.{ts,tsx}"
-      run: npm run check-types
+      run: bun run check-types
     - name: lint
       glob: "*.{ts,tsx}"
-      run: npm run lint
+      run: bun run lint
