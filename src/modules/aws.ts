@@ -18,15 +18,14 @@ import {
 } from "@aws-sdk/client-ec2";
 
 import { CloudFormOptions, CloudInstanceInfo, InstanceActions, SshHost } from "../models";
-import { addSshConfigEntryAWS, removeSshConfigEntryAWS, SshManager } from '../modules/sshSupport';
+import { addSshConfigEntryAWS, deleteSshConfigEntry, SshManager } from '../modules/sshSupport';
 import { writeFileSync, unlinkSync, existsSync } from "fs";
-import { homedir } from "os";
 import path from "path";
 import { confirmModal } from '@/webviewProvider';
 import { Logger } from '@/logger';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-const CS_SSH_CONFIG_PATH = path.join(homedir(), '.cybershuttle', 'ssh_config');
+// const CS_SSH_CONFIG_PATH = path.join(homedir(), '.cybershuttle', 'ssh_config');
 export default class AWSClient {
 
     protected readonly logger = Logger.getInstance();
@@ -45,14 +44,12 @@ export default class AWSClient {
 
     private clients: Record<string, EC2Client> = {};
 
+    protected readonly SSH_CONFIG_PATH = SshManager.getInstance().getSSHConfigPath()
 
     protected readonly PRIVATE_KEY_PATH = path.join(
-        homedir(),
-        ".cybershuttle",
+        SshManager.getInstance().getSSHKeyPath(),
         this.KEY_NAME,
     );
-
-
     private toast(title: string, message: string, cancellable: boolean) {
         vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
@@ -114,6 +111,9 @@ export default class AWSClient {
             return;
         }
 
+        this.secretKey = secretKey
+        this.accessKey = accessKey
+        this.sessionToken = sessionToken
         const client = new EC2Client({
             region: region,
             credentials: {
@@ -125,13 +125,16 @@ export default class AWSClient {
 
         this.defaultClient = client
         this.clients[region] = client
+        this.logger.info("EC2 Client initialized")
+        this.logger.info(`SSH Config Path: ${this.SSH_CONFIG_PATH}`)
+        this.logger.info(`SSH Key Path: ${this.PRIVATE_KEY_PATH}`)
     }
 
     protected getClientForRegion(region: string): EC2Client {
         if (region in this.clients) {
             return this.clients[region]
         } else {
-            return new EC2Client({
+            const regionClient = new EC2Client({
                 region: region,
                 credentials: {
                     accessKeyId: this.accessKey,
@@ -139,6 +142,8 @@ export default class AWSClient {
                     sessionToken: this.sessionToken,
                 },
             });
+            this.clients[region] = regionClient
+            return regionClient
         }
     }
 
@@ -172,7 +177,8 @@ export default class AWSClient {
                         progress.report({ message: "Found existing CS-Bridge Security Group" });
                         await sleep(2500)
                     }
-                    progress.report({ message: "Creating Instnace..." });
+                    progress.report({ message: "Creating Instance..." });
+                    this.logger.info("Creating Innstance")
                     this.createInstance(image, type, this.getRegionKeyName(region), securityGroupID, region);
                     sleep(3000);
                     progress.report({ message: "Instance is running." });
@@ -215,7 +221,7 @@ export default class AWSClient {
 
     private async generateSSHKeyPair(region: string): Promise<void> {
         const keyName = this.getRegionKeyName(region)
-        const keyPath = this.getRegionKeyPath(region)
+        const keyPath = this.getRegionKeyPath(region) // fullpath with filename
         const client = this.getClientForRegion(region)
         try {
             if (!existsSync(keyPath)) {
@@ -482,7 +488,7 @@ export default class AWSClient {
         }
 
         const sshConfig = vscode.workspace.getConfiguration('remote.SSH');
-        await sshConfig.update('configFile', CS_SSH_CONFIG_PATH, vscode.ConfigurationTarget.Global);
+        await sshConfig.update('configFile', this.SSH_CONFIG_PATH, vscode.ConfigurationTarget.Global);
 
         const uri = vscode.Uri.from({
             scheme: 'vscode-remote',
@@ -500,7 +506,7 @@ export default class AWSClient {
 
     protected async removeSshConfigEntryAWS(id: string, name: string): Promise<void> {
         this.logger.info(`Remove SSH Config for ${name} `)
-        await removeSshConfigEntryAWS(id, name)
+        await deleteSshConfigEntry(id, name, false)
 
     }
 
