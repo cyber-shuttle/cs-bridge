@@ -8,8 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **Sessions and run history** move from `~/.cybershuttle` to VS Code's extension storage on first activation;
-  downgrading afterwards is unsupported.
+- **Sessions, run history and SSH keys** move from `~/.cybershuttle` to VS Code's extension storage on first
+  activation, so uninstalling removes them; downgrading afterwards is unsupported.
 
 ## [0.2.2] - 2026-09-30
 

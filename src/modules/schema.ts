@@ -1,7 +1,7 @@
 // legacySteps gives store.migrate desktop's steps 0 and 1. Version 0 is every ~/.cybershuttle up to 0.2.0; version 1
-// renamed its fields to cs-plane's; version 2 moves sessions and runs into extension storage, leaving ~/.cybershuttle
-// only what ssh reads. Each step runs under the tree's lock and is idempotent, so a crash or a second window reruns it
-// cleanly.
+// renamed its fields to cs-plane's; version 2 moves the records and SSH keys into extension storage and clears
+// its own entries from ~/.cybershuttle. Each step runs under a lock and is idempotent, so a crash or a second window
+// reruns it cleanly.
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -103,30 +103,44 @@ function v0ToV1(home: string): void {
     }
     fs.rmSync(metricsDir, { recursive: true, force: true });
 
-    const sshConfig = path.join(path.dirname(home), '.ssh', 'config');
-    const text = fs.existsSync(sshConfig) ? fs.readFileSync(sshConfig, 'utf-8') : '';
-    const kept = text.split('\n').filter(line => !/^\s*Include\s+\S*\.cybershuttle\/ssh_hosts\s*$/.test(line)).join('\n');
-    if (kept !== text) { fs.writeFileSync(sshConfig, kept); }
+    dropInclude(home, 'ssh_hosts');
     deleteFile(path.join(home, 'ssh_hosts'));
 }
 
-async function v1ToV2(home: string, files: Files): Promise<void> {
+// Removes ~/.ssh/config's Include of a file in ~/.cybershuttle.
+function dropInclude(home: string, name: string): void {
+    const sshConfig = path.join(path.dirname(home), '.ssh', 'config');
+    const text = fs.existsSync(sshConfig) ? fs.readFileSync(sshConfig, 'utf-8') : '';
+    const kept = text.split('\n').filter(line => !new RegExp(`^\\s*Include\\s+\\S*\\.cybershuttle/${name}\\s*$`).test(line)).join('\n');
+    if (kept !== text) { fs.writeFileSync(sshConfig, kept); }
+}
+
+// The session keys move with their permissions; the ssh_config is rebuilt on connect.
+async function v1ToV2(home: string, files: Files, storageDir: string): Promise<void> {
     for (const dir of ['sessions', 'runs']) {
         for (const name of jsonFiles(path.join(home, dir))) {
             await files.write(`${dir}/${name}`, fs.readFileSync(path.join(home, dir, name), 'utf-8'));
         }
-        fs.rmSync(path.join(home, dir), { recursive: true, force: true });
     }
-    deleteFile(path.join(home, 'schema.json'));
+    const keys = path.join(home, 'ssh_keys');
+    if (fs.existsSync(keys)) { fs.cpSync(keys, path.join(storageDir, 'ssh_keys'), { recursive: true }); }
+    dropInclude(home, 'ssh_config');
+    // ~/.cybershuttle also holds other tools' state, such as cs's control/, so only CS Bridge's entries go.
+    for (const name of ['sessions', 'runs', 'ssh_keys', 'ssh_config', 'ssh_control', 'schema.json', 'schema.json.lock']) {
+        fs.rmSync(path.join(home, name), { recursive: true, force: true });
+    }
+    try { fs.rmdirSync(home); }
+    catch { /* not empty */ }
 }
 
-export function legacySteps(files: Files, home = CS_HOME): Steps {
+// The lock lives in extension storage, since step 1 may remove ~/.cybershuttle.
+export function legacySteps(files: Files, storageDir: string, home = CS_HOME): Steps {
     const locked = (step: () => Promise<void> | void) => async () => {
-        fs.mkdirSync(home, { recursive: true });
-        const key = path.join(home, 'migrate');
+        fs.mkdirSync(storageDir, { recursive: true });
+        const key = path.join(storageDir, 'migrate');
         lock(key);
         try { await step(); }
         finally { release(key); }
     };
-    return { 0: locked(() => v0ToV1(home)), 1: locked(() => v1ToV2(home, files)) };
+    return { 0: locked(() => v0ToV1(home)), 1: locked(() => v1ToV2(home, files, storageDir)) };
 }

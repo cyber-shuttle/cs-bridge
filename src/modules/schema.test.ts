@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { legacySteps } from './schema';
@@ -31,11 +31,17 @@ test('migrate brings every ~/.cybershuttle layout into the store, reruns idempot
         metrics: [{ memBytes: 2 }], stats: { reqMem: '1.0 GB' },
     });
     write(join(home, 'ssh_hosts'), 'Host legacy\n');
-    write(join(root, '.ssh', 'config'), `Include ${join(home, 'ssh_hosts')}\nHost x\n    HostName x\n`);
+    write(join(home, 'ssh_config'), 'Host old\n');
+    mkdirSync(join(home, 'ssh_keys'));
+    writeFileSync(join(home, 'ssh_keys', 'id_cshost-k'), 'key', { mode: 0o600 });
+    mkdirSync(join(home, 'control'));
+    write(join(home, 'control', 'state.json'), '{}'); // cs's, which stays
+    write(join(root, '.ssh', 'config'), `Include ${join(home, 'ssh_config')}\nInclude ${join(home, 'ssh_hosts')}\nHost x\n    HostName x\n`);
+    const storage = join(root, 'storage');
 
     const files = memoryFiles();
     const record = (name: string) => JSON.parse(files.texts.get(name)!);
-    await migrate(files, legacySteps(files, home));
+    await migrate(files, legacySteps(files, storage, home));
 
     assert.deepEqual(record('schema.json'), { version: SCHEMA_VERSION });
     assert.deepEqual(record(`sessions/${UUID}.json`), {
@@ -55,16 +61,18 @@ test('migrate brings every ~/.cybershuttle layout into the store, reruns idempot
         resources: { cores: 4, memoryMb: 8192, wallMinutes: 90 }, jobId: '', submittedAt: 1700, errorMessage: '', transport: 'devtunnel',
     });
     assert.ok(files.texts.has(`runs/${reissued.id}.json`));
-    for (const gone of ['sessions', 'runs', 'schema.json', 'sessions.json', 'metrics', 'ssh_hosts']) { assert.equal(existsSync(join(home, gone)), false, gone); }
+    assert.deepEqual(readdirSync(home), ['control']);
+    assert.equal(statSync(join(storage, 'ssh_keys', 'id_cshost-k')).mode & 0o777, 0o600);
+    assert.equal(existsSync(join(storage, 'ssh_config')), false); // rebuilt on connect
     assert.equal(readFileSync(join(root, '.ssh', 'config'), 'utf-8'), 'Host x\n    HostName x\n');
 
     // A crash before the marker was written reruns the steps over their own output.
     const before = new Map(files.texts);
     await files.write('schema.json', JSON.stringify({ version: 0 }));
-    await migrate(files, legacySteps(files, home));
+    await migrate(files, legacySteps(files, storage, home));
     assert.deepEqual(files.texts, before);
 
     await files.write('schema.json', JSON.stringify({ version: SCHEMA_VERSION + 1 }));
-    await assert.rejects(migrate(files, legacySteps(files, home)), /newer than this CS Bridge reads/);
+    await assert.rejects(migrate(files, legacySteps(files, storage, home)), /newer than this CS Bridge reads/);
     rmSync(root, { recursive: true, force: true });
 });

@@ -12,10 +12,10 @@ Local VS Code                              Remote HPC cluster
 │  (Preact webviews)       │               │  (sbatch, sacct, sinfo)  │
 │                          │               │                          │
 │  SSH ControlMaster pool  │               │  Compute node:           │
-│  ~/.cybershuttle/        │               │  ┌──────────────────┐    │
+│  extension storage:      │               │  ┌──────────────────┐    │
 │    ssh_config            │               │  │  Linkspan        │    │
 │    ssh_keys/             │               │  │  ├─ sshd         │    │
-│    ssh_control/          │               │  │  └─ Dev Tunnel ──┼────┼──▶ devtunnels.ms
+│  temp: ControlMaster     │               │  │  └─ Dev Tunnel ──┼────┼──▶ devtunnels.ms
 │                          │               │  └──────────────────┘    │
 │  Dev Tunnels SDK         │◀─ Dev Tunnel ─│                          │
 │  (forwards 127.0.0.1:N   │               └──────────────────────────┘
@@ -25,7 +25,7 @@ Local VS Code                              Remote HPC cluster
          ▼
   vscode-remote://ssh-remote+<alias>-<last 6 of session name>/…
   (OS ssh dials 127.0.0.1:N using the per-session
-   SSH host in ~/.cybershuttle/ssh_config)
+   SSH host in the extension's ssh_config)
 ```
 
 ## Session lifecycle
@@ -92,7 +92,7 @@ run on either, and nothing else branches on `transport`.
 ## The per-session SSH host
 
 `csHostAlias(session)` is `<alias>-<last 6 characters of the session name>` — for example
-`delta-493119` (`sshHostsStore.ts`). One function builds the `~/.cybershuttle/ssh_config` `Host` line, the
+`delta-493119` (`sshHostsStore.ts`). One function builds the `ssh_config` `Host` line, the
 `ssh-remote+` authority, and the reverse lookup that tells a remote window which session it belongs to, so all
 three stay in lockstep. The alias is what VS Code prints as the window's `[SSH: …]` label, and it never equals a
 bare SSH host alias, so it cannot shadow the SSH host used for Slurm.
@@ -162,8 +162,8 @@ A remote window recognises itself: `extension.ts` reads the workspace URI author
 
 `schema.json` in extension storage holds one version. At activation, before any store reads, `migrate()`
 (`store.ts`) applies each step from the version it finds to `SCHEMA_VERSION`, recording the version after each.
-Versions 0 and 1 lived in `~/.cybershuttle`; desktop's `legacySteps` (`schema.ts`) import them under that tree's
-lock. The stores read only the current shape.
+Versions 0 and 1 lived in `~/.cybershuttle`; desktop's `legacySteps` (`schema.ts`) import them under a lock in
+extension storage. The stores read only the current shape.
 
 | Change | Rule |
 |---|---|

@@ -18,10 +18,11 @@ function storageFiles(root: vscode.Uri): Files {
     };
 }
 
-export async function openStorage(context: vscode.ExtensionContext, legacy: (files: Files) => Steps, onError: (err: unknown) => void) {
+export async function openStorage(context: vscode.ExtensionContext, legacy: (files: Files, dir: string) => Steps,
+    onError: (err: unknown) => void) {
     const root = context.globalStorageUri;
     const files = storageFiles(root);
-    await migrate(files, legacy(files));
+    await migrate(files, legacy(files, root.fsPath));
     const dirs = [...await initSessionStore(files, onError), await initRunStore(files, onError)];
     const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, '*/*.json'));
     const reload = (uri: vscode.Uri) => {

@@ -31,7 +31,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const isRemoteWindow = !!id;
     void vscode.commands.executeCommand('setContext', 'csbridge.remote', isRemoteWindow);
 
-    SshManager.initInstance(context.extensionUri);
+    SshManager.initInstance(context.extensionUri, context.globalStorageUri.fsPath);
     const plane = new Plane(context.secrets);
     const transports = new Transports(plane);
     const sessionProvider = new SessionProvider(context.extensionUri, transports, id);
