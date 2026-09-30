@@ -336,7 +336,7 @@ export async function addSshConfigEntry(session: SlurmSession, localPort: number
     // Locked: startup reattach can rewrite this concurrently, so the append must not interleave.
     lock(CS_SSH_CONFIG_PATH);
     try {
-        fs.appendFileSync(CS_SSH_CONFIG_PATH, `\n${configBlock}\n`);
+        fs.appendFileSync(CS_SSH_CONFIG_PATH, `${configBlock}\n`);
     }
     catch (err) {
         logger.error(`Failed to write SSH config for session ${session.id}:`, err);
