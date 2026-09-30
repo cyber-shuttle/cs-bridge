@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Sessions and run history** move from `~/.cybershuttle` to VS Code's extension storage on first activation;
+  downgrading afterwards is unsupported.
+
 ## [0.2.2] - 2026-09-30
 
 ### Changed

@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { Logger, errMsg } from './logger';
-import { migrate } from './modules/schema';
-import { initSessionStore, mutateWindowPids, getAllSessions } from './extensionStore';
+import { legacySteps } from './modules/schema';
+import { openStorage } from './storage';
+import { attachWindow, detachWindow, getAllSessions } from './extensionStore';
 import { csHostAlias } from './modules/sshHostsStore';
-import { isPidAlive } from './modules/fsSupport';
 import { Plane } from './plane';
 import { SessionProvider } from './sessionProvider';
 import { SshHostProvider } from './sshHostProvider';
@@ -18,23 +18,14 @@ export async function activate(context: vscode.ExtensionContext) {
     const logger = Logger.getInstance();
     logger.info('CS Bridge extension activating');
 
-    try { migrate(); }
+    try { await openStorage(context, legacySteps, err => logger.error('CS Bridge storage failed', err)); }
     catch (err) { void vscode.window.showErrorMessage(`CS Bridge: ${errMsg(err)}`); throw err; }
-    logger.info(`Initializing session store...`);
-    const sessionStoreLocation = initSessionStore();
-    logger.info(`Session store initialized to ${sessionStoreLocation}`);
+    logger.info(`Storage is ${context.globalStorageUri.toString()}`);
 
     const id = currentWindowSessionId();
     if (id) {
-        logger.info(`Window is connected to CS Bridge session ${id}; pid=${process.pid}`);
-        try { mutateWindowPids(id, pids => [...new Set([...pids.filter(isPidAlive), process.pid])]); }
-        catch (err) { logger.error(`Failed to register windowPid for session ${id}`, err); }
-        context.subscriptions.push({
-            dispose: () => {
-                try { mutateWindowPids(id, pids => pids.filter(p => p !== process.pid)); }
-                catch (err) { logger.error(`Failed to unregister windowPid for session ${id}`, err); }
-            },
-        });
+        logger.info(`Window is connected to CS Bridge session ${id}`);
+        attachWindow(id);
     }
 
     const isRemoteWindow = !!id;
@@ -92,6 +83,8 @@ function currentWindowSessionId(): string | undefined {
 }
 
 export function deactivate() {
+    const detached = detachWindow(); // awaited by VS Code, so a closed window stops counting as open at once
     SshManager.disposeInstance();
     Logger.getInstance().dispose();
+    return detached;
 }

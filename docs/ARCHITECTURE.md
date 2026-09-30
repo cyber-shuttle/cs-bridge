@@ -143,13 +143,13 @@ newline-preserving monospace block is what lets a device-flow QR prompt render, 
 
 ## Persistence and cross-window state
 
-Sessions are one JSON record per id under `~/.cybershuttle/sessions/`, guarded by a cross-process file lock
-(`fsSupport.ts`); an `fs.watch` on the directory syncs state across VS Code windows (`extensionStore.ts`). Every
-write goes through that locked read-modify-write: windows share these records, so a write that bypasses the lock
-drops another window's update. Of the connection, only `sshPort` and `controlPort` are persisted, the latter so a
-reattached session health-pings Linkspan instead of polling the SSH host; secrets and the local port stay in memory.
-On load, `connected` and `connecting` demote to `ready_to_connect` (the connection is gone after a reload). Run
-history and usage live in one file per session under `~/.cybershuttle/runs/` (`runStore.ts`).
+Sessions, run history and window heartbeats are one JSON record per id under `sessions/`, `runs/` and `windows/` in VS
+Code's extension storage: a folder on desktop, IndexedDB in the browser. A `JsonDir` (`store.ts`) holds each directory
+in memory, so reads are synchronous; writes, and reloads of other windows' writes from a file watcher (`storage.ts`),
+run in order on that directory's queue, and the last write to a record wins. A window connected to a session rewrites
+its heartbeat until it closes. Of the connection, only `sshPort` and `controlPort` are persisted, the latter so a
+reattached session health-pings Linkspan instead of polling the SSH host; secrets and the local port stay in memory. On
+load, `connected` and `connecting` demote to `ready_to_connect` (the connection is gone after a reload).
 
 Field names match cs-plane's wire types: a session is `alias`, `account`, `partition`, `rootFolder` and `resources`
 (`cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`); a run is `Run` with `RunStats` and `samples`.
@@ -160,16 +160,16 @@ A remote window recognises itself: `extension.ts` reads the workspace URI author
 
 ## Schema migrations
 
-`~/.cybershuttle/schema.json` holds one version for the whole tree. At activation, before any store reads,
-`migrate()` (`schema.ts`) takes the tree's lock and applies each step from the version it finds to the current one,
-recording the version after each. A tree without the file is version 0: every release up to 0.2.0. The stores read
-only the current shape.
+`schema.json` in extension storage holds one version. At activation, before any store reads, `migrate()`
+(`store.ts`) applies each step from the version it finds to `SCHEMA_VERSION`, recording the version after each.
+Versions 0 and 1 lived in `~/.cybershuttle`; desktop's `legacySteps` (`schema.ts`) import them under that tree's
+lock. The stores read only the current shape.
 
 | Change | Rule |
 |---|---|
-| A persisted field or file changes shape | Append a step to `STEPS`, and update `models.ts` and the stores to the new shape only |
+| A persisted field or file changes shape | Bump `SCHEMA_VERSION`, add the step where `openStorage` calls `migrate`, and update `models.ts` and the stores to the new shape only |
 | A step | Deterministic and idempotent, so a crash before the version is written reruns it cleanly |
-| A tree newer than the build | Refused at activation with an error, never read |
+| Storage newer than the build | Refused at activation with an error, never read |
 
 ## Build pipeline
 

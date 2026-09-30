@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { WebviewProvider, confirmModal } from './webviewProvider';
 import { StatsState, WebviewMessage } from './models';
-import { readAllRuns, clearAllRuns, watchRuns } from './modules/runStore';
+import { readAllRuns, clearAllRuns, onRunsChange } from './modules/runStore';
 import { getSession } from './extensionStore';
 import { openSummaryPanel } from './summaryPanel';
 
@@ -14,7 +14,7 @@ export class StatsProvider extends WebviewProvider {
 
     constructor(extensionUri: vscode.Uri) {
         super(extensionUri);
-        watchRuns(() => {
+        onRunsChange(() => {
             const json = JSON.stringify(readAllRuns());
             if (json === this.lastRunsJson) { return; }
             this.lastRunsJson = json;

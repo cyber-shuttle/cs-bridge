@@ -1,24 +1,24 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { UsageSample, SAMPLE_HISTORY_LEN, RunStats, Run, RunsFile } from '../models';
-import { readJson, lockedUpdateJson, deleteFile, jsonFiles } from './fsSupport';
-import { CS_HOME } from './schema';
+import { Files, JsonDir } from './store';
 
-// One file per session: runs/{id}.json = { runs, samples, stats } — finished-run history, live samples, live sacct
-// copy, each written independently. Per-file locked, so writes never contend across sessions.
-const RUNS_DIR = path.join(CS_HOME, 'runs');
-const filePath = (id: string): string => path.join(RUNS_DIR, `${id}.json`);
+// One file per session: runs/{id}.json = { runs, samples, stats }, the run history, live samples and live sacct copy.
 const RUNS_PER_SESSION = 10;
+let runsDir: JsonDir<RunsFile>;
+
+export async function initRunStore(files: Files, onError: (err: unknown) => void) {
+    runsDir = new JsonDir<RunsFile>(files, 'runs', onError);
+    await runsDir.load();
+    return runsDir;
+}
 
 export const isSameRun = (a: Pick<Run, 'alias' | 'jobId'>, b: Pick<Run, 'alias' | 'jobId'>): boolean =>
     a.alias === b.alias && a.jobId === b.jobId;
-const read = (id: string): RunsFile => readJson<RunsFile>(filePath(id)) ?? {};
-const sessionIds = (): string[] => jsonFiles(RUNS_DIR).map(n => n.slice(0, -'.json'.length));
+const read = (id: string): RunsFile => runsDir.get(id) ?? {};
 
 // fn returns null to skip the write.
-const mutate = (id: string, fn: (cur: RunsFile) => RunsFile | null, onError?: (err: unknown) => void): void => {
-    fs.mkdirSync(RUNS_DIR, { recursive: true });
-    lockedUpdateJson<RunsFile>(filePath(id), cur => fn(cur ?? {}), onError);
+const mutate = (id: string, fn: (cur: RunsFile) => RunsFile | null): void => {
+    const next = fn(read(id));
+    if (next) { runsDir.set(id, next); }
 };
 
 // live samples — append one, capped to the rolling window
@@ -38,7 +38,7 @@ export function readSessionRuns(id: string): Run[] {
 }
 
 export function readAllRuns(): Run[] {
-    return sessionIds().flatMap(id => read(id).runs ?? []).sort((a, b) => b.endedAt - a.endedAt);
+    return runsDir.values().flatMap(f => f.runs ?? []).sort((a, b) => b.endedAt - a.endedAt);
 }
 
 // Deduped by alias+jobId, newest-first, capped. null → already recorded.
@@ -47,22 +47,19 @@ export function mergeRun(existing: Run[], record: Run): Run[] | null {
     return [record, ...existing].sort((a, b) => b.endedAt - a.endedAt).slice(0, RUNS_PER_SESSION);
 }
 
-export function appendRun(record: Run, onError?: (err: unknown) => void): void {
+export function appendRun(record: Run): void {
     mutate(record.sessionId, (cur) => {
         const runs = mergeRun(cur.runs ?? [], record);
         return runs && { ...cur, runs };
-    }, onError);
+    });
 }
 
 export function clearAllRuns(): void {
-    for (const id of sessionIds()) { lockedUpdateJson<RunsFile>(filePath(id), cur => (cur ? { ...cur, runs: [] } : null)); }
+    for (const [id, cur] of runsDir.entries()) { runsDir.set(id, { ...cur, runs: [] }); }
 }
 
 export function deleteRunsFile(id: string): void {
-    deleteFile(filePath(id));
+    runsDir.delete(id);
 }
 
-export function watchRuns(callback: () => void): fs.FSWatcher {
-    fs.mkdirSync(RUNS_DIR, { recursive: true });
-    return fs.watch(RUNS_DIR, (_event, name) => { if (!name || name.endsWith('.json')) { callback(); } });
-}
+export const onRunsChange = (listener: () => void) => runsDir.onDidChange(listener);

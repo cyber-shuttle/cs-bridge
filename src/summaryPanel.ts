@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { getSession, watchSessions } from './extensionStore';
+import { getSession, onSessionsChange } from './extensionStore';
 import { renderHtml } from './webviewProvider';
-import { isSameRun, readAllRuns, readRecentSamples, readSessionStats, watchRuns } from './modules/runStore';
+import { isSameRun, readAllRuns, readRecentSamples, readSessionStats, onRunsChange } from './modules/runStore';
 import { UsageSample, RunStats, SlurmSession, SummaryState } from './models';
 
 // A finished run's fixed snapshot (from the Run History view), shown instead of the live session, which may have been started again.
@@ -43,9 +43,8 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
         void panel.webview.postMessage({ command: 'state', state });
     };
     const msgSub = panel.webview.onDidReceiveMessage((m: { command?: string }) => { if (m?.command === 'ready') { post(); } });
-    // One watcher covers both: run records and live samples land in the same store.
-    const runsSub = watchRuns(() => post());
-    const sessSub = watchSessions(() => post());
+    const runsSub = onRunsChange(() => post());
+    const sessSub = onSessionsChange(() => post());
     panel.webview.html = renderHtml(panel.webview, extensionUri, 'summary');
-    panel.onDidDispose(() => { msgSub.dispose(); sessSub.close(); runsSub.close(); });
+    panel.onDidDispose(() => { msgSub.dispose(); sessSub.dispose(); runsSub.dispose(); });
 }

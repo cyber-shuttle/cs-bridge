@@ -1,5 +1,5 @@
 // Field names match cs-plane's wire types (Session, Resources, Run, RunStats, UsageSample). A persisted shape change
-// here needs a step in modules/schema.ts.
+// here needs a SCHEMA_VERSION bump (modules/store.ts) and a step passed to migrate.
 
 // As cs-plane's Resources: gpuType is a GRES type, or 'gpu' for any GPU.
 export interface Resources {
@@ -32,7 +32,6 @@ export interface SlurmSession {
     submittedAt: number;
     startedAt?: number;
     errorMessage: string;
-    windowPids?: number[];
     transport: 'devtunnel' | 'link'; // the latest run's route to Linkspan
     devtunnel?: { id: string; cluster: string };
     planeId?: string; // the cs-plane session each link run attaches
