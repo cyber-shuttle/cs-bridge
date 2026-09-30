@@ -1,7 +1,7 @@
-import type { Sample, SessionRunRecord } from '@/models';
+import type { UsageSample, Run } from '@/models';
 
 // Cores busy per gap: Δcpu-usec / Δwall-usec. Gaps missing a cpu reading or with dt≤0 are dropped.
-export function cpuCoreSeries(samples: Sample[]): number[] {
+export function cpuCoreSeries(samples: UsageSample[]): number[] {
     return samples.flatMap((b, i) => {
         const a = samples[i - 1];
         if (!a || a.cpuUsageUsec === undefined || b.cpuUsageUsec === undefined || a.atMs === undefined || b.atMs === undefined) { return []; }
@@ -23,8 +23,8 @@ export function fmtPct(pct?: number): string {
 
 // Group runs by session, preserving input order across groups (each session ordered by its most recent run) and within
 // each group. Assumes `runs` is already newest-first, as readAllRuns returns it; each group is non-empty.
-export function groupRunsBySession(runs: SessionRunRecord[]): SessionRunRecord[][] {
-    const byId = new Map<string, SessionRunRecord[]>();
+export function groupRunsBySession(runs: Run[]): Run[][] {
+    const byId = new Map<string, Run[]>();
     for (const run of runs) {
         const group = byId.get(run.sessionId);
         if (group) { group.push(run); }

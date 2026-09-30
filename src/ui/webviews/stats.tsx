@@ -4,9 +4,9 @@ import { useWebviewState, post } from '@/ui/platform/vscode';
 import { Stack, Row, Text, Icon, Chip } from '@/ui/components/base';
 import { EfficiencyChip } from '@/ui/components/StatsView';
 import { groupRunsBySession } from '@/ui/logic/usage';
-import type { StatsState, SessionRunRecord } from '@/models';
+import type { StatsState, Run } from '@/models';
 
-function RunItem({ run }: { run: SessionRunRecord }) {
+function RunItem({ run }: { run: Run }) {
     const when = new Date(run.endedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     return (
         <Row
@@ -18,30 +18,30 @@ function RunItem({ run }: { run: SessionRunRecord }) {
         >
             <Row gap={6} style={{ minWidth: 0 }}>
                 <Text size={12} ellipsis>{when}</Text>
-                <Text muted size={11} style={{ flexShrink: 0 }}>{run.finalStatus}</Text>
+                <Text muted size={11} style={{ flexShrink: 0 }}>{run.finalState}</Text>
             </Row>
             <Row gap={4} style={{ flexShrink: 0 }}>
                 <EfficiencyChip label="CPU" pct={run.stats?.cpuEfficiencyPct} />
-                <EfficiencyChip label="Mem" pct={run.stats?.memEfficiencyPct} />
+                <EfficiencyChip label="Mem" pct={run.stats?.memoryEfficiencyPct} />
             </Row>
         </Row>
     );
 }
 
-function SessionGroup({ runs }: { runs: SessionRunRecord[] }) {
+function SessionGroup({ runs }: { runs: Run[] }) {
     const [open, setOpen] = useState(true);
-    const { cluster, allocation, queue } = runs[0];
+    const { alias, account, partition } = runs[0];
     const runLabel = `${runs.length} run${runs.length === 1 ? '' : 's'}`;
     return (
         <Stack gap={0}>
             <Row gap={4} pad="3px 0" style={{ cursor: 'pointer' }} onClick={() => setOpen(o => !o)}>
                 <Icon name={open ? 'chevron-down' : 'chevron-right'} />
-                <Text weight={600} ellipsis>{cluster}</Text>
-                {allocation ? <Chip label={allocation} /> : null}
-                {queue ? <Chip label={queue} /> : null}
+                <Text weight={600} ellipsis>{alias}</Text>
+                {account ? <Chip label={account} /> : null}
+                {partition ? <Chip label={partition} /> : null}
                 <Text muted size={11} style={{ marginLeft: 'auto', flexShrink: 0 }}>{runLabel}</Text>
             </Row>
-            {open && runs.map(run => <RunItem key={`${run.cluster}:${run.jobId}`} run={run} />)}
+            {open && runs.map(run => <RunItem key={`${run.alias}:${run.jobId}`} run={run} />)}
         </Stack>
     );
 }

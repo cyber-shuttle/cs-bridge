@@ -1,57 +1,60 @@
-export interface SlurmSession extends Session {
-    jobId: string;
-    queue: string;
-    wallTime: string;
-    gpuCount: number;
-    gpuClass: string;
-    cpus: number;
-    memory: string;
-    allocation: string;
-    jobScript?: string;
-    tunnelId?: string;
-    tunnelCluster?: string;
-    transport?: 'devtunnel' | 'link'; // the latest run's route to Linkspan; absent reads as devtunnel
-    planeId?: string; // the cs-plane session each link run attaches
+// Field names match cs-plane's wire types (Session, Resources, Run, RunStats, UsageSample). A persisted shape change
+// here needs a step in modules/schema.ts.
+
+// As cs-plane's Resources: gpuType is a GRES type, or 'gpu' for any GPU.
+export interface Resources {
+    cores: number;
+    memoryMb: number;
+    wallMinutes: number;
+    gpuType?: string;
+    gpuCount?: number;
 }
 
-// Lifecycle: not_started → submitting → queued → preparing (job + Step-1 sshd/Dev Tunnel) →
-// ready_to_connect → connecting → connected; unreachable on a dropped Dev Tunnel connection or cluster outage; stopping → stopped/failed.
+// Lifecycle: not_started → submitting → queued → preparing (job + Step-1 sshd) →
+// ready_to_connect → connecting → connected; unreachable on a dropped connection or cluster outage; stopping → stopped/failed.
 // Job end (completed or walltime killed) → stopped (can be started again).
-interface Session {
+export type SessionStatus =
+    | 'not_started' | 'submitting' | 'queued' | 'preparing'
+    | 'ready_to_connect' | 'connecting' | 'connected'
+    | 'stopping' | 'stopped' | 'failed'
+    | 'unreachable';
+
+export interface SlurmSession {
     id: string;
     name: string;
-    cluster: string;
-    status:
-        | 'not_started' | 'submitting' | 'queued' | 'preparing'
-        | 'ready_to_connect' | 'connecting' | 'connected'
-        | 'stopping' | 'stopped' | 'failed'
-        | 'unreachable';
+    status: SessionStatus;
+    alias: string; // the SSH host the job is submitted from
+    account: string; // '' submits without --account
+    partition: string;
+    rootFolder: string;
+    resources: Resources;
+    jobId: string;
     submittedAt: number;
     startedAt?: number;
     errorMessage: string;
-    connectionInfo?: SessionConnectionInfo;
-    workingDirectory?: string;
     windowPids?: number[];
+    transport: 'devtunnel' | 'link'; // the latest run's route to Linkspan
+    devtunnel?: { id: string; cluster: string };
+    planeId?: string; // the cs-plane session each link run attaches
+    connectionInfo?: SessionConnectionInfo;
+    jobScript?: string; // the previewed run's, cleared once submitted
 }
 
+// sshPort > 0 means Step 1 is up: Linkspan serves the session's sshd.
 export interface PersistedConnectionInfo {
     sshPort: number;
-    sshTunnelId: string;
-    region: string;
-    apiPort?: number;
+    controlPort: number;
 }
 
 export interface SessionConnectionInfo extends PersistedConnectionInfo {
-    sshTunnelForwardPort?: number;
-    apiTunnelId?: string;
-    apiTunnelAccessToken?: string;
+    localPort?: number; // this window's 127.0.0.1 forward to the sshd
+    connectToken?: string; // the Dev Tunnel's connect token
 }
 
 export function persistableConnectionInfo(ci: SessionConnectionInfo | undefined): PersistedConnectionInfo | undefined {
-    // A session preparing on the Dev Tunnel has an apiPort but no sshd yet; drop it and a reload orphans it.
-    if (!ci?.sshTunnelId && !ci?.apiPort) { return undefined; }
-    const { sshTunnelId, sshPort, region, apiPort } = ci;
-    return { sshTunnelId, sshPort, region, apiPort };
+    // A session preparing has a control port but no sshd yet; drop it and a reload orphans it.
+    if (!ci?.sshPort && !ci?.controlPort) { return undefined; }
+    return { sshPort: ci.sshPort, controlPort: ci.controlPort };
 }
 
 export interface SshHost {
@@ -72,7 +75,7 @@ export interface SlurmDiscovery {
 export interface SlurmPartitionInfo {
     name: string;
     cpuCount: number;
-    memory: string;
+    memoryMb: number;
     gres: GresInfo[];
 }
 
@@ -92,55 +95,57 @@ export enum SlurmJobStatus {
     UNKNOWN = 'unknown',
 }
 
-export type ViewSession = SlurmSession & { isCurrent: boolean; windowAlive: boolean; opening?: boolean; samples?: Sample[] };
+export type ViewSession = SlurmSession & { isCurrent: boolean; windowAlive: boolean; opening?: boolean; samples?: UsageSample[] };
 
 export const SAMPLE_HISTORY_LEN = 20; // rolling live-sample window, also the sparkline slot count
 export const POLLING_INTERVAL_MS = 5000;
 
 // A resource sample from Linkspan's /usage. atMs (when taken) is set once stored, for rate derivation.
-export interface Sample {
+export interface UsageSample {
     memBytes?: number;
     cpuUsageUsec?: number;
-    gpus?: GpuStat[];
+    gpus?: GpuSample[];
     atMs?: number;
 }
 
-export interface GpuStat {
+export interface GpuSample {
     index: number;
     utilPct: number;
     memUsedMiB: number;
     memTotalMiB: number;
 }
 
-export interface Stats {
+export interface RunStats {
     cores?: number;
-    reqMem?: string;
-    elapsedSec?: number;
+    requestedMemory?: string;
+    elapsedSeconds?: number;
     maxRss?: string; // peak RSS, human-normalized (e.g. "1.2 GB")
     cpuEfficiencyPct?: number; // used / allocated CPU-seconds
-    memEfficiencyPct?: number; // MaxRSS / ReqMem
+    memoryEfficiencyPct?: number; // MaxRSS / requested memory
 }
 
-export interface SessionRunRecord {
+export interface Run {
     sessionId: string;
-    cluster: string;
+    alias: string;
     jobId: string;
+    account: string;
+    partition: string;
     endedAt: number;
-    finalStatus: Session['status'];
-    stats?: Stats;
-    metrics?: Sample[];
-    allocation?: string;
-    queue?: string;
+    finalState: SessionStatus;
+    stats?: RunStats;
+    samples?: UsageSample[];
 }
+
+export interface RunsFile { runs?: Run[]; samples?: UsageSample[]; stats?: RunStats }
 
 export interface StatsState {
-    runs: SessionRunRecord[];
+    runs: Run[];
 }
 
 export interface SummaryState {
     session: SlurmSession;
-    samples?: Sample[]; // live sample history (sparklines)
-    stats?: Stats; // sacct accounting; absent → the webview shows a "fetching…" spinner
+    samples?: UsageSample[]; // live sample history (sparklines)
+    stats?: RunStats; // sacct accounting; absent → the webview shows a "fetching…" spinner
 }
 
 // An SSH host's runtime-details fetch is in exactly one phase; the draft form renders straight off it.
@@ -169,10 +174,7 @@ export interface WebviewMessage {
     sessionId?: string;
     alias?: string;
     partition?: string;
-    wallTime?: string;
-    gpu?: string;
-    cpus?: string;
-    memory?: string;
     account?: string;
+    resources?: Resources;
     jobId?: string;
 }

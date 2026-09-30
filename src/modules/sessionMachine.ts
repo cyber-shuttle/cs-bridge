@@ -1,16 +1,11 @@
-import { SlurmJobStatus, SlurmSession } from '../models';
+import { SessionStatus as Status, SlurmJobStatus, SlurmSession } from '../models';
 
-type Status = SlurmSession['status'];
-
-export function wallMs(wallTime: string): number {
-    const p = (wallTime || '').split(':').map(Number);
-    return ((p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0)) * 1000;
-}
+export const wallMs = (session: Pick<SlurmSession, 'resources'>): number => session.resources.wallMinutes * 60_000;
 
 /** Slurm kills the job at --time, so a passed deadline is authoritative even when the SSH host is unreachable
  *  for `sacct`. Assumes death within KillWait of --time; OverTimeLimit clusters may run past it. */
-export function isWallTimeExpired(session: Pick<SlurmSession, 'wallTime' | 'startedAt'>, now: number): boolean {
-    const total = wallMs(session.wallTime);
+export function isWallTimeExpired(session: Pick<SlurmSession, 'resources' | 'startedAt'>, now: number): boolean {
+    const total = wallMs(session);
     return session.startedAt !== undefined && total > 0 && now >= session.startedAt + total;
 }
 
@@ -37,8 +32,6 @@ export const isReachable = (status: Status): boolean => REACHABLE.includes(statu
 
 export const unreachableStatus = (status: Status): Status | undefined =>
     MONITORABLE_OFFLINE.includes(status) ? 'unreachable' : undefined;
-
-export const isReattachable = (status: Status, hasRefs: boolean): boolean => !isTerminal(status) && hasRefs;
 
 // RUNNING-while-'preparing' is handled by the monitor instead (side effect: SessionMonitor.prepareRemote).
 export function computeStatusTransition(current: Status, slurm: SlurmJobStatus): StatusTransition {

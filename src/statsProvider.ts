@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { WebviewProvider, confirmModal } from './webviewProvider';
 import { StatsState, WebviewMessage } from './models';
-import { readAllRuns, clearAllRuns, watchSessionMetrics } from './modules/sessionMetricsStore';
+import { readAllRuns, clearAllRuns, watchRuns } from './modules/runStore';
 import { getSession } from './extensionStore';
 import { openSummaryPanel } from './summaryPanel';
 
@@ -14,7 +14,7 @@ export class StatsProvider extends WebviewProvider {
 
     constructor(extensionUri: vscode.Uri) {
         super(extensionUri);
-        watchSessionMetrics(() => {
+        watchRuns(() => {
             const json = JSON.stringify(readAllRuns());
             if (json === this.lastRunsJson) { return; }
             this.lastRunsJson = json;
@@ -28,7 +28,7 @@ export class StatsProvider extends WebviewProvider {
             const session = getSession(data.sessionId);
             const run = readAllRuns().find(r => r.sessionId === data.sessionId && r.jobId === data.jobId);
             // Show the run's own recorded snapshot, not the live session's, which may have been started again.
-            if (session) { openSummaryPanel(this.extensionUri, session, { stats: run?.stats, samples: run?.metrics }); }
+            if (session) { openSummaryPanel(this.extensionUri, session, { stats: run?.stats, samples: run?.samples }); }
         }
     }
 

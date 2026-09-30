@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { Sample, POLLING_INTERVAL_MS } from '../models';
+import { UsageSample, POLLING_INTERVAL_MS } from '../models';
 
 // Linkspan's HTTP API client — one function per endpoint, each taking the base URL + auth headers its transport
 // mandates (see Tunnels.withLinkspan). It does the calling but owns no transport of its own, so the two compose at
@@ -32,12 +32,12 @@ export async function getHealth(baseUrl: string, headers: Record<string, string>
 }
 
 // GET /usage — Linkspan's live sample; a valid body also confirms Linkspan is up.
-export async function getSample(baseUrl: string, headers: Record<string, string>): Promise<Sample> {
-    return await get(baseUrl, headers, '/usage', j => typeof j === 'object' && j !== null && !Array.isArray(j)) as Sample;
+export async function getSample(baseUrl: string, headers: Record<string, string>): Promise<UsageSample> {
+    return await get(baseUrl, headers, '/usage', j => typeof j === 'object' && j !== null && !Array.isArray(j)) as UsageSample;
 }
 
-// POST /vscode/sessions — the sshd for our public key; a ref naming the key makes it idempotent.
+// POST /vscode/sessions — the sshd for our public key; a ref naming the key, in cs-plane's StartSSH format, makes it idempotent.
 export async function ensureSshServer(baseUrl: string, headers: Record<string, string>, authorizedKey: string): Promise<SshServerInfo> {
-    const ref = `bridge-${createHash('sha256').update(authorizedKey).digest('hex').slice(0, 16)}`;
+    const ref = `ssh-${createHash('sha256').update(authorizedKey).digest('hex').slice(0, 16)}`;
     return await (await post(baseUrl, headers, '/vscode/sessions', { ref, authorized_key: authorizedKey })).json() as SshServerInfo;
 }

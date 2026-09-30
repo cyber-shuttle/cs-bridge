@@ -1,8 +1,8 @@
 import { Logger } from './logger';
 import { SshManager } from './modules/sshSupport';
 import { parseSacctUtil } from './modules/slurmParse';
-import { readSessionRuns, readRecentSamples, readSessionStats, appendRun } from './modules/sessionMetricsStore';
-import { Stats, SessionRunRecord, SlurmSession } from './models';
+import { readSessionRuns, readRecentSamples, readSessionStats, appendRun, isSameRun } from './modules/runStore';
+import { RunStats, Run, SlurmSession } from './models';
 
 const logger = Logger.getInstance();
 const SACCT = 'sacct -P -n --units=K --format=JobID,AllocCPUs,ReqMem,ElapsedRaw,CPUTimeRAW,MaxRSS,TotalCPU -j';
@@ -10,17 +10,16 @@ const SACCT = 'sacct -P -n --units=K --format=JobID,AllocCPUs,ReqMem,ElapsedRaw,
 const STATS_RETRIES = 2;
 const STATS_RETRY_MS = 3000;
 
-const isSameRun = (r: SessionRunRecord, s: SlurmSession) => r.cluster === s.cluster && r.jobId === s.jobId;
-
 export async function recordSessionRun(session: SlurmSession): Promise<void> {
     if (!session.jobId) { return; }
     if (readSessionRuns(session.id).some(r => isSameRun(r, session))) { return; }
     const stats = await fetchStats(session) ?? readSessionStats(session.id); // fall back to the last in-run copy if the end query came back empty
-    const record: SessionRunRecord = { sessionId: session.id, cluster: session.cluster, jobId: session.jobId, endedAt: Date.now(), finalStatus: session.status, stats, metrics: readRecentSamples(session.id), allocation: session.allocation, queue: session.queue };
+    const { id: sessionId, alias, jobId, account, partition, status: finalState } = session;
+    const record: Run = { sessionId, alias, jobId, account, partition, endedAt: Date.now(), finalState, stats, samples: readRecentSamples(session.id) };
     appendRun(record, err => logger.error('Failed to record run', err));
 }
 
-async function fetchStats(session: SlurmSession): Promise<Stats | undefined> {
+async function fetchStats(session: SlurmSession): Promise<RunStats | undefined> {
     for (let attempt = 0; ; attempt++) {
         const m = await sacctStats(session);
         if ((m && m.maxRss !== undefined) || attempt >= STATS_RETRIES) { return m; }
@@ -29,9 +28,9 @@ async function fetchStats(session: SlurmSession): Promise<Stats | undefined> {
 }
 
 // One sacct read (no flush-retry) — the monitor calls this during a run to keep the live Slurm accounting copy non-stale.
-export async function sacctStats(session: SlurmSession): Promise<Stats | undefined> {
+export async function sacctStats(session: SlurmSession): Promise<RunStats | undefined> {
     try {
-        const r = await SshManager.getInstance().runRemoteCommand(session.cluster, `${SACCT} ${session.jobId} 2>/dev/null`, { batch: true });
+        const r = await SshManager.getInstance().runRemoteCommand(session.alias, `${SACCT} ${session.jobId} 2>/dev/null`, { batch: true });
         const m = r.code === 0 ? parseSacctUtil(r.stdout) : undefined;
         return m && Object.keys(m).length ? m : undefined;
     }

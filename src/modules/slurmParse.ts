@@ -1,4 +1,4 @@
-import { GresInfo, Stats, SlurmJobStatus, SlurmPartitionInfo, SlurmSession } from '../models';
+import { GresInfo, RunStats, SlurmJobStatus, SlurmPartitionInfo, SlurmSession } from '../models';
 
 // Pure Slurm text helpers (no SSH/vscode), so they unit-test in isolation. See slurmParse.test.ts.
 
@@ -20,7 +20,7 @@ export const envAssignments = (env: Record<string, string>) => Object.entries(en
 export interface LinkspanLaunch { tunnelArgs: string; sbatchEnv: Record<string, string> }
 
 export const devTunnelLaunch = (session: SlurmSession, hostToken: string): LinkspanLaunch => ({
-    tunnelArgs: `--tunnel-mode devtunnel --tunnel-devtunnel-args '--id ${session.tunnelId ?? ''} --cluster ${session.tunnelCluster ?? ''}'`,
+    tunnelArgs: `--tunnel-mode devtunnel --tunnel-devtunnel-args '--id ${session.devtunnel?.id ?? ''} --cluster ${session.devtunnel?.cluster ?? ''}'`,
     sbatchEnv: { LINKSPAN_TUNNEL_HOST_TOKEN: hostToken },
 });
 
@@ -28,20 +28,30 @@ export const linkLaunch = (url: string, token: string): LinkspanLaunch => ({
     tunnelArgs: `--tunnel-mode link --tunnel-link-args ${shellQuote(`--url ${url}`)}`, sbatchEnv: { LINKSPAN_LINK_TOKEN: token },
 });
 
+// A GRES name as cs-plane's gpuType: without its gpu: prefix, and 'gpu' for any GPU.
+export const gpuTypeOf = (gres: string): string => gres.replace(/^gpu:?/, '') || 'gpu';
+
+// Minutes as Slurm's --time, as cs-plane's minutesToWalltime.
+function minutesToWalltime(minutes: number): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const days = Math.floor(minutes / 1440), hours = Math.floor(minutes % 1440 / 60);
+    return `${days ? `${days}-` : ''}${pad(hours)}:${pad(minutes % 60)}:00`;
+}
+
+// The #SBATCH lines match cs-plane's buildScript for the same session.
 export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch): string {
-    const memSlurm = session.memory.replace(/\s+/g, '');
-    const account = slurmAccount(session.allocation);
+    const { cores, memoryMb, wallMinutes, gpuType, gpuCount } = session.resources;
 
     const sbatchLines = [
         `#SBATCH --job-name=linkspan-session`,
         `#SBATCH --nodes=1`,
         `#SBATCH --ntasks=1`,
-        `#SBATCH --cpus-per-task=${session.cpus}`,
-        `#SBATCH --mem=${memSlurm}`,
-        `#SBATCH --time=${session.wallTime}`,
-        `#SBATCH --partition=${session.queue}`,
-        ...(account ? [`#SBATCH --account=${account}`] : []),
-        ...(session.gpuClass !== '' && session.gpuCount > 0 ? [`#SBATCH --gres=${session.gpuClass}`] : []),
+        `#SBATCH --cpus-per-task=${cores}`,
+        `#SBATCH --mem=${memoryMb}M`,
+        `#SBATCH --time=${minutesToWalltime(wallMinutes)}`,
+        `#SBATCH --partition=${session.partition}`,
+        ...(session.account ? [`#SBATCH --account=${session.account}`] : []),
+        ...(gpuCount ? [`#SBATCH --gres=gpu:${gpuType && gpuType !== 'gpu' ? `${gpuType}:` : ''}${gpuCount}`] : []),
     ];
 
     const scriptLines = [
@@ -59,15 +69,15 @@ export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch):
         ``,
         `# --- Run Linkspan ---`,
         `LINKSPAN_BIN="$HOME/.cybershuttle/bin/linkspan"`,
-        // Bind the API port pinned at launch (no log/port discovery).
-        `"$LINKSPAN_BIN" --port ${session.connectionInfo?.apiPort ?? 0} --tunnel-enable ${launch.tunnelArgs}`,
+        // Bind the control port pinned at launch (no log/port discovery).
+        `"$LINKSPAN_BIN" --port ${session.connectionInfo?.controlPort ?? 0} --tunnel-enable ${launch.tunnelArgs}`,
     ];
 
     return scriptLines.join('\n');
 }
 
 // One `sacct --parsable2` row: State|ExitCode|Reason|ElapsedRaw
-export function parseSacctStatus(output: string): { status: SlurmJobStatus; elapsedSec: number } {
+export function parseSacctStatus(output: string): { status: SlurmJobStatus; elapsedSeconds: number } {
     if (!output) {
         throw new Error('Failed to get job status. No output from sacct command.');
     }
@@ -83,9 +93,9 @@ export function parseSacctStatus(output: string): { status: SlurmJobStatus; elap
     */
     const [state, , , elapsedRaw] = fields;
     // ElapsedRaw is Slurm's authoritative run-time in whole seconds (no timezone/clock guessing).
-    const elapsedSec = /^\d+$/.test(elapsedRaw.trim()) ? parseInt(elapsedRaw.trim(), 10) : 0;
+    const elapsedSeconds = /^\d+$/.test(elapsedRaw.trim()) ? parseInt(elapsedRaw.trim(), 10) : 0;
 
-    return { status: classifySchedulerState(state), elapsedSec };
+    return { status: classifySchedulerState(state), elapsedSeconds };
 }
 
 // The scheduler's vocabulary in one place, mirroring cs-plane's own table. An
@@ -154,33 +164,33 @@ export function humanKib(kib: number): string {
 // Parse `sacct -P -n --units=K` rows (JobID|AllocCPUs|ReqMem|ElapsedRaw|CPUTimeRAW|MaxRSS|TotalCPU).
 // Usage lives on the .batch step where the workload runs; .extern and our own srun
 // poll steps would mask it with their near-zero values.
-export function parseSacctUtil(output: string): Stats {
+export function parseSacctUtil(output: string): RunStats {
     const rows = output.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => l.split('|'));
     if (rows.length === 0) { return {}; }
     const alloc = rows.find(r => !r[0].includes('.')) ?? rows[0];
     const usage = rows.find(r => r[0].endsWith('.batch')) ?? alloc;
 
-    const m: Stats = {};
+    const m: RunStats = {};
     const cores = Number(alloc[1]);
     if (Number.isFinite(cores) && cores > 0) { m.cores = cores; }
     const reqMemKib = parseKib(alloc[2]);
-    if (alloc[3] && Number.isFinite(Number(alloc[3]))) { m.elapsedSec = Number(alloc[3]); }
+    if (alloc[3] && Number.isFinite(Number(alloc[3]))) { m.elapsedSeconds = Number(alloc[3]); }
     const allocCpuSec = Number(alloc[4]); // CPUTimeRAW = elapsed × cpus
 
     const maxRssKib = parseKib(usage[5]);
     const usedCpuSec = hmsSeconds(usage[6]);
 
-    if (reqMemKib !== undefined) { m.reqMem = humanKib(reqMemKib); }
+    if (reqMemKib !== undefined) { m.requestedMemory = humanKib(reqMemKib); }
     if (maxRssKib !== undefined) { m.maxRss = humanKib(maxRssKib); }
     // TotalCPU is 00:00:00 until the step ends, so a zero means "not flushed yet", not a truly idle job — skip it.
     if (usedCpuSec && Number.isFinite(allocCpuSec) && allocCpuSec > 0) {
         m.cpuEfficiencyPct = usedCpuSec / allocCpuSec * 100;
     }
-    if (maxRssKib !== undefined && reqMemKib) { m.memEfficiencyPct = maxRssKib / reqMemKib * 100; }
+    if (maxRssKib !== undefined && reqMemKib) { m.memoryEfficiencyPct = maxRssKib / reqMemKib * 100; }
     return m;
 }
 
-// One `sinfo -h -o "%P|%c|%m|%G"` line: name|cpuCount|memory|gres
+// One `sinfo -h -o "%P|%c|%m|%G"` line: name|cpuCount|memoryMb|gres
 export function parsePartitionLine(line: string): SlurmPartitionInfo {
     const parts = line.split('|').map(p => p.trim());
 
@@ -193,7 +203,7 @@ export function parsePartitionLine(line: string): SlurmPartitionInfo {
     return {
         name: rawName.replace(/\*$/, ''), // trailing "*" marks the default partition
         cpuCount: parseLeadingInt(rawCpuCount),
-        memory: rawMemory,
+        memoryMb: parseInt(rawMemory, 10) || 0, // sinfo's %m is MB, '+' when nodes differ
         gres: parseGres(rawGres),
     };
 }

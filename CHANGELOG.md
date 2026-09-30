@@ -10,6 +10,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Edit** on each SSH host from `~/.ssh/config` changes its alias, username and hostname in place.
 
+### Changed
+
+- **Local files** in `~/.cybershuttle` carry a schema version and migrate on activation, from any earlier release, to
+  cs-plane's field names; run history moves from `metrics/` to `runs/`. Downgrading afterwards is unsupported.
+- **Job scripts** request memory in MB (`--mem=8192M`) and walltime in cs-plane's format (`--time=1-00:00:00`).
+- **A session's sshd** on Linkspan takes cs-plane's name (`ssh-<key hash>`), so both reuse one server per key; a job
+  started before the update gains a second sshd on its next connect.
+
+### Fixed
+
+- **A multi-GPU session** records and shows its real GPU count, not 1.
+- **A job that ends on its own**, at walltime or completion, cleans up its SSH host and connection refs as a Stop does.
+
+### Security
+
+- **The migration deletes** the SSH password and private key that session records from before 0.1.4 could hold.
+
 ## [0.2.0] - 2026-09-29
 
 Requires Linkspan 0.22.0.

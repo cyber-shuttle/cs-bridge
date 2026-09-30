@@ -7,13 +7,14 @@ import { execFileSync, spawn, spawnSync, ChildProcess } from 'child_process';
 import * as crypto from 'crypto';
 import { Logger, errMsg } from '../logger';
 import { lock, release, lockedUpdateTextFile } from './fsSupport';
+import { CS_HOME } from './schema';
 import { buildShellCommand, extractCommandResult, READY_MARKER, renderAuthHtml } from './sshShell';
 import { USER_SSH_CONFIG_PATH, SYSTEM_SSH_CONFIG_PATH, mergeHostsByPriority, parseHostsFromConfigText, buildSshConfigBlock, csHostAlias, includeIsEffective } from './sshHostsStore';
 
 const logger = Logger.getInstance();
-const CS_SSH_CONFIG_PATH = path.join(os.homedir(), '.cybershuttle', 'ssh_config');
-const CS_SSH_KEYS_DIR = path.join(os.homedir(), '.cybershuttle', 'ssh_keys');
-const CS_SSH_CONTROL_DIR = path.join(os.homedir(), '.cybershuttle', 'ssh_control');
+const CS_SSH_CONFIG_PATH = path.join(CS_HOME, 'ssh_config');
+const CS_SSH_KEYS_DIR = path.join(CS_HOME, 'ssh_keys');
+const CS_SSH_CONTROL_DIR = path.join(CS_HOME, 'ssh_control');
 
 const sessionKeyPath = (sessionId: string): string => path.join(CS_SSH_KEYS_DIR, `id_cshost-${sessionId}`);
 
@@ -325,7 +326,7 @@ async function setServerInstallPath(alias: string, dir: string | undefined): Pro
 }
 
 export async function addSshConfigEntry(session: SlurmSession, localPort: number): Promise<string> {
-    const alias = csHostAlias(session.cluster, session.name);
+    const alias = csHostAlias(session);
     await deleteSshConfigEntry(session.id, alias, false); // keep the key: it is this session's, generated locally
 
     const hostname = '127.0.0.1';

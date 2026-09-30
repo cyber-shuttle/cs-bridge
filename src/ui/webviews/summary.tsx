@@ -31,26 +31,26 @@ function Root() {
         return <Stack gap={12} pad="48px" style={{ alignItems: 'center' }}><Spinner size={28} /><Text muted>{loadingMsg}</Text></Stack>;
     }
 
-    const gpus = s.gpuCount > 0 ? `${s.gpuCount} × ${s.gpuClass}` : 'None';
+    const { cores, memoryMb, gpuType, gpuCount = 0 } = s.resources;
     const usedMs = elapsedRunMs(s, Date.now());
-    const limitMs = wallMs(s.wallTime);
+    const limitMs = wallMs(s);
 
     return (
         <Stack gap={10} pad="14px 16px" style={{ maxWidth: '640px', margin: '0 auto' }}>
             <Row gap={8} wrap>
                 <Icon name="server-environment" />
                 <Text size={16} weight={600}>{s.name}</Text>
-                <Text muted>· {s.cluster}</Text>
+                <Text muted>· {s.alias}</Text>
                 <Text muted>· {finalStateLabel(s)}</Text>
             </Row>
 
             <Card>
                 <Text weight={600} style={{ marginBottom: '4px' }}>Resources</Text>
-                <Field label="CPUs" value={String(s.cpus)} />
-                <Field label="Memory" value={s.memory} />
-                <Field label="GPUs" value={gpus} />
-                <Field label="Partition" value={s.queue} />
-                <Field label="Slurm account" value={s.allocation} />
+                <Field label="CPUs" value={String(cores)} />
+                <Field label="Memory" value={`${memoryMb / 1024} GB`} />
+                <Field label="GPUs" value={gpuCount ? `${gpuCount} × ${gpuType}` : 'None'} />
+                <Field label="Partition" value={s.partition} />
+                <Field label="Slurm account" value={s.account} />
                 <Field label="Job ID" value={s.jobId} />
             </Card>
 
@@ -66,7 +66,7 @@ function Root() {
                         <Icon name="pulse" />
                         <Text weight={600}>Live resource history</Text>
                     </Row>
-                    <UsageGraphs history={state.samples} gpuCount={s.gpuCount} />
+                    <UsageGraphs history={state.samples} gpuCount={gpuCount} />
                 </Card>
             ) : null}
 

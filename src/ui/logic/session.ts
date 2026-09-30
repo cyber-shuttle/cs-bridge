@@ -1,5 +1,5 @@
 import type { SlurmSession, ViewSession } from '@/models';
-import { isTerminal, isStoppable, wallMs } from '@/modules/sessionMachine';
+import { isDeletable, isReachable, isStoppable, wallMs } from '@/modules/sessionMachine';
 
 export { wallMs }; // shared with the monitor via the vscode-free sessionMachine
 
@@ -27,15 +27,15 @@ export function elapsedLabel(since: number, now: number): string {
 }
 
 /** Milliseconds left until the wall-clock deadline; the full walltime if not yet started. */
-export function remainingMs(session: Pick<SlurmSession, 'wallTime' | 'startedAt'>, now: number): number {
-    const total = wallMs(session.wallTime);
+export function remainingMs(session: Pick<SlurmSession, 'resources' | 'startedAt'>, now: number): number {
+    const total = wallMs(session);
     return session.startedAt ? session.startedAt + total - now : total;
 }
 
 /** Wall-clock run-time used: elapsed since start, capped at the walltime limit (uncapped when the limit is 0/unlimited); 0 before the job starts. */
-export function elapsedRunMs(session: Pick<SlurmSession, 'wallTime' | 'startedAt'>, now: number): number {
+export function elapsedRunMs(session: Pick<SlurmSession, 'resources' | 'startedAt'>, now: number): number {
     if (!session.startedAt) { return 0; }
-    const total = wallMs(session.wallTime);
+    const total = wallMs(session);
     const raw = now - session.startedAt;
     return Math.max(0, total > 0 ? Math.min(raw, total) : raw);
 }
@@ -43,19 +43,18 @@ export function elapsedRunMs(session: Pick<SlurmSession, 'wallTime' | 'startedAt
 // Colour buckets for the status dot: orange = error, green = live.
 // Everything else (idle/pending/stopping/stopped) falls through to neutral grey.
 const ORANGE: SlurmSession['status'][] = ['failed', 'unreachable'];
-const GREEN: SlurmSession['status'][] = ['ready_to_connect', 'connecting', 'connected'];
 
 const STOP: SessionAction = { kind: 'stop', label: 'Stop', icon: 'debug-stop' };
 
 export function dotColor(status: SlurmSession['status']): string {
     if (ORANGE.includes(status)) { return 'var(--vscode-charts-orange)'; }
-    if (GREEN.includes(status)) { return 'var(--vscode-charts-green)'; }
+    if (isReachable(status)) { return 'var(--vscode-charts-green)'; }
     return 'var(--vscode-descriptionForeground)';
 }
 
 export function sessionActions(session: ViewSession): SessionAction[] {
     const s = session.status;
-    if (isTerminal(s) || s === 'not_started') { return [{ kind: 'start', label: 'Start', icon: 'play' }]; }
+    if (isDeletable(s)) { return [{ kind: 'start', label: 'Start', icon: 'play' }]; }
 
     const actions: SessionAction[] = [];
     if (isStoppable(s)) { actions.push(STOP); }

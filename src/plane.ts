@@ -4,9 +4,6 @@
 // to redeem it.
 import type * as vscode from 'vscode';
 import { SlurmSession } from './models';
-import { parseGpuClass } from './ui/logic/cluster';
-import { wallMs } from './modules/sessionMachine';
-import { slurmAccount } from './modules/slurmParse';
 
 export const PLANE_URL = 'https://jupyterapi.cybershuttle.org/api/v1';
 export const CREDENTIAL_KEY = 'csbridge.plane.credential';
@@ -41,7 +38,7 @@ export class Plane {
 
     signOut() { return this.save(); }
     async signedIn() { return !!await this.load(); }
-    async account() {
+    async identity() {
         const credential = await this.load();
         return credential && JSON.parse(Buffer.from(credential.idToken.split('.')[1], 'base64url').toString()).email as string | undefined;
     }
@@ -96,14 +93,5 @@ export class Plane {
 }
 
 // A session as cs-plane defines it, keyed by its local id so every launch of it maps to one cs-plane session.
-function toSpec(session: SlurmSession) {
-    const gpu = session.gpuCount > 0 ? parseGpuClass(session.gpuClass) : undefined;
-    return {
-        idempotencyKey: session.id, alias: session.cluster, account: slurmAccount(session.allocation) || undefined, partition: session.queue,
-        rootFolder: session.workingDirectory || '$HOME',
-        resources: {
-            cores: session.cpus, memoryMb: Math.round(parseFloat(session.memory) * 1024), wallMinutes: Math.round(wallMs(session.wallTime) / 60_000),
-            ...gpu && { gpuType: gpu.gpuType.replace(/^gpu:/, '') || 'gpu', gpuCount: Number(gpu.gpuCount) },
-        },
-    };
-}
+const toSpec = ({ id, alias, account, partition, rootFolder, resources }: SlurmSession) =>
+    ({ idempotencyKey: id, alias, account: account || undefined, partition, rootFolder: rootFolder || '$HOME', resources });

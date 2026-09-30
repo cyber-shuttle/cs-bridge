@@ -47,13 +47,22 @@ export function lockedUpdateJson<T>(file: string, mutate: (cur: T | undefined) =
     lock(file);
     try {
         const next = mutate(readJson<T>(file));
-        if (next !== null) {
-            fs.writeFileSync(`${file}.tmp`, JSON.stringify(next, null, 2), 'utf-8');
-            fs.renameSync(`${file}.tmp`, file);
-        }
+        if (next !== null) { writeJson(file, next); }
     }
     catch (err) { onError?.(err); }
     finally { release(file); }
+}
+
+// Atomic temp+rename write; callers that share the file hold its lock.
+export function writeJson(file: string, value: unknown): void {
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2));
+    fs.renameSync(`${file}.tmp`, file);
+}
+
+// The .json names in dir; a missing dir has none.
+export function jsonFiles(dir: string): string[] {
+    try { return fs.readdirSync(dir).filter(n => n.endsWith('.json')); }
+    catch { return []; }
 }
 
 export function deleteFile(file: string): void {
