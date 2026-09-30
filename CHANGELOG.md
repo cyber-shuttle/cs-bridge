@@ -6,11 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-30
+
 ### Changed
 
 - **VS Code 1.101** or newer is required.
 - **View controls** are native and follow the VS Code theme.
 - **The CS Bridge output** follows **Developer: Set Log Level**.
+
+### Fixed
+
+- **`~/.cybershuttle/ssh_config`** no longer gains a blank line on every connect.
 
 ## [0.2.1] - 2026-09-30
 
@@ -305,7 +311,8 @@ Initial release of **CS Bridge** — remote HPC development from VS Code. Publis
 - Status bar countdown and progress toasts for active sessions
 - esbuild-based build producing a single bundled, minified `out/extension.js` (`tsc` used for type-checking only)
 
-[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.1...HEAD
+[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.2...HEAD
+[0.2.2]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.1...0.2.2
 [0.2.1]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.1.8...0.2.0
 [0.1.8]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.1.7...0.1.8
