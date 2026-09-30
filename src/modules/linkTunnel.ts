@@ -1,11 +1,12 @@
-// The link transport's tunnel clients, shaped like the Dev Tunnels SDK's so tunnelSupport's session-level functions
-// drive either pair. The tunnel is a cs-plane session and its connect token is cs-plane's `/access` capability. A
+// The link transport's tunnel clients, shaped like the Dev Tunnels SDK's so transport's session-level functions
+// drive either pair. The tunnel is a cs-plane session and its connect token the Jupyter token from `/access`. A
 // ForwardRelayClient has no upstream connection of its own: each forwarded port is a 127.0.0.1 listener whose every
 // accepted socket rides a fresh WebSocket to a forward URL: cs-plane's for link, Linkspan's over a Dev Tunnel.
 import * as net from 'node:net';
 import { SlurmSession } from '../models';
 import { Plane, PlaneError, PLANE_URL } from '../plane';
 import { Tunnel } from '@microsoft/dev-tunnels-contracts';
+import type { TunnelRelayClient } from './transport';
 
 export class LinkManagementClient {
     constructor(private readonly plane: Plane) { }
@@ -86,4 +87,10 @@ export class LinkRelayClient extends ForwardRelayClient {
         this.protocols = ['cybershuttle.v1', `capability.${tunnel.accessTokens?.connect ?? ''}`];
         this.connectionStatus = 'connected';
     }
+}
+
+// The local port a relay client bound for a remote port; the SDK prefers the remote port number itself.
+export async function forwardedLocalPort(client: Pick<TunnelRelayClient, 'waitForForwardedPort' | 'forwardedPorts'>, port: number) {
+    await client.waitForForwardedPort(port);
+    return client.forwardedPorts?.find(p => p.remotePort === port)?.localPort ?? port;
 }

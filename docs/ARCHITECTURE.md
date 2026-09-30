@@ -51,7 +51,7 @@ Local VS Code                              Remote HPC cluster
 7. **Remote sshd.** `ensureRemoteSession` asks Linkspan for an SSH server that accepts the session's public key,
    named by a `ref` derived from that key, so Linkspan answers a repeat with the server already running. The session
    reaches `ready_to_connect`.
-8. **Connect.** `connectDevTunnel` composes the step: `connectSessionToTunnel` forwards the control port through an
+8. **Connect.** `connectTransport` composes the step: `connectSessionToTunnel` forwards the control port through an
    in-process `TunnelRelayTunnelClient` and binds `127.0.0.1:N`, whose every connection rides Linkspan's
    `/api/v1/forward/{sshPort}`, and returns that port; `addSshConfigEntry` writes the per-session SSH host, and only
    on success does `openOrFocusWindow` open `vscode-remote://ssh-remote+<alias>/…`.
@@ -76,9 +76,9 @@ live run. Markdown tags an experimental feature **(experimental)** after its nam
 
 With `csbridge.experimentalFeatures` on and `csbridge.transport` set to `link`, a session's run goes through cs-plane
 (`plane.ts`) instead of a Dev Tunnel; the record's `transport` and `planeId` fields select and key it. `linkTunnel.ts`
-mirrors the Dev Tunnels SDK's management and relay clients over cs-plane, so `tunnelSupport.ts`'s session-level
-functions run on either. A `Transport` (`transport.ts`) is that client pair plus the launch and the run's release;
-`transportFor` picks one, and nothing else branches on `transport`.
+mirrors the Dev Tunnels SDK's management and relay clients over cs-plane. A `Transport` (`transport.ts`) is that
+client pair plus the launch and the run's release; `transportFor` picks one, the session-level steps in the same module
+run on either, and nothing else branches on `transport`.
 
 | Step | Link behaviour |
 |---|---|
@@ -91,7 +91,7 @@ functions run on either. A `Transport` (`transport.ts`) is that client pair plus
 
 ## The per-session SSH host
 
-`csHostAlias(alias, sessionName)` is `<alias>-<last 6 characters of the session name>` — for example
+`csHostAlias(session)` is `<alias>-<last 6 characters of the session name>` — for example
 `delta-493119` (`sshHostsStore.ts`). One function builds the `~/.cybershuttle/ssh_config` `Host` line, the
 `ssh-remote+` authority, and the reverse lookup that tells a remote window which session it belongs to, so all
 three stay in lockstep. The alias is what VS Code prints as the window's `[SSH: …]` label, and it never equals a
@@ -107,9 +107,10 @@ Four layers, and nothing reaches past its neighbour.
   window, where it owns the walltime status bar and the hand-back to a local window.
 - **`src/modules/*.ts`** — the capability layer. SSH (`sshSupport`, `sshShell`, `sshHostsStore`, `sshCommandParser`),
   Slurm (`slurmLaunch`, `slurmParse`, `slurmSupport`), Linkspan's HTTP client (`linkspanSupport`), Dev Tunnels
-  (`tunnelSupport`), their cs-plane counterparts **(experimental)** (`linkTunnel`), the transport choice (`transport`),
-  the status domain (`sessionMachine`), lifecycle composition (`sessionSupport`) and the on-disk stores. Modules that
-  do not import `vscode` unit-test directly; the ones that do cannot be imported under the test runner at all.
+  (`tunnelSupport`), their cs-plane counterparts **(experimental)** (`linkTunnel`), the transport choice and the
+  session-level connect steps (`transport`), the status domain (`sessionMachine`), lifecycle composition
+  (`sessionSupport`), the on-disk stores and their migrations (`schema`). Modules that do not import `vscode`
+  unit-test directly; the ones that do cannot be imported under the test runner at all.
 - **`src/ui/`** — Preact webviews, one esbuild bundle per view. `logic/` is pure and tested, `components/` renders,
   `platform/vscode.ts` is the only thing that talks to the webview host (`post()` out, `useWebviewState()` in).
 - **`resources/`, `scripts/`** — the activity-bar icons, and the `SSH_ASKPASS` helpers (`askpass.js`, `askpass.sh`).
@@ -145,14 +146,30 @@ newline-preserving monospace block is what lets a device-flow QR prompt render, 
 Sessions are one JSON record per id under `~/.cybershuttle/sessions/`, guarded by a cross-process file lock
 (`fsSupport.ts`); an `fs.watch` on the directory syncs state across VS Code windows (`extensionStore.ts`). Every
 write goes through that locked read-modify-write: windows share these records, so a write that bypasses the lock
-drops another window's update. Only reattach references are persisted — `sshTunnelId`, `sshPort`, `region` and
-`apiPort`, the last so a reattached session health-pings the Dev Tunnel instead of polling the SSH host — while
-secrets and the ephemeral local port stay in memory. On load, `connected` and `connecting` demote to
-`ready_to_connect` (the Dev Tunnel connection is gone after a reload). Run history and usage live separately, one file per session under `~/.cybershuttle/metrics/` (`sessionMetricsStore.ts`).
+drops another window's update. Of the connection, only `sshPort` and `controlPort` are persisted, the latter so a
+reattached session health-pings Linkspan instead of polling the SSH host; secrets and the local port stay in memory.
+On load, `connected` and `connecting` demote to `ready_to_connect` (the connection is gone after a reload). Run
+history and usage live in one file per session under `~/.cybershuttle/runs/` (`runStore.ts`).
+
+Field names match cs-plane's wire types: a session is `alias`, `account`, `partition`, `rootFolder` and `resources`
+(`cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`); a run is `Run` with `RunStats` and `samples`.
 
 A remote window recognises itself: `extension.ts` reads the workspace URI authority, and in an
 `ssh-remote+<alias>` window it scopes the Sessions view to that one session, observe-only, and sets the
 `csbridge.remote` context so the SSH Hosts and Run History views hide.
+
+## Schema migrations
+
+`~/.cybershuttle/schema.json` holds one version for the whole tree. At activation, before any store reads,
+`migrate()` (`schema.ts`) takes the tree's lock and applies each step from the version it finds to the current one,
+recording the version after each. A tree without the file is version 0: every release up to 0.2.0. The stores read
+only the current shape.
+
+| Change | Rule |
+|---|---|
+| A persisted field or file changes shape | Append a step to `STEPS`, and update `models.ts` and the stores to the new shape only |
+| A step | Deterministic and idempotent, so a crash before the version is written reruns it cleanly |
+| A tree newer than the build | Refused at activation with an error, never read |
 
 ## Build pipeline
 

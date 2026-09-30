@@ -3,16 +3,16 @@ import assert from 'node:assert/strict';
 import type { SlurmSession, SessionConnectionInfo } from '../models';
 import { mergeFromDisk, mergeRecord, toPersistedRecord } from './sessionStore';
 
-const ci = (over: Partial<SessionConnectionInfo> = {}): SessionConnectionInfo => ({ sshTunnelId: 't', sshPort: 1, region: 'r', ...over });
+const ci = (over: Partial<SessionConnectionInfo> = {}): SessionConnectionInfo => ({ sshPort: 1, controlPort: 2, ...over });
 const sess = (id: string, over: Partial<SlurmSession> = {}): SlurmSession => ({ id, status: 'queued', ...over } as SlurmSession);
 
 test('mergeFromDisk refreshes existing instances in place (identity kept), preserves in-memory connectionInfo, reports change', () => {
-    const a = sess('a', { status: 'connected', connectionInfo: ci({ sshTunnelForwardPort: 5000 }) });
+    const a = sess('a', { status: 'connected', connectionInfo: ci({ localPort: 5000 }) });
     const mem = [a];
     assert.equal(mergeFromDisk(mem, [sess('a', { status: 'stopped', connectionInfo: ci() }), sess('b')]), true);
     assert.equal(mem[0], a); // same object — references held by the monitor / in-flight connect stay valid
     assert.equal(a.status, 'stopped'); // status refreshed from disk
-    assert.equal(a.connectionInfo?.sshTunnelForwardPort, 5000); // live forward port kept
+    assert.equal(a.connectionInfo?.localPort, 5000); // live forward port kept
     assert.deepEqual(mem.map(s => s.id), ['a', 'b']); // new id appended
 });
 
@@ -24,7 +24,7 @@ test('mergeFromDisk drops ids no longer on disk; reports no change on an identic
 });
 
 test('mergeRecord upserts one record in place (identity kept, in-memory connectionInfo preserved), reports change', () => {
-    const a = sess('a', { status: 'connected', connectionInfo: ci({ sshTunnelForwardPort: 5000 }) });
+    const a = sess('a', { status: 'connected', connectionInfo: ci({ localPort: 5000 }) });
     const mem = [a];
     assert.equal(mergeRecord(mem, 'a', sess('a', { status: 'stopped', connectionInfo: ci() })), true);
     assert.equal(mem[0], a); // same object — monitor/connect refs stay valid

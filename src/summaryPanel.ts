@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import { getSession, watchSessions } from './extensionStore';
 import { renderHtml } from './webviewProvider';
-import { readAllRuns, readRecentSamples, readSessionStats, watchSessionMetrics } from './modules/sessionMetricsStore';
-import { Sample, Stats, SlurmSession, SummaryState } from './models';
+import { isSameRun, readAllRuns, readRecentSamples, readSessionStats, watchRuns } from './modules/runStore';
+import { UsageSample, RunStats, SlurmSession, SummaryState } from './models';
 
 // A finished run's fixed snapshot (from the Run History view), shown instead of the live session, which may have been started again.
-interface RunSnapshot { stats?: Stats; samples?: Sample[] }
+interface RunSnapshot { stats?: RunStats; samples?: UsageSample[] }
 
 const PENDING_KEY = 'csbridge.pendingSummaries';
 // Trade-off: hard cap so a never-consumed baton (e.g. an activation that errors before consuming) can't grow globalState unbounded. Bump if summaries ever legitimately queue deeper than this.
@@ -36,7 +36,7 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
     const post = () => {
         const s = getSession(session.id) ?? session;
         // Past run from Run History: its fixed snapshot. Live: current samples + latest sacct copy (run record or in-run file).
-        const run = runSnapshot ? undefined : readAllRuns().find(r => r.cluster === s.cluster && r.jobId === s.jobId);
+        const run = runSnapshot ? undefined : readAllRuns().find(r => isSameRun(r, s));
         const samples = runSnapshot ? runSnapshot.samples : readRecentSamples(s.id);
         const stats = runSnapshot ? runSnapshot.stats : (run?.stats ?? readSessionStats(s.id));
         const state: SummaryState = { session: s, samples, stats };
@@ -44,8 +44,8 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
     };
     const msgSub = panel.webview.onDidReceiveMessage((m: { command?: string }) => { if (m?.command === 'ready') { post(); } });
     // One watcher covers both: run records and live samples land in the same store.
-    const metricsSub = watchSessionMetrics(() => post());
+    const runsSub = watchRuns(() => post());
     const sessSub = watchSessions(() => post());
     panel.webview.html = renderHtml(panel.webview, extensionUri, 'summary');
-    panel.onDidDispose(() => { msgSub.dispose(); sessSub.close(); metricsSub.close(); });
+    panel.onDidDispose(() => { msgSub.dispose(); sessSub.close(); runsSub.close(); });
 }

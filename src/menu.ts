@@ -9,7 +9,7 @@ import { SessionProvider } from './sessionProvider';
 import { SshHostProvider } from './sshHostProvider';
 import { SshManager } from './modules/sshSupport';
 import { Transports } from './modules/transport';
-import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
+import { getMicrosoftAccountLabel, switchDevTunnelAccount } from './modules/tunnelSupport';
 import { enabled } from './features';
 import { sshCommandToConfig } from './modules/sshCommandParser';
 
@@ -64,7 +64,7 @@ export class CsBridgeMenu {
     }
 
     private async refreshAccounts() {
-        try { [this.email, this.microsoft] = await Promise.all([this.plane.account(), getMicrosoftAccountLabel()]); }
+        try { [this.email, this.microsoft] = await Promise.all([this.plane.identity(), getMicrosoftAccountLabel()]); }
         catch (err) { Logger.getInstance().warn(`Menu account refresh failed: ${errMsg(err)}`); }
     }
 
@@ -82,7 +82,7 @@ export class CsBridgeMenu {
                     ? { label: '$(sign-in) Sign In to CyberShuttle', run: () => signIn(this.plane) }
                     : { label: '$(sign-out) Sign Out of CyberShuttle', description: email, run: () => this.plane.signOut() }] : [],
                 microsoft === null
-                    ? { label: '$(sign-in) Sign In to Microsoft DevTunnel', run: () => this.sessions.switchAccount() }
+                    ? { label: '$(sign-in) Sign In to Microsoft DevTunnel', run: switchDevTunnelAccount }
                     : { label: '$(sign-out) Sign Out of Microsoft DevTunnel', description: microsoft, run: () => vscode.commands.executeCommand('_signOutOfAccount', { providerId: 'microsoft', accountLabel: microsoft }) },
             ],
         };
@@ -137,7 +137,7 @@ export class CsBridgeMenu {
     });
 
     private of(transport: SlurmSession['transport']) { return this.transports.transportFor({ transport }); }
-    private current() { return vscode.workspace.getConfiguration('csbridge').get<SlurmSession['transport']>('transport'); }
+    private current() { return vscode.workspace.getConfiguration('csbridge').get<SlurmSession['transport']>('transport', 'devtunnel'); }
 }
 
 async function signIn(plane: Plane) {

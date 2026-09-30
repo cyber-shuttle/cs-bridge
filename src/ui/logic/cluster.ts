@@ -27,9 +27,9 @@ export function cpuOptions(partition: SlurmPartitionInfo | undefined): number[] 
 const MEM_STEPS = [4, 8, 16, 32, 64, 128, 256, 512, 1024];
 const MEM_FALLBACK = [4, 8, 16, 32, 64, 128];
 
-// Non-numeric/zero memory (e.g. 'unlimited') falls back to a fixed list of GB steps.
+// Unknown (0) memory falls back to a fixed list of GB steps.
 export function memoryOptions(partition: SlurmPartitionInfo | undefined): string[] {
-    const maxGb = Math.floor((Number(partition?.memory) || 0) / 1024);
+    const maxGb = Math.floor((partition?.memoryMb ?? 0) / 1024);
     const valid = maxGb <= 0 ? MEM_FALLBACK : MEM_STEPS.filter(g => g <= maxGb);
     return (valid.length ? valid : [4]).map(g => `${g} GB`);
 }
@@ -41,21 +41,6 @@ export function gpuOptions(partition: SlurmPartitionInfo | undefined, tab: Resou
         counts: Array.from({ length: max }, (_, i) => i + 1),
         types: partition.gres.map(g => g.name),
     };
-}
-
-export function gpuString(gpuType: string, gpuCount: number): string {
-    if (gpuCount <= 0) { return 'None'; }
-    return gpuType ? `${gpuType}:${gpuCount}` : `${gpuCount}`;
-}
-
-// Inverse of gpuString for the edit-form prefill. The gres type can contain colons (e.g. "gpu:a100"), so the count
-// is the segment after the LAST colon, not the first.
-export function parseGpuClass(gpuClass: string): { gpuType: string; gpuCount: string } | undefined {
-    if (!gpuClass || gpuClass === 'None') { return undefined; }
-    const idx = gpuClass.lastIndexOf(':');
-    return idx === -1
-        ? { gpuType: '', gpuCount: gpuClass }
-        : { gpuType: gpuClass.slice(0, idx), gpuCount: gpuClass.slice(idx + 1) };
 }
 
 // A field whose choices come from the selected partition keeps the user's pick only while that

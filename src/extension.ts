@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { Logger } from './logger';
+import { Logger, errMsg } from './logger';
+import { migrate } from './modules/schema';
 import { initSessionStore, mutateWindowPids, getAllSessions } from './extensionStore';
 import { csHostAlias } from './modules/sshHostsStore';
 import { isPidAlive } from './modules/fsSupport';
@@ -17,6 +18,8 @@ export async function activate(context: vscode.ExtensionContext) {
     const logger = Logger.getInstance();
     logger.info('CS Bridge extension activating');
 
+    try { migrate(); }
+    catch (err) { void vscode.window.showErrorMessage(`CS Bridge: ${errMsg(err)}`); throw err; }
     logger.info(`Initializing session store...`);
     const sessionStoreLocation = initSessionStore();
     logger.info(`Session store initialized to ${sessionStoreLocation}`);
@@ -85,7 +88,7 @@ function currentWindowSessionId(): string | undefined {
     const alias = auth.slice(prefix.length);
     // The alias carries no id, so reconstruct each session's and match. Safe here: extensionKind:ui runs this window's
     // extension host locally, so it can read the local session store (already initialized above).
-    return getAllSessions().find(s => csHostAlias(s.cluster, s.name) === alias)?.id;
+    return getAllSessions().find(s => csHostAlias(s) === alias)?.id;
 }
 
 export function deactivate() {

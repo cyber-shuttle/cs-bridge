@@ -1,28 +1,20 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { Logger } from './logger';
-import { readJson, lockedUpdateJson, deleteFile, isPidAlive } from './modules/fsSupport';
+import { readJson, lockedUpdateJson, deleteFile, isPidAlive, jsonFiles } from './modules/fsSupport';
 import { SlurmSession } from './models';
 import { mergeFromDisk, mergeRecord, toPersistedRecord } from './modules/sessionStore';
-import { deleteSessionMetrics } from './modules/sessionMetricsStore';
-
-const CS_HOME = path.join(os.homedir(), '.cybershuttle');
+import { deleteRunsFile } from './modules/runStore';
+import { CS_HOME } from './modules/schema';
 
 const logger = Logger.getInstance();
 let sessions: SlurmSession[] = [];
 let sessionsDir = '';
 
 const recordPath = (id: string): string => path.join(sessionsDir, `${id}.json`);
-const isRecordFile = (name: string): boolean => name.endsWith('.json');
 
 function readAllRecords(): SlurmSession[] {
-    try {
-        return fs.readdirSync(sessionsDir).filter(isRecordFile)
-            .map(n => readJson<SlurmSession>(path.join(sessionsDir, n)))
-            .filter((s): s is SlurmSession => !!s);
-    }
-    catch { return []; }
+    return jsonFiles(sessionsDir).map(n => readJson<SlurmSession>(path.join(sessionsDir, n))).filter((s): s is SlurmSession => !!s);
 }
 
 // Keeps the on-disk windowPids so a record write can't clobber another window's pids.
@@ -36,7 +28,7 @@ export function initSessionStore(): string {
     fs.mkdirSync(sessionsDir, { recursive: true });
     sessions = readAllRecords();
     for (const s of sessions) {
-        // The Dev Tunnel connection is gone after a reload; demote so the UI offers Connect (which reattaches from the persisted refs).
+        // The connection is gone after a reload; demote so the UI offers Connect (which reattaches from the persisted refs).
         if (s.status === 'connected' || s.status === 'connecting') { s.status = 'ready_to_connect'; }
     }
     logger.info(`Loaded ${sessions.length} session(s) from ${sessionsDir}`);
@@ -73,7 +65,7 @@ export function deleteSession(sessionId: string) {
     const index = sessions.findIndex(s => s.id === sessionId);
     if (index !== -1) { sessions.splice(index, 1); }
     deleteFile(recordPath(sessionId));
-    deleteSessionMetrics(sessionId);
+    deleteRunsFile(sessionId);
 }
 
 export function mutateWindowPids(sessionId: string, transform: (pids: number[]) => number[]): void {
@@ -110,7 +102,7 @@ export function watchSessions(callback: () => void): fs.FSWatcher {
     };
     const watcher = fs.watch(sessionsDir, (_event, filename) => {
         if (!filename) { if (mergeFromDisk(sessions, readAllRecords())) { callback(); } return; } // platform gave no name
-        if (!isRecordFile(filename)) { return; }
+        if (!filename.endsWith('.json')) { return; }
         changed.add(filename.slice(0, -'.json'.length));
         timer ??= setTimeout(flush, 50);
     });

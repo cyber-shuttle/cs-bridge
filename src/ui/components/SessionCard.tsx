@@ -60,8 +60,7 @@ function Divided({ items }: { items: VNode[] }) {
 // Raw resource text (e.g. "MEM: 2G", "CPU: 1", "GPU: 1") above each live sparkline when reachable; a plain row
 // otherwise. Columns bracketed by vertical separators.
 function ResourceStats({ session }: { session: ViewSession }) {
-    const allocated = { memory: session.memory.replace(/\s+/g, '').replace(/B$/i, ''), cpus: session.cpus };
-    const graphs = usageGraphs(session.samples ?? [], session.gpuCount, allocated);
+    const graphs = usageGraphs(session.samples ?? [], session.resources.gpuCount ?? 0, session.resources);
     if (!isReachable(session.status)) {
         return <Divided items={graphs.map(g => <Text key={g.label} size={11}>{g.text}</Text>)} />;
     }
@@ -114,9 +113,9 @@ export function SessionCard({ session, remote }: Props) {
             {/* Fixed height keeps the gap to the detail row constant whether or not the delete button shows. */}
             <Row gap={6} style={{ minHeight: '20px' }}>
                 <vscode-icon name={status.name} spin={status.spin || undefined} style={{ color: statusColor, flexShrink: 0, marginRight: '-3px' }}></vscode-icon>
-                <Text weight={600}>{session.cluster}</Text>
-                <Chip label={session.allocation} />
-                <Chip label={session.queue} />
+                <Text weight={600}>{session.alias}</Text>
+                <Chip label={session.account} />
+                <Chip label={session.partition} />
                 {!remote && canDelete
                     ? (
                             <Row gap={4} style={{ marginLeft: 'auto' }}>
@@ -129,7 +128,7 @@ export function SessionCard({ session, remote }: Props) {
             <Stack gap={6}>
                 <ResourceStats session={session} />
                 <Row gap={6}>
-                    <Chip label={fmtTime(wallMs(session.wallTime))} />
+                    <Chip label={fmtTime(wallMs(session))} />
                     <StatusText session={session} />
                     {!remote && actions.length ? (
                         // zoom shrinks the label and the vscode-button's fixed-size codicon together.

@@ -9,7 +9,7 @@ import { SlurmSession } from '../models';
 import { buildShellCommand } from './sshShell';
 
 const noopLog = { info() {}, warn() {}, error() {} };
-const session = (over: Partial<SlurmSession> = {}) => ({ cluster: 'cl', name: 's', ...over }) as SlurmSession;
+const session = (over: Partial<SlurmSession> = {}) => ({ alias: 'cl', name: 's', ...over }) as SlurmSession;
 const scratch: string[] = [];
 const scratchDir = () => { const dir = mkdtempSync(join(tmpdir(), 'cs-test-')); scratch.push(dir); return dir; };
 after(() => scratch.forEach(dir => rmSync(dir, { recursive: true, force: true })));
@@ -107,7 +107,7 @@ test('installLinkspan refuses a machine Linkspan is not released for', async () 
 });
 
 test('validateSlurmConfig hands sbatch --test-only the job script and surfaces the site filter\'s refusal', async () => {
-    const s = session({ cpus: 2, memory: '4 GB', wallTime: '00:30:00', queue: 'skx-dev', allocation: 'acct1', gpuClass: '', gpuCount: 0 });
+    const s = session({ partition: 'skx-dev', account: 'acct1', resources: { cores: 2, memoryMb: 4096, wallMinutes: 30 } });
     const ok = host({ sbatch: '[ "$1" = --test-only ] && cat > "$HOME/script" && echo "sbatch: Job 1 to start at ..." >&2' });
     await validateSlurmConfig(s, ok.run, noopLog);
     assert.match(readFileSync(join(ok.home, 'script'), 'utf-8'), /^#SBATCH --partition=skx-dev$/m);

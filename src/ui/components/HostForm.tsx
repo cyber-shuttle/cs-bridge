@@ -1,9 +1,10 @@
 import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { SlurmDiscovery, HostRuntime } from '@/models';
-import { partitionsForTab, hasTab, cpuOptions, memoryOptions, gpuOptions, gpuString, resolvePick, type ResourceTab } from '@/ui/logic/cluster';
+import { partitionsForTab, hasTab, cpuOptions, memoryOptions, gpuOptions, resolvePick, type ResourceTab } from '@/ui/logic/cluster';
 import { Row, Stack, Text, Spinner, Button, SingleSelect, Option } from '@/ui/components/base';
 import { post } from '@/ui/platform/vscode';
+import { gpuTypeOf } from '@/modules/slurmParse';
 
 interface Props {
     alias: string;
@@ -12,8 +13,8 @@ interface Props {
 }
 
 const WALL_OPTIONS: [string, string][] = [
-    ['00:30:00', '30 min'], ['01:00:00', '1 hour'], ['02:00:00', '2 hours'],
-    ['04:00:00', '4 hours'], ['08:00:00', '8 hours'], ['12:00:00', '12 hours'], ['24:00:00', '24 hours'],
+    ['30', '30 min'], ['60', '1 hour'], ['120', '2 hours'],
+    ['240', '4 hours'], ['480', '8 hours'], ['720', '12 hours'], ['1440', '24 hours'],
 ];
 
 function Select({ label, value, onChange, options, children }: { label: string; value: string; onChange: (v: string) => void; options?: string[][]; children?: ComponentChildren }) {
@@ -60,15 +61,13 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
     };
 
     const submit = () => {
+        const count = parseInt(gpuCount, 10) || 0;
         post({
             command: 'addSession',
             alias,
-            cpus: cpu,
-            memory,
-            gpu: gpuString(gpuType, parseInt(gpuCount, 10) || 0),
-            wallTime: wall,
             partition: partName,
             account,
+            resources: { cores: Number(cpu), memoryMb: parseInt(memory, 10) * 1024, wallMinutes: Number(wall), ...count && { gpuType: gpuTypeOf(gpuType), gpuCount: count } },
         });
     };
 

@@ -68,8 +68,9 @@ The full design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 **Local**
 
+- `~/.cybershuttle/schema.json` records the version of the files below; CS Bridge migrates older ones on activation.
 - `~/.cybershuttle/sessions/` holds one `<sessionId>.json` per session.
-- `~/.cybershuttle/metrics/` holds the run history and usage of each session.
+- `~/.cybershuttle/runs/` holds the run history and usage of each session.
 - `~/.cybershuttle/ssh_config` defines the per-session SSH aliases and is included from `~/.ssh/config`.
 - `~/.cybershuttle/ssh_keys/` holds the per-session SSH keys.
 - `~/.cybershuttle/ssh_control/` holds the ControlMaster sockets.

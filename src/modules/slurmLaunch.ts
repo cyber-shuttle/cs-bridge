@@ -22,9 +22,9 @@ function ensureSuccess(result: CommandResult, failure: string): void {
 }
 
 export async function checkSlurmAvailability(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
-    const res = await run.runRemoteCommand(session.cluster, 'sinfo');
-    ensureSuccess(res, `Slurm is not available on SSH host ${session.cluster}`);
-    log.info(`Slurm is available on SSH host ${session.cluster}`);
+    const res = await run.runRemoteCommand(session.alias, 'sinfo');
+    ensureSuccess(res, `Slurm is not available on SSH host ${session.alias}`);
+    log.info(`Slurm is available on SSH host ${session.alias}`);
 }
 
 // Newest wins, ties go to the release. A release is X.Y.Z; a build ahead of one is X.Y.Z.<commit>, so it yields
@@ -47,19 +47,19 @@ export function keepsInstalledLinkspan(local: string, latest: string): boolean {
 // A version-check failure returns false (→ reinstall) rather than throwing, so it never fails the launch. As in
 // cs-plane, the latest tag decides, and the floor counts a build as its release.
 export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<boolean> {
-    const localVersionResult = await run.runRemoteCommand(session.cluster, `printf 'installed=%s\\nlatest=%s\\n' "$(~/.cybershuttle/bin/linkspan --version 2>/dev/null | head -1)" "$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cyber-shuttle/linkspan/releases/latest 2>/dev/null | sed 's#.*/##')"`);
+    const localVersionResult = await run.runRemoteCommand(session.alias, `printf 'installed=%s\\nlatest=%s\\n' "$(~/.cybershuttle/bin/linkspan --version 2>/dev/null | head -1)" "$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cyber-shuttle/linkspan/releases/latest 2>/dev/null | sed 's#.*/##')"`);
 
     if (localVersionResult.code !== 0) {
-        log.error(`Failed to check Linkspan version on SSH host ${session.cluster} (exit ${localVersionResult.code})`);
+        log.error(`Failed to check Linkspan version on SSH host ${session.alias} (exit ${localVersionResult.code})`);
         return false;
     }
 
     const [installed, latest] = ['installed', 'latest'].map(key => (localVersionResult.stdout.match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1] ?? '').replace(/[v\s]/g, ''));
     if (keepsInstalledLinkspan(installed, latest) && keepsInstalledLinkspan(installed.replace(/\.[0-9a-f]{7,40}$/, ''), MINIMUM)) {
-        log.info(`Linkspan ${installed} on SSH host ${session.cluster} is current (latest ${latest || 'unknown'}); keeping it`);
+        log.info(`Linkspan ${installed} on SSH host ${session.alias} is current (latest ${latest || 'unknown'}); keeping it`);
         return true;
     }
-    log.info(`Linkspan on SSH host ${session.cluster} is missing, behind ${latest || 'the latest release'} or below ${MINIMUM}. Local version: ${installed}`);
+    log.info(`Linkspan on SSH host ${session.alias} is missing, behind ${latest || 'the latest release'} or below ${MINIMUM}. Local version: ${installed}`);
     return false;
 }
 
@@ -70,14 +70,14 @@ export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunne
 const RELEASE_ARCH: Readonly<Record<string, string>> = { x86_64: 'x86_64', aarch64: 'arm64', arm64: 'arm64' };
 
 export async function installLinkspan(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
-    const archResult = await run.runRemoteCommand(session.cluster, 'uname -m');
+    const archResult = await run.runRemoteCommand(session.alias, 'uname -m');
     ensureSuccess(archResult, 'Failed to detect remote architecture');
     const machine = archResult.stdout.trim();
     const arch = RELEASE_ARCH[machine];
     if (!arch) {
-        throw new Error(`SSH host ${session.cluster} reports architecture ${machine}, which Linkspan is not released for`);
+        throw new Error(`SSH host ${session.alias} reports architecture ${machine}, which Linkspan is not released for`);
     }
-    log.info(`Detected architecture on SSH host ${session.cluster}: ${machine}`);
+    log.info(`Detected architecture on SSH host ${session.alias}: ${machine}`);
 
     const downloadUrl = `https://github.com/cyber-shuttle/linkspan/releases/latest/download/linkspan_Linux_${arch}.tar.gz`;
     log.info(`Downloading Linkspan from ${downloadUrl} for architecture ${arch}`);
@@ -96,17 +96,17 @@ export async function installLinkspan(session: SlurmSession, run: RemoteRunner, 
         'mv -f "$staged" "$bin/linkspan"',
     ].join('\n');
     const installB64 = Buffer.from(install).toString('base64');
-    const installResult = await run.runRemoteCommand(session.cluster, `echo '${installB64}' | base64 -d | bash`);
-    ensureSuccess(installResult, `Failed to install Linkspan on SSH host ${session.cluster}`);
-    log.info(`Linkspan installed successfully on SSH host ${session.cluster}`);
+    const installResult = await run.runRemoteCommand(session.alias, `echo '${installB64}' | base64 -d | bash`);
+    ensureSuccess(installResult, `Failed to install Linkspan on SSH host ${session.alias}`);
+    log.info(`Linkspan installed successfully on SSH host ${session.alias}`);
 }
 
 // --test-only runs the site submit filter without queueing.
 export async function validateSlurmConfig(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
     const scriptB64 = Buffer.from(buildSlurmScript(session, devTunnelLaunch(session, ''))).toString('base64');
-    const result = await run.runRemoteCommand(session.cluster, `echo '${scriptB64}' | base64 -d | sbatch --test-only`);
-    ensureSuccess(result, `Slurm on SSH host ${session.cluster} rejected the session configuration`);
-    log.info(`Slurm on SSH host ${session.cluster} validated the session configuration`);
+    const result = await run.runRemoteCommand(session.alias, `echo '${scriptB64}' | base64 -d | sbatch --test-only`);
+    ensureSuccess(result, `Slurm on SSH host ${session.alias} rejected the session configuration`);
+    log.info(`Slurm on SSH host ${session.alias} validated the session configuration`);
 }
 
 // sbatchEnv reaches the job as assignments on sbatch over the shell's stdin, never an argv, the job script or a file.
@@ -118,7 +118,7 @@ export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner,
     const submitCommand = `echo '${scriptB64}' | base64 -d | ${env}sbatch${env && ' --export=ALL'}`;
     log.info(`Submitting job to Slurm for session ${session.name}`);
 
-    const submitResult = await run.runRemoteCommand(session.cluster, submitCommand);
+    const submitResult = await run.runRemoteCommand(session.alias, submitCommand);
     ensureSuccess(submitResult, 'Job submission failed');
 
     const output = submitResult.stdout.trim();

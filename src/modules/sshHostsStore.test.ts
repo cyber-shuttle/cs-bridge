@@ -13,8 +13,8 @@ import {
 } from './sshHostsStore';
 
 test('csHostAlias is <alias>-<last 6 chars of the session name>', () => {
-    assert.equal(csHostAlias('delta', '1782444493119'), 'delta-493119');
-    assert.equal(csHostAlias('delta', 'abc'), 'delta-abc'); // shorter than 6: whole name
+    assert.equal(csHostAlias({ alias: 'delta', name: '1782444493119' }), 'delta-493119');
+    assert.equal(csHostAlias({ alias: 'delta', name: 'abc' }), 'delta-abc'); // shorter than 6: whole name
 });
 
 test('parseHostsFromConfigText reads Host/HostName/User and skips wildcards', () => {
@@ -65,7 +65,7 @@ test('editHostInConfigText rewrites alias, hostname and user in place, keeping t
 });
 
 test('buildSshConfigBlock emits the six SSH resilience options', () => {
-    const block = buildSshConfigBlock('sess1', csHostAlias('delta', 'sess1-493119'), '127.0.0.1', 50122, 'cs-ssh-user', '/keys/id_cshost-sess1');
+    const block = buildSshConfigBlock('sess1', csHostAlias({ alias: 'delta', name: 'sess1-493119' }), '127.0.0.1', 50122, 'cs-ssh-user', '/keys/id_cshost-sess1');
     assert.equal(SSH_RESILIENCE_OPTIONS.length, 6);
     for (const [key, value] of SSH_RESILIENCE_OPTIONS) {
         assert.match(block, new RegExp(`^    ${key} ${value}$`, 'm'));
@@ -78,7 +78,7 @@ test('buildSshConfigBlock emits the six SSH resilience options', () => {
 
 // deleteSshConfigEntry's removal regex only matches 4-space-indented directive lines.
 test('buildSshConfigBlock indents every directive so deleteSshConfigEntry can remove it', () => {
-    const block = buildSshConfigBlock('s', csHostAlias('delta', 'abc123'), '127.0.0.1', 22, 'u', '/k');
+    const block = buildSshConfigBlock('s', csHostAlias({ alias: 'delta', name: 'abc123' }), '127.0.0.1', 22, 'u', '/k');
     for (const line of block.split('\n')) {
         if (line === '' || line.startsWith('#') || line.startsWith('Host ')) { continue; }
         assert.match(line, /^ {4}\S/);

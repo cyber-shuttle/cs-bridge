@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SlurmDiscovery, SlurmPartitionInfo } from '@/models';
-import { partitionsForTab, hasTab, cpuOptions, memoryOptions, gpuOptions, gpuString, parseGpuClass, resolvePick } from './cluster';
+import { partitionsForTab, hasTab, cpuOptions, memoryOptions, gpuOptions, resolvePick } from './cluster';
 
-const cpuPart: SlurmPartitionInfo = { name: 'cpu', cpuCount: 3, memory: '8192', gres: [] };
-const gpuPart: SlurmPartitionInfo = { name: 'gpu', cpuCount: 16, memory: '0', gres: [{ name: 'a100', count: 2 }] };
+const cpuPart: SlurmPartitionInfo = { name: 'cpu', cpuCount: 3, memoryMb: 8192, gres: [] };
+const gpuPart: SlurmPartitionInfo = { name: 'gpu', cpuCount: 16, memoryMb: 0, gres: [{ name: 'a100', count: 2 }] };
 const info: SlurmDiscovery = { alias: 'h', accounts: ['acct'], partitions: [cpuPart, gpuPart] };
 
 test('partitionsForTab splits by presence of gres', () => {
@@ -25,7 +25,7 @@ test('memoryOptions caps GB steps at the partition memory, falls back when unkno
 });
 
 test('gpuOptions caps the count at what the chosen type offers', () => {
-    const mixed: SlurmPartitionInfo = { name: 'mix', cpuCount: 16, memory: '0', gres: [{ name: 'gpu:a100', count: 4 }, { name: 'gpu:v100', count: 2 }] };
+    const mixed: SlurmPartitionInfo = { name: 'mix', cpuCount: 16, memoryMb: 0, gres: [{ name: 'gpu:a100', count: 4 }, { name: 'gpu:v100', count: 2 }] };
     assert.deepEqual(gpuOptions(mixed, 'gpu', 'gpu:v100').counts, [1, 2]);
     assert.deepEqual(gpuOptions(mixed, 'gpu').counts, [1, 2, 3, 4]);
 });
@@ -34,23 +34,6 @@ test('gpuOptions only yields counts/types on the gpu tab', () => {
     assert.deepEqual(gpuOptions(gpuPart, 'gpu'), { counts: [1, 2], types: ['a100'] });
     assert.deepEqual(gpuOptions(gpuPart, 'cpu'), { counts: [], types: [] });
     assert.deepEqual(gpuOptions(cpuPart, 'gpu'), { counts: [], types: [] });
-});
-
-test('gpuString assembles the Slurm gres value', () => {
-    assert.equal(gpuString('a100', 2), 'a100:2');
-    assert.equal(gpuString('', 2), '2');
-    assert.equal(gpuString('a100', 0), 'None');
-});
-
-test('parseGpuClass inverts gpuString, splitting the count off the LAST colon (gres names contain colons)', () => {
-    // The edit-form prefill bug: a gres name like "gpu:a100" itself has a colon, so the count is the final segment.
-    assert.deepEqual(parseGpuClass('gpu:a100:2'), { gpuType: 'gpu:a100', gpuCount: '2' });
-    assert.deepEqual(parseGpuClass('a100:2'), { gpuType: 'a100', gpuCount: '2' });
-    assert.deepEqual(parseGpuClass('2'), { gpuType: '', gpuCount: '2' }); // gpuString('', n) form
-    assert.equal(parseGpuClass('None'), undefined);
-    assert.equal(parseGpuClass(''), undefined);
-    // Round-trips for a colon-containing type.
-    assert.deepEqual(parseGpuClass(gpuString('gpu:a100', 4)), { gpuType: 'gpu:a100', gpuCount: '4' });
 });
 
 // Switching partition used to require every dependent field to be reset by hand; deriving the value

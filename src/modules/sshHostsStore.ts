@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { parse, LineType, type Directive, type Section } from 'ssh-config';
-import { SshHost } from '../models';
+import { SlurmSession, SshHost } from '../models';
 import { SshConfigEntry } from './sshCommandParser';
 import { lockedUpdateTextFile } from './fsSupport';
 
@@ -27,8 +27,8 @@ export const SSH_RESILIENCE_OPTIONS: ReadonlyArray<readonly [string, string]> = 
 // Never equals a bare SSH host alias, so it can't shadow the real SSH host used for Slurm; unique per session in
 // practice (the name is a creation timestamp). The same function builds the ssh_config Host line, the authority, and
 // the reverse lookup, so all three stay in lockstep.
-export const csHostAlias = (alias: string, sessionName: string): string =>
-    `${alias}-${sessionName.slice(-6)}`;
+export const csHostAlias = ({ alias, name }: Pick<SlurmSession, 'alias' | 'name'>): string =>
+    `${alias}-${name.slice(-6)}`;
 
 // Per-session block appended to ~/.cybershuttle/ssh_config (4-space indent matches deleteSshConfigEntry).
 // alias is always csHostAlias() output.
