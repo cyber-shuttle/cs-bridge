@@ -1,5 +1,5 @@
-import '@vscode-elements/elements/dist/vscode-button';
 import type { ComponentChildren, CSSProperties } from 'preact';
+import { Icon } from './Icon';
 
 interface ButtonProps {
     icon?: string;
@@ -10,6 +10,6 @@ interface ButtonProps {
     children?: ComponentChildren;
 }
 
-export function Button({ icon, style, children, ...rest }: ButtonProps) {
-    return <vscode-button {...rest} icon={icon} style={{ fontSize: '12px', ...style }}>{children}</vscode-button>;
+export function Button({ icon, secondary, children, ...rest }: ButtonProps) {
+    return <button {...rest} class={secondary ? 'cs-button secondary' : 'cs-button'}>{icon && <Icon name={icon} />}{children}</button>;
 }

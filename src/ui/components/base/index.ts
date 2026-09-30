@@ -9,5 +9,4 @@ export { ActionIcon } from './ActionIcon';
 export { Spinner } from './Spinner';
 export { Button } from './Button';
 export { SingleSelect } from './SingleSelect';
-export { Option } from './Option';
 export { Chip } from './Chip';

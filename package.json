@@ -10,15 +10,20 @@
 		"hpc",
 		"slurm",
 		"dev-tunnel",
-		"remote"
+		"remote",
+		"cybershuttle"
 	],
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/cyber-shuttle/CS-Bridge.git"
+		"url": "https://github.com/cyber-shuttle/cs-bridge.git"
 	},
+	"bugs": {
+		"url": "https://github.com/cyber-shuttle/cs-bridge/issues"
+	},
+	"homepage": "https://github.com/cyber-shuttle/cs-bridge#readme",
 	"version": "0.2.1",
 	"engines": {
-		"vscode": "^1.98.0"
+		"vscode": "^1.101.0"
 	},
 	"extensionKind": [
 		"ui"
@@ -174,43 +179,39 @@
 			]
 		}
 	},
+	"packageManager": "bun@1.4.2",
 	"scripts": {
-		"vscode:prepublish": "npm run check-types && node esbuild.js --production",
-		"compile": "node esbuild.js",
-		"watch": "node esbuild.js --watch",
+		"vscode:prepublish": "bun run check-types && bun esbuild.js --production",
+		"build": "bun esbuild.js",
+		"watch": "bun esbuild.js --watch",
 		"check-types": "tsc -p ./ && tsc -p src/ui/tsconfig.json",
 		"lint": "eslint src",
 		"lint:fix": "eslint src --fix",
-		"test": "node --import tsx --test src/*.test.ts src/modules/*.test.ts src/ui/logic/*.test.ts",
-		"package": "npx @vscode/vsce package",
-		"install-ext": "node -e \"const p=require('./package.json');require('child_process').execFileSync('code',['--install-extension',p.name+'-'+p.version+'.vsix'],{stdio:'inherit'})\"",
-		"dev": "npm install && npm run package && npm run install-ext"
+		"test": "bun test src",
+		"package": "bunx @vscode/vsce package --no-dependencies",
+		"dev": "bun run package && code --install-extension $npm_package_name-$npm_package_version.vsix"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",
-		"@stylistic/eslint-plugin": "^2.13.0",
-		"@types/node": "^20.19.43",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"@types/node": "^22.20.4",
 		"@types/shell-quote": "^1.7.5",
-		"@types/vscode": "^1.98.0",
-		"@typescript-eslint/eslint-plugin": "^8.61.1",
-		"@typescript-eslint/parser": "^8.61.1",
+		"@types/vscode": "~1.101.0",
 		"@vscode/codicons": "^0.0.45",
 		"esbuild": "^0.28.1",
 		"eslint": "^9.39.4",
-		"tsx": "^4.22.4",
 		"typescript": "^5.9.3",
-		"typescript-eslint": "^8.61.1"
+		"typescript-eslint": "^8.61.1",
+		"websocket": "^1.0.35"
 	},
 	"dependencies": {
-		"@microsoft/dev-tunnels-connections": "^1.3.48",
-		"@microsoft/dev-tunnels-contracts": "^1.3.48",
-		"@microsoft/dev-tunnels-management": "^1.3.48",
-		"@vscode-elements/elements": "^2.5.1",
+		"@microsoft/dev-tunnels-connections": "^1.3.60",
+		"@microsoft/dev-tunnels-contracts": "^1.3.60",
+		"@microsoft/dev-tunnels-management": "^1.3.60",
 		"posix-getopt": "^1.2.1",
 		"preact": "^10.29.2",
-		"shell-quote": "^1.8.4",
-		"ssh-config": "^5.1.0",
-		"uuidv7": "^1.2.1",
-		"websocket": "^1.0.35"
+		"shell-quote": "^1.11.0",
+		"ssh-config": "~5.1.0",
+		"uuidv7": "^1.2.1"
 	}
 }

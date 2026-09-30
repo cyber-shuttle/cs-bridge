@@ -4,7 +4,7 @@ import type { CSSProperties, VNode } from 'preact';
 import { SAMPLE_HISTORY_LEN, type ViewSession } from '@/models';
 import { dotColor, sessionActions, remainingMs, fmtTime, wallMs, elapsedLabel, type SessionAction } from '@/ui/logic/session';
 import { isReachable, isDeletable } from '@/modules/sessionMachine';
-import { Row, Stack, Text, Card, ActionIcon, Button, Spinner, Chip } from '@/ui/components/base';
+import { Row, Stack, Text, Card, Icon, ActionIcon, Button, Spinner, Chip } from '@/ui/components/base';
 import { Sparkline } from '@/ui/components/Sparkline';
 import { usageGraphs, graphTitle } from '@/ui/components/UsageGraphs';
 import { post } from '@/ui/platform/vscode';
@@ -112,7 +112,7 @@ export function SessionCard({ session, remote }: Props) {
         <Card>
             {/* Fixed height keeps the gap to the detail row constant whether or not the delete button shows. */}
             <Row gap={6} style={{ minHeight: '20px' }}>
-                <vscode-icon name={status.name} spin={status.spin || undefined} style={{ color: statusColor, flexShrink: 0, marginRight: '-3px' }}></vscode-icon>
+                <Icon name={status.name} spin={status.spin} style={{ color: statusColor, flexShrink: 0, marginRight: '-3px' }} />
                 <Text weight={600}>{session.alias}</Text>
                 <Chip label={session.account} />
                 <Chip label={session.partition} />
@@ -131,7 +131,6 @@ export function SessionCard({ session, remote }: Props) {
                     <Chip label={fmtTime(wallMs(session))} />
                     <StatusText session={session} />
                     {!remote && actions.length ? (
-                        // zoom shrinks the label and the vscode-button's fixed-size codicon together.
                         <Row gap={6} style={{ marginLeft: 'auto', flexShrink: 0, zoom: 0.85 }}>
                             {actions.map(a => a.kind === 'opening'
                                 ? <Button key={a.kind} disabled><Row gap={4}><Spinner size={11} /> {a.label}</Row></Button>

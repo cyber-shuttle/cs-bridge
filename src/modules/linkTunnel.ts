@@ -43,7 +43,7 @@ export class ForwardRelayClient {
     protected forwardUrl = '';
     protected protocols: string[] = [];
 
-    constructor(protected readonly WebSocket: typeof globalThis.WebSocket | undefined = globalThis.WebSocket) { }
+    constructor(protected readonly WebSocket: typeof globalThis.WebSocket = globalThis.WebSocket) { }
 
     async waitForForwardedPort(remotePort: number) {
         if (this.disposed) { throw new Error('The relay client is disposed.'); }
@@ -67,7 +67,7 @@ export class ForwardRelayClient {
     }
 
     private bridge(local: net.Socket, remotePort: number) {
-        const remote = new this.WebSocket!(`${this.forwardUrl}${remotePort}`, this.protocols);
+        const remote = new this.WebSocket(`${this.forwardUrl}${remotePort}`, this.protocols);
         let opened = false;
         this.sockets.add(local);
         remote.binaryType = 'arraybuffer';
@@ -82,7 +82,6 @@ export class ForwardRelayClient {
 
 export class LinkRelayClient extends ForwardRelayClient {
     async connect(tunnel: Tunnel) {
-        if (!this.WebSocket) { throw new Error('The link transport needs VS Code 1.101 or newer.'); }
         this.forwardUrl = `${PLANE_URL.replace(/^http/, 'ws')}/sessions/${tunnel.tunnelId}/forward/`;
         this.protocols = ['cybershuttle.v1', `capability.${tunnel.accessTokens?.connect ?? ''}`];
         this.connectionStatus = 'connected';

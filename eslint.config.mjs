@@ -27,6 +27,7 @@ export default tseslint.config(
             '@stylistic/max-statements-per-line': 'off',
             '@stylistic/jsx-one-expression-per-line': 'off',
             '@stylistic/multiline-ternary': 'off',
+            '@stylistic/operator-linebreak': ['error', 'before', { overrides: { '=': 'after' } }],
         },
     },
 );

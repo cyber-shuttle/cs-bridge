@@ -7,16 +7,16 @@ privately — see [SECURITY.md](SECURITY.md).
 ## Prerequisites
 
 - [Git](https://git-scm.com/)
-- [Node.js](https://nodejs.org/) 20 or newer (CI runs Node 24)
-- [VS Code](https://code.visualstudio.com/) 1.98 or newer
+- [Bun](https://bun.sh/) (the version in `packageManager`)
+- [VS Code](https://code.visualstudio.com/) 1.101 or newer
 
 ## Development setup
 
 ```sh
 git clone https://github.com/cyber-shuttle/CS-Bridge.git
 cd CS-Bridge
-npm install
-npm run watch      # esbuild in watch mode: extension + webview bundles
+bun install
+bun run watch      # esbuild in watch mode: extension + webview bundles
 ```
 
 Press **F5** to open an Extension Development Host with the extension loaded; reload that window
@@ -26,15 +26,15 @@ The Extension Development Host is the only window that loads a development build
 does not inherit the extension. Testing the connect path end to end therefore needs an installed build:
 
 ```sh
-npm run dev        # npm install, package the .vsix, install it into VS Code
+bun run dev        # package the .vsix and install it into VS Code
 ```
 
 ## Before you open a pull request
 
 ```sh
-npm run check-types   # tsc twice: the extension config, then src/ui/tsconfig.json
-npm run lint          # eslint src  (npm run lint:fix applies what it can)
-npm test              # node --test over src/modules/*.test.ts and src/ui/logic/*.test.ts
+bun run check-types   # tsc twice: the extension config, then src/ui/tsconfig.json
+bun run lint          # eslint src  (bun run lint:fix applies what it can)
+bun run test          # bun test over src/**/*.test.ts
 ```
 
 These three are exactly what `.github/workflows/ci.yml` runs on every pull request. esbuild does not type-check, so
@@ -69,5 +69,5 @@ Maintainers, one pull request per release:
 3. If the release needs a newer Linkspan, say so under the version heading (`Requires Linkspan X.Y.Z.`). The
    changelog is the only place that companion-agent contract is recorded.
 4. Merge the pull request as `release: X.Y.Z`, then tag that commit `X.Y.Z` — no `v` prefix — and push the tag.
-5. `npm run package` produces `csbridge-X.Y.Z.vsix`. A maintainer uploads it to the VS Code Marketplace under the
+5. `bun run package` produces `csbridge-X.Y.Z.vsix`. A maintainer uploads it to the VS Code Marketplace under the
    `cybershuttle` publisher; there is no publish workflow.

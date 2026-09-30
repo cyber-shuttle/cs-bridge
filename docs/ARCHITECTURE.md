@@ -85,7 +85,7 @@ run on either, and nothing else branches on `transport`.
 | Sign-in | CILogon device grant brokered by cs-plane; the credential lives in SecretStorage |
 | Prepare | `prepareLaunch` defines the cs-plane session once (`planeId`), stops any live run, attaches with `tunnelModes: ["link"]`; the job script gets `--tunnel-mode link --tunnel-link-args '--url …'` |
 | Submit | Linkspan 0.22.0 or newer; the link token rides `LINKSPAN_LINK_TOKEN=… sbatch --export=ALL` over the persistent shell's stdin |
-| Forward | `/access` gives the connect token, held in memory; each forwarded port is a `127.0.0.1` listener whose every connection opens a WebSocket to `/sessions/{id}/forward/{port}`; VS Code 1.101 or newer for Node's built-in WebSocket |
+| Forward | `/access` gives the connect token, held in memory; each forwarded port is a `127.0.0.1` listener whose every connection opens a WebSocket to `/sessions/{id}/forward/{port}` |
 | Poll, connect | as for a Dev Tunnel, with Linkspan's API reached through a forward of its control port |
 | Stop, delete | release (`POST /stop`) the cs-plane session; delete also `DELETE`s it |
 
@@ -174,7 +174,7 @@ only the current shape.
 ## Build pipeline
 
 `esbuild.js` runs two esbuild contexts plus a codicon copy. The extension bundles `src/extension.ts` to
-`out/extension.js` (CJS, `platform: node`, `target: node20`, `vscode` and `node-rsa` external). The webviews bundle
+`out/extension.js` (CJS, `platform: node`, `target: node22`, `vscode` and `node-rsa` external). The webviews bundle
 `src/ui/webviews/{sessions,hosts,stats,summary}.tsx` to `out/*.js` (IIFE, `platform: browser`, Preact JSX). Both
 share `bundle: true`, sourcemaps off and minification on under `--production`, and the `@` → `src` alias. esbuild
 never type-checks: `tsc` does, once per tsconfig, since the root config excludes `src/ui`, which has its own with
