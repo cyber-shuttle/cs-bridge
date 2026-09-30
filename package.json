@@ -21,7 +21,7 @@
 		"url": "https://github.com/cyber-shuttle/cs-bridge/issues"
 	},
 	"homepage": "https://github.com/cyber-shuttle/cs-bridge#readme",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"engines": {
 		"vscode": "^1.101.0"
 	},
