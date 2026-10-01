@@ -161,6 +161,11 @@ export interface SessionsState {
     previewSession: SlurmSession | null;
     validating: boolean;
     alert: { title: string; message: string } | null;
+    isCloud: boolean
+    cloudSessions: CloudInstanceInfo[]
+    // hasActiveSessions: boolean
+    cloudForm: CloudFormState
+    cloudFormOptions: CloudFormOptions
 }
 
 export interface HostsState {
@@ -176,4 +181,52 @@ export interface WebviewMessage {
     account?: string;
     resources?: Resources;
     jobId?: string;
+    instanceIp?: string;
+    instanceId?: string;
+    instanceName?: string;
+    region?: string;
+    cloudLaunchParams?: CloudLaunchParams
 }
+
+export interface CloudInstanceInfo {
+    name: string
+    instanceID: string;
+    state: string;
+    instanceType: string;
+    publicIp: string;
+    vendor: string
+    region: string
+}
+
+export interface CloudProviderState {
+    name: string;
+    secretKey: string
+    accessKey: string
+    sessionToken: string
+    instances: CloudInstanceInfo[]
+    region: string
+    clientInit: boolean
+    sshHosts: SshHost[];
+
+}
+
+export enum InstanceActions {
+    Start,
+    Stop,
+    Remove,
+}
+
+export type CloudFormState = "aws" | "loading" | "ready" | null
+export type CloudLaunchParams = {
+    image: string
+    type: string
+    region: string
+    vendor: string
+
+}
+export interface CloudFormOptions {
+    image: string[][]
+    type: string[][]
+    region: string[][]
+}
+

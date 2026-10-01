@@ -1,4 +1,4 @@
-import { SshHost, SlurmSession } from '../models';
+import { SshHost, SlurmSession} from '../models';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -100,6 +100,10 @@ export class SshManager {
         );
     }
 
+
+    public getCSHosts(): SshHost[] {
+        return this.readHostsFile(CS_SSH_CONFIG_PATH, 'user')
+    }
     public buildControlMasterArgs(alias: string): string[] {
         // Windows OpenSSH has no Unix-socket ControlMaster ("getsockname failed: Not a socket").
         if (process.platform === 'win32') {
@@ -317,6 +321,14 @@ export class SshManager {
             logger.error(`[ssh] Failed to add Include to ~/.ssh/config: ${errMsg(err)}`);
         }
     }
+
+    public getSSHConfigPath(): string {
+        return CS_SSH_CONFIG_PATH
+    }
+    
+    public getSSHKeyPath(): string {
+        return CS_SSH_KEYS_DIR
+    }
 }
 
 // Upsert/drop this alias in remote.SSH.serverInstallPath (alias->path map Remote-SSH reads at connect). Best-effort and
@@ -409,4 +421,27 @@ export async function deleteSshConfigEntry(sessionId: string, alias: string, del
         release(CS_SSH_CONFIG_PATH);
     }
     await setServerInstallPath(alias, undefined);
+}
+
+
+
+export async function addSshConfigEntryAWS(instanceID: string, instanceName: string, instanceIp: string, localPort: number, privateKey: string): Promise<string> {
+    await deleteSshConfigEntry(instanceID, instanceName, false)
+
+    const user = 'ec2-user'; // any non-empty value works; the custom SSH server ignores the username
+    const configBlock = buildSshConfigBlock(instanceID, instanceName, instanceIp, localPort, user, privateKey);
+
+    // Locked: startup reattach can rewrite this concurrently, so the append must not interleave.
+    lock(CS_SSH_CONFIG_PATH);
+    try {
+        fs.appendFileSync(CS_SSH_CONFIG_PATH, `\n${configBlock}\n`);
+    }
+    catch (err) {
+        logger.error(`Failed to write SSH config for instance ${instanceName}:`, err);
+    }
+    finally {
+        release(CS_SSH_CONFIG_PATH);
+    }
+    await setServerInstallPath(instanceName, `/tmp/cs-vscode/${instanceID}`);
+    return instanceName;
 }

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { Files, Steps, migrate } from './modules/store';
 import { initSessionStore } from './extensionStore';
 import { initRunStore } from './modules/runStore';
+import { initCloudStore } from './modules/cloudStore';
 
 function storageFiles(root: vscode.Uri): Files {
     const fs = vscode.workspace.fs;
@@ -23,12 +24,13 @@ export async function openStorage(context: vscode.ExtensionContext, legacy: (fil
     const root = context.globalStorageUri;
     const files = storageFiles(root);
     await migrate(files, legacy(files, root.fsPath));
-    const dirs = [...await initSessionStore(files, onError), await initRunStore(files, onError)];
+    const dirs = [...await initSessionStore(files, onError), await initRunStore(files, onError),];
     const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, '*/*.json'));
     const reload = (uri: vscode.Uri) => {
         const [dir, name] = uri.path.split('/').slice(-2);
         void dirs.find(d => d.dir === dir)?.reload(name.slice(0, -'.json'.length));
     };
+    await initCloudStore(files)
     watcher.onDidCreate(reload);
     watcher.onDidChange(reload);
     watcher.onDidDelete(reload);

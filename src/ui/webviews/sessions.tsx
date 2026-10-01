@@ -5,6 +5,8 @@ import { post, useWebviewState } from '@/ui/platform/vscode';
 import { SessionCard, NowContext } from '@/ui/components/SessionCard';
 import { HostForm } from '@/ui/components/HostForm';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button } from '@/ui/components/base';
+import { CloudSessionCard } from '../components/CloudSessionCard';
+import { CloudForm } from '../components/CloudForm';
 
 function ConfigCard({ icon, muted, alias, runtime, onDismiss, validating }: {
     icon: string; muted?: boolean; alias: string; runtime: HostRuntime | undefined;
@@ -21,6 +23,25 @@ function ConfigCard({ icon, muted, alias, runtime, onDismiss, validating }: {
                 </Row>
             </Row>
             <HostForm alias={alias} runtime={runtime} validating={validating} />
+        </Card>
+    );
+}
+
+function CloudConfigCard({ state, icon, muted, onDismiss }: { state: SessionsState, icon: string, muted?: boolean, onDismiss: () => void }) {
+
+    const options = state.cloudFormOptions
+    const formState = state.cloudForm
+
+    return (
+        <Card>
+            <Row gap={6}>
+                <Icon name={icon} style={muted ? { color: 'var(--vscode-descriptionForeground)' } : undefined} />
+                <Text weight={600}>Instance Options</Text>
+                <Row gap={4} style={{ marginLeft: 'auto' }}>
+                    <ActionIcon name="close" ariaLabel="Dismiss" onClick={onDismiss} />
+                </Row>
+            </Row>
+            <CloudForm formState={formState} options={options} vendors={[["AWS", "AWS"]]} />
         </Card>
     );
 }
@@ -69,10 +90,14 @@ function SessionsView({ state }: { state: SessionsState }) {
         <>
             {state.draftAlias ? <ConfigCard key={state.draftAlias} icon="circle-outline" muted alias={state.draftAlias} runtime={state.hostRuntime[state.draftAlias]} onDismiss={() => post({ command: 'dismissDraftSession' })} validating={state.validating} /> : null}
             {state.sessions.map(s => <SessionCard key={s.id} session={s} />)}
-            {!state.sessions.length && !state.draftAlias
-                ? <Text muted block style={{ margin: '4px', textAlign: 'center' }}>No sessions yet. Click on + to create one.</Text>
-                : null}
+            {
+                !state.sessions.length && !state.draftAlias && !state.cloudSessions.length && !state.cloudForm
+                    ? <Text muted block style={{ margin: '4px', textAlign: 'center' }}>No sessions yet. Click on + to create one.</Text>
+                    : null
+            }
             <ScriptPreviewOverlay state={state} />
+            {state.cloudForm && <CloudConfigCard state={state} icon="circle-outline" muted onDismiss={() => post({ command: 'dismissCloudForm' })} />}
+            {state.cloudSessions.map(s => <CloudSessionCard key={s.instanceID} instance={s} />)}
             {state.alert ? <AlertOverlay alert={state.alert} /> : null}
         </>
     );
@@ -85,6 +110,12 @@ function Root() {
         const id = setInterval(() => setNow(Date.now()), 1000);
         return () => clearInterval(id);
     }, []);
+
+    useEffect(() => {
+        if (state?.isCloud) {
+            post({ command: 'pollCloudStatus' });
+        }
+    }, [state?.isCloud]);
     return state
         ? <NowContext.Provider value={now}><Stack pad="8px"><SessionsView state={state} /></Stack></NowContext.Provider>
         : null;
