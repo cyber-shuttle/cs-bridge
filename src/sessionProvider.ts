@@ -15,7 +15,7 @@ import { Transports, connectSessionToTunnel, disposeAllTunnelClients, disposeTun
 import { validateSlurmConfig } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
 import { isTerminal, isDeletable, isStoppable, isReachable, isWallTimeExpired } from './modules/sessionMachine';
-import AWSClient from "./modules/aws"
+import AWSClient, { DEFAULT_REGION } from "./modules/aws"
 
 // forceNew=false relies on VS Code deduping by workspace identity: it focuses the window already holding this URI.
 function openSessionWindow(session: SlurmSession, forceNew: boolean): void {
@@ -471,7 +471,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         void this.pushState();
     }
     public async initCloudClient(): Promise<void> {
-        await this.awsClient.initEC2Client("us-east-1")
+        await this.awsClient.initEC2Client(DEFAULT_REGION)
         this.pushState()
     }
 

@@ -23,9 +23,13 @@ import { writeFileSync, unlinkSync, existsSync } from "fs";
 import path from "path";
 import { confirmModal } from '@/webviewProvider';
 import { Logger } from '@/logger';
+import { getActiveRegions, updateRegion } from './cloudStore';
+import { GetParameterCommand, ParameterNotFound, SSMClient, SSMServiceException } from '@aws-sdk/client-ssm';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-// const CS_SSH_CONFIG_PATH = path.join(homedir(), '.cybershuttle', 'ssh_config');
+export const DEFAULT_REGION = 'us-east-1'
+const UBUNTU_IMAGE_PATH = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
+const AMA_IMAGE_PATH = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 export default class AWSClient {
 
     protected readonly logger = Logger.getInstance();
@@ -37,10 +41,11 @@ export default class AWSClient {
     protected hosts: SshHost[] = [];
     protected regions: string[] = [];
     protected types: string[] = [];
-    protected images: string[][] = [["ami-0001e312b82212f65", "Amazon Linux"], ["ami-025d99823a4caad37", "Ubunti 24.04 LTS"]];
+    protected images: string[][] = [[AMA_IMAGE_PATH, "Amazon Linux"], [UBUNTU_IMAGE_PATH, "Ubuntu 24.04 LTS"]];
     private secretKey: string = ""
     private accessKey: string = ""
     private sessionToken: string = ""
+    protected activeRegions: string[] = []
 
     private clients: Record<string, EC2Client> = {};
 
@@ -63,6 +68,9 @@ export default class AWSClient {
     }
 
     constructor() {
+        this.activeRegions = getActiveRegions()
+        this.logger.info(`Current Active Regions: ${this.activeRegions}`)
+
     }
 
     public isReady(): boolean {
@@ -114,18 +122,48 @@ export default class AWSClient {
         this.secretKey = secretKey
         this.accessKey = accessKey
         this.sessionToken = sessionToken
-        const client = new EC2Client({
-            region: region,
-            credentials: {
-                accessKeyId: accessKey,
-                secretAccessKey: secretKey,
-                sessionToken: sessionToken,
-            },
-        });
 
-        this.defaultClient = client
-        this.clients[region] = client
-        this.logger.info("EC2 Client initialized")
+        if (this.activeRegions.length > 0) {
+
+            this.activeRegions.forEach(region => {
+                if (!(region in this.clients)) {
+
+                    this.logger.info(`EC2 Client for ${region}  initialized`)
+                    const client = new EC2Client({
+                        region: region,
+                        credentials: {
+                            accessKeyId: accessKey,
+                            secretAccessKey: secretKey,
+                            sessionToken: sessionToken,
+                        },
+                    });
+                    if (this.defaultClient === null) {
+                        this.defaultClient = client
+                    }
+                    this.clients[region] = client
+                }
+
+            });
+        } else {
+
+            const client = new EC2Client({
+                region: region,
+                credentials: {
+                    accessKeyId: accessKey,
+                    secretAccessKey: secretKey,
+                    sessionToken: sessionToken,
+                },
+            });
+            if (this.defaultClient === null) {
+                this.defaultClient = client
+            }
+            this.clients[region] = client
+
+        }
+
+
+
+        this.logger.info("EC2 Client(s) initialized")
         this.logger.info(`SSH Config Path: ${this.SSH_CONFIG_PATH}`)
         this.logger.info(`SSH Key Path: ${this.PRIVATE_KEY_PATH}`)
     }
@@ -191,28 +229,35 @@ export default class AWSClient {
 
     // Create EC2 Instance
     // add options for image, and instance type later
-    protected async createInstance(imageID: string, instanceType: string, keyName: string, securityGroupID: string, region: string): Promise<void> {
+    protected async createInstance(imagePath: string, instanceType: string, keyName: string, securityGroupID: string, region: string): Promise<void> {
         const client = this.getClientForRegion(region)
         const instanceID = crypto.randomUUID().slice(0, 5)
         try {
 
-            await client.send(new RunInstancesCommand({
-                ImageId: imageID,
-                InstanceType: instanceType as _InstanceType,
-                KeyName: keyName,
-                SecurityGroupIds: [securityGroupID],
-                MinCount: 1,
-                MaxCount: 1,
-                TagSpecifications: [
-                    {
-                        ResourceType: "instance",
-                        Tags: [
-                            { Key: "Name", Value: `CS-Bridge-Instance-${instanceID}` },
-                            { Key: "Environment", Value: "CS-Bridge" }
-                        ]
-                    }
-                ]
-            }));
+            const imageID = await this.getLatestImage(region, imagePath)
+
+            if (imageID !== undefined) {
+                await client.send(new RunInstancesCommand({
+                    ImageId: imageID,
+                    InstanceType: instanceType as _InstanceType,
+                    KeyName: keyName,
+                    SecurityGroupIds: [securityGroupID],
+                    MinCount: 1,
+                    MaxCount: 1,
+                    TagSpecifications: [
+                        {
+                            ResourceType: "instance",
+                            Tags: [
+                                { Key: "Name", Value: `CS-Bridge-Instance-${instanceID}` },
+                                { Key: "Environment", Value: "CS-Bridge" }
+                            ]
+                        }
+                    ]
+                }));
+            } else {
+                this.logger.error("Failed to get Image ID. Response was undefined")
+            }
+
         } catch (errors) {
             this.logger.info("Failed to create instance: ", errors)
         }
@@ -415,6 +460,7 @@ export default class AWSClient {
 
     public async pollInstances(): Promise<void> {
         const instances: CloudInstanceInfo[] = [];
+        const activeRegions = new Set<string>()
 
         const params = {
             Filters: [
@@ -431,11 +477,10 @@ export default class AWSClient {
         this.logger.info("Fetching instances ....")
 
         for (const [region, client] of Object.entries(this.clients)) {
-
             this.logger.info(`For Region ${region}`)
             const config = {
                 client: client,
-                pageSize: 15,
+                pageSize: 100,
             };
             try {
                 const paginator = paginateDescribeInstances(config, params);
@@ -457,12 +502,16 @@ export default class AWSClient {
                                     instances.push(inst)
 
                                 })
+                                activeRegions.add(region)
                             }
                         }
                     }
                 }
 
                 this.instances = instances
+                this.activeRegions = Array.from(activeRegions)
+                updateRegion(this.activeRegions)
+                this.logger.info(`Active Regions: ${this.activeRegions}`)
             } catch (error) {
                 this.logger.error("Get instances failed:", error);
             }
@@ -537,7 +586,7 @@ export default class AWSClient {
             throw new Error("EC2 Client is not initialized")
         }
         const paginator = paginateDescribeInstanceTypes(
-            { client: this.defaultClient, pageSize: 15 },
+            { client: this.defaultClient, pageSize: 100 },
             {
                 Filters: [
                     {
@@ -566,12 +615,40 @@ export default class AWSClient {
     }
 
     public async getOptions(): Promise<CloudFormOptions> {
+        this.logger.info("Fetching Options for AWS")
         await Promise.allSettled([this.getEnabledRegions(), this.getInstanceTypes()])
+        this.logger.info("Done Fetching Options for AWS")
         return {
             image: this.images,
             type: this.types.map(type => [type, type]),
             region: this.regions.map(region => [region, region])
         }
+    }
+
+    private async getLatestImage(region: string, imagePath: string): Promise<string | undefined> {
+        const ssm = new SSMClient({
+            region: region,
+            credentials: {
+                accessKeyId: this.accessKey,
+                secretAccessKey: this.secretKey,
+                sessionToken: this.sessionToken,
+            },
+        })
+        try {
+            const command = new GetParameterCommand({ Name: imagePath });
+            const response = await ssm.send(command);
+            this.logger.info("Extracted Value:", response.Parameter?.Value);
+            return response.Parameter?.Value;
+        } catch (error) {
+            if (error instanceof ParameterNotFound) {
+                this.logger.error(`The parameter path "${imagePath}" was not found.`);
+            } else if (error instanceof SSMServiceException) {
+                this.logger.error(`SSM Service Error ${error.name}: ${error.message}`);
+            } else {
+                this.logger.error("An error occurred:", error);
+            }
+        }
+
     }
 
 }
