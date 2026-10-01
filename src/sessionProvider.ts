@@ -37,8 +37,8 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private readonly opening = new Set<string>();
     private readonly monitor;
     private sharedReady = false;
-    private awsClient = new AWSClient()
-    private cloudPollInterval: NodeJS.Timeout | null = null;
+    private awsClient = new AWSClient();
+    private cloudPollInterval?: NodeJS.Timeout;
     private pollIntervalTime = 20000
     private cloudForm: CloudFormState = null
     private cloudFormOptions: Record<string, CloudFormOptions> = {
@@ -99,7 +99,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         void disposeAllTunnelClients(); // window close: free local ports (remote stays, reaped by linkspan)
         if (this.cloudPollInterval) {
             clearInterval(this.cloudPollInterval)
-            this.cloudPollInterval = null
+            // this.cloudPollInterval = null
         }
     }
 
@@ -122,11 +122,23 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         },
         connectTunnel: (_data, id) => void this.connectSession(id),
         deleteSession: (_data, id) => this.confirmAndDeleteSession(id),
-        pollCloudStatus: (_data) => {
-            this.cloudPollInterval = setInterval(() => {
-                this.awsClient.pollInstances()
-                this.pushState()
-            }, this.pollIntervalTime);
+        pollCloudStatus: async (_data) => {
+            clearInterval(this.cloudPollInterval)
+            let running = false;
+            const tick = async () => {
+                if (running) return;
+                running = true;
+                try {
+                    await this.awsClient.pollInstances();
+                    await this.pushState();
+                } catch (err) {
+                    this.logger.error("Poll failed:", err);
+                } finally {
+                    running = false;
+                }
+            };
+            await tick()
+            this.cloudPollInterval = setInterval(tick, this.pollIntervalTime);
         },
         launchCloudInstance: async (_data) => {
             const { cloudLaunchParams } = _data

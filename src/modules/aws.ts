@@ -15,6 +15,7 @@ import {
     DescribeRegionsCommand,
     paginateDescribeInstanceTypes,
     _InstanceType,
+    Instance,
 } from "@aws-sdk/client-ec2";
 
 import { CloudFormOptions, CloudInstanceInfo, InstanceActions, SshHost } from "../models";
@@ -457,11 +458,12 @@ export default class AWSClient {
         return this.instances
     }
 
-
-    public async pollInstances(): Promise<void> {
-        const instances: CloudInstanceInfo[] = [];
-        const activeRegions = new Set<string>()
-
+    protected async fetchInstanceForRegion(client: EC2Client, region: string): Promise<Instance[]> {
+        this.logger.info(`Polling instances for ${region}`)
+        const config = {
+            client: client,
+            pageSize: 100,
+        };
         const params = {
             Filters: [
                 {
@@ -474,50 +476,62 @@ export default class AWSClient {
                 }
             ]
         }
+
+        const instances: Instance[] = [];
+        try {
+            const paginator = paginateDescribeInstances(config, params);
+
+            for await (const page of paginator) {
+                for (const reservation of page.Reservations ?? []) {
+                    instances.push(...(reservation.Instances ?? []));
+                }
+            }
+        } catch (error) {
+            this.logger.error(`Get instances for failed:`, error);
+        }
+
+        return instances
+    }
+
+
+    public async pollInstances(): Promise<void> {
+        const cloudInstances: CloudInstanceInfo[] = [];
+        const activeRegions = new Set<string>()
+
         this.logger.info("Fetching instances ....")
 
-        for (const [region, client] of Object.entries(this.clients)) {
-            this.logger.info(`For Region ${region}`)
-            const config = {
-                client: client,
-                pageSize: 100,
-            };
-            try {
-                const paginator = paginateDescribeInstances(config, params);
+        const results = await Promise.allSettled(
+            Object.entries(this.clients).map(async ([region, client]) => ({
+                region,
+                instances: await this.fetchInstanceForRegion(client, region),
+            }))
+        );
 
-                for await (const page of paginator) {
-                    if (page.Reservations) {
-                        for (const reservation of page.Reservations) {
-                            if (reservation.Instances) {
-                                reservation.Instances.map(instance => {
-                                    const inst: CloudInstanceInfo = {
-                                        instanceID: instance.InstanceId ?? "",
-                                        instanceType: instance.InstanceType ?? "",
-                                        name: instance.Tags?.find(value => value.Key == "Name")?.Value ?? "",
-                                        state: instance.State?.Name ?? "",
-                                        publicIp: instance.PublicIpAddress ?? "",
-                                        vendor: "aws",
-                                        region: region
-                                    }
-                                    instances.push(inst)
-
-                                })
-                                activeRegions.add(region)
-                            }
-                        }
-                    }
+        for (const result of results) {
+            if (result.status === "rejected") {
+                this.logger.error(`Polling for failed:${result.reason}`);
+                continue;
+            }
+            const { region, instances } = result.value;
+            for (const instance of instances) {
+                const inst: CloudInstanceInfo = {
+                    instanceID: instance.InstanceId ?? "",
+                    instanceType: instance.InstanceType ?? "",
+                    name: instance.Tags?.find(value => value.Key == "Name")?.Value ?? "",
+                    state: instance.State?.Name ?? "",
+                    publicIp: instance.PublicIpAddress ?? "",
+                    vendor: "aws",
+                    region: region
                 }
 
-                this.instances = instances
-                this.activeRegions = Array.from(activeRegions)
-                updateRegion(this.activeRegions)
-                this.logger.info(`Active Regions: ${this.activeRegions}`)
-            } catch (error) {
-                this.logger.error("Get instances failed:", error);
+                activeRegions.add(region)
+                cloudInstances.push(inst)
             }
-
-
         }
+        this.instances = cloudInstances
+        this.activeRegions = Array.from(activeRegions)
+        updateRegion(this.activeRegions)
+        this.logger.info("Done Polling instances")
     }
 
     public openTerminal(ip: string, region: string): void {
