@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { enabled } from './features';
 import { uuidv7 } from 'uuidv7';
 import { errMsg } from './logger';
-import { HostRuntime, SlurmSession, SessionsState, WebviewMessage } from './models';
+import { HostRuntime, SlurmSession, SessionsState, WebviewMessage, InstanceActions, CloudFormOptions, CloudFormState } from './models';
 import { WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSshConfigEntry, addSshConfigEntry, hasSessionKey, SshManager } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
@@ -15,6 +15,7 @@ import { Transports, connectSessionToTunnel, disposeAllTunnelClients, disposeTun
 import { validateSlurmConfig } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
 import { isTerminal, isDeletable, isStoppable, isReachable, isWallTimeExpired } from './modules/sessionMachine';
+import AWSClient, { DEFAULT_REGION } from "./modules/aws"
 
 // forceNew=false relies on VS Code deduping by workspace identity: it focuses the window already holding this URI.
 function openSessionWindow(session: SlurmSession, forceNew: boolean): void {
@@ -36,6 +37,17 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private readonly opening = new Set<string>();
     private readonly monitor;
     private sharedReady = false;
+    private awsClient = new AWSClient();
+    private cloudPollInterval?: NodeJS.Timeout;
+    private pollIntervalTime = 20000
+    private cloudForm: CloudFormState = null
+    private cloudFormOptions: Record<string, CloudFormOptions> = {
+        "aws": {
+            image: [],
+            type: [],
+            region: []
+        }
+    }
 
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
     constructor(extensionUri: vscode.Uri, private readonly transports: Transports, private readonly remoteSessionId?: string) {
@@ -84,13 +96,18 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     dispose(): void {
         this.monitor.dispose(); // window close: clear every per-session poll interval so none leak past teardown
         this.shared.forEach(d => d.dispose());
-        void disposeAllTunnelClients(); // window close: free local ports (remote stays, reaped by Linkspan)
+        void disposeAllTunnelClients(); // window close: free local ports (remote stays, reaped by linkspan)
+        if (this.cloudPollInterval) {
+            clearInterval(this.cloudPollInterval)
+            // this.cloudPollInterval = null
+        }
     }
 
     private readonly dismissals: Record<string, () => void> = {
         dismissDraftSession: () => { this.draftAlias = null; },
         dismissPreview: () => { void this.release(this.previewSession); this.previewSession = null; this.previewSbatchEnv = {}; },
         dismissAlert: () => { this.alert = null; },
+        dismissCloudForm: () => { this.cloudForm = null; },
     };
 
     private readonly handlers: Record<string, (data: WebviewMessage, id: string) => void> = {
@@ -105,6 +122,57 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         },
         connectTunnel: (_data, id) => void this.connectSession(id),
         deleteSession: (_data, id) => this.confirmAndDeleteSession(id),
+        pollCloudStatus: async (_data) => {
+            clearInterval(this.cloudPollInterval)
+            let running = false;
+            const tick = async () => {
+                if (running) return;
+                running = true;
+                try {
+                    await this.awsClient.pollInstances();
+                    await this.pushState();
+                } catch (err) {
+                    this.logger.error("Poll failed:", err);
+                } finally {
+                    running = false;
+                }
+            };
+            await tick()
+            this.cloudPollInterval = setInterval(tick, this.pollIntervalTime);
+        },
+        launchCloudInstance: async (_data) => {
+            const { cloudLaunchParams } = _data
+            if (cloudLaunchParams?.vendor === "AWS") {
+                await this.awsClient.launchEC2Instance(cloudLaunchParams.image, cloudLaunchParams.type, cloudLaunchParams.region)
+                this.cloudForm = null
+                this.pushState()
+
+            }
+        },
+        stopCloudInstance: (_data) => {
+            if (_data.instanceId && _data.region) {
+                this.awsClient.doInstanceActions(InstanceActions.Stop, _data.instanceId, "", _data.region)
+            }
+        },
+        restartCloudInstance: (_data) => {
+            if (_data.instanceId && _data.region) {
+                this.awsClient.doInstanceActions(InstanceActions.Start, _data.instanceId, "", _data.region)
+            }
+        },
+        removeCloudInstance: (_data,) => {
+            if (_data.instanceId && _data.instanceName && _data.region) {
+                this.awsClient.removeInstance(_data.instanceId, _data.instanceName, _data.region)
+            }
+        },
+        sshIntoCloudInstance: (_data) => this.awsClient.openTerminal(_data.instanceIp ?? "", _data.region ?? ""),
+        startRemoteForloudInstance: async (_data) => {
+            if (_data.instanceId && _data.instanceName && _data.instanceIp && _data.region) {
+
+                this.logger.info("Launching Remote Session")
+                await this.awsClient.openRemoteSession(_data.instanceId, _data.instanceName, _data.instanceIp, _data.region)
+            }
+        },
+
     };
 
     protected handleMessage(data: WebviewMessage) {
@@ -253,7 +321,12 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 previewSession: this.previewSession,
                 validating: this.validating,
                 alert: this.alert,
+                isCloud: this.awsClient.isReady(),
+                cloudSessions: this.awsClient.getInstances(),
+                cloudForm: this.cloudForm,
+                cloudFormOptions: this.cloudFormOptions.aws
             };
+
             view.webview.postMessage({ command: 'state', state });
         }
         catch (error) {
@@ -408,5 +481,22 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         if (this.previewSession?.id !== sessionId) { void this.release(this.previewSession); }
         this.previewSession = session;
         void this.pushState();
+    }
+    public async initCloudClient(): Promise<void> {
+        await this.awsClient.initEC2Client(DEFAULT_REGION)
+        this.pushState()
+    }
+
+    public isCloudReady(): boolean {
+        return this.awsClient.isReady()
+    }
+
+    public async startCloudForm(): Promise<void> {
+        this.cloudForm = "loading"
+        this.logger.info(this.cloudForm)
+        this.pushState()
+        this.cloudFormOptions.aws = await this.awsClient.getOptions()
+        this.cloudForm = "ready"
+        await this.pushState()
     }
 }
