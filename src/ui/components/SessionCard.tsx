@@ -49,7 +49,7 @@ const statusStyle: CSSProperties = { color: 'var(--vscode-descriptionForeground)
 const sepStyle: CSSProperties = { width: '1px', alignSelf: 'stretch', background: 'var(--vscode-descriptionForeground)', opacity: 0.45 };
 
 // Lay items in a row divided by vertical separators, one before the first and after the last too.
-function Divided({ items }: { items: VNode[] }) {
+export function Divided({ items }: { items: VNode[] }) {
     return (
         <Row gap={8} wrap style={{ alignItems: 'stretch' }}>
             {items.flatMap((c, i) => [<div key={`sep${i}`} style={sepStyle} />, c]).concat(<div key="sepEnd" style={sepStyle} />)}

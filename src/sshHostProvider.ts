@@ -14,7 +14,7 @@ export class SshHostProvider extends WebviewProvider {
         switch (data.command) {
             case 'ready': this.pushState(); break;
             case 'deleteSshHost': void this.deleteSshHost(data.alias ?? ''); break;
-            case 'openTerminal': this.openTerminal(data.alias ?? ''); break;
+            case 'openTerminal': SshManager.getInstance().openTerminal(data.alias ?? ''); break;
             case 'editSshHost': void vscode.commands.executeCommand('csbridge.editHost', data.alias); break;
             default: this.logger.warn('Unknown command from hosts webview:', data);
         }
@@ -24,11 +24,6 @@ export class SshHostProvider extends WebviewProvider {
         if (!this.view) { return; }
         const state: HostsState = { sshHosts: SshManager.getInstance().getMergedHosts() };
         this.view.webview.postMessage({ command: 'state', state });
-    }
-
-    // Rides the SSH host's ControlMaster socket (Unix), so a shell on an already-authenticated host costs no second 2FA push.
-    private openTerminal(alias: string): void {
-        vscode.window.createTerminal({ name: alias, shellPath: 'ssh', shellArgs: [...SshManager.getInstance().buildControlMasterArgs(alias), alias] }).show();
     }
 
     // Title-bar action: re-read so hosts added externally (e.g. via Remote-SSH) appear without a window reload.

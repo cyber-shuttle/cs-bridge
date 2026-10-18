@@ -108,7 +108,8 @@ Four layers, and nothing reaches past its neighbour.
 - **`src/modules/*.ts`** — the capability layer. SSH (`sshSupport`, `sshShell`, `sshHostsStore`, `sshCommandParser`),
   Slurm (`slurmLaunch`, `slurmParse`, `slurmSupport`), Linkspan's HTTP client (`linkspanSupport`), Dev Tunnels
   (`tunnelSupport`), their cs-plane counterparts **(experimental)** (`linkTunnel`), the transport choice and the
-  session-level connect steps (`transport`), the status domain (`sessionMachine`), lifecycle composition
+  session-level connect steps (`transport`), EC2 instances **(experimental)** (`ec2`, `aws`), the status domain
+  (`sessionMachine`), lifecycle composition
   (`sessionSupport`), the on-disk stores and their migrations (`schema`). Modules that do not import `vscode`
   unit-test directly; the ones that do cannot be imported under the test runner at all.
 - **`src/ui/`** — Preact webviews, one esbuild bundle per view. `logic/` is pure and tested, `components/` renders,

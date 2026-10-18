@@ -161,11 +161,8 @@ export interface SessionsState {
     previewSession: SlurmSession | null;
     validating: boolean;
     alert: { title: string; message: string } | null;
-    isCloud: boolean
-    cloudSessions: CloudInstanceInfo[]
-    // hasActiveSessions: boolean
-    cloudForm: CloudFormState
-    cloudFormOptions: CloudFormOptions
+    cloudInstances: CloudInstance[];
+    cloudForm: string[] | null; // the open launch form's regions
 }
 
 export interface HostsState {
@@ -181,52 +178,24 @@ export interface WebviewMessage {
     account?: string;
     resources?: Resources;
     jobId?: string;
-    instanceIp?: string;
-    instanceId?: string;
-    instanceName?: string;
-    region?: string;
-    cloudLaunchParams?: CloudLaunchParams
+    instance?: CloudInstance;
+    launch?: { image: string; type: string; region: string };
 }
 
-export interface CloudInstanceInfo {
-    name: string
-    instanceID: string;
-    state: string;
-    instanceType: string;
-    publicIp: string;
-    vendor: string
-    region: string
-}
-
-export interface CloudProviderState {
+export interface CloudInstance {
+    id: string;
     name: string;
-    secretKey: string
-    accessKey: string
-    sessionToken: string
-    instances: CloudInstanceInfo[]
-    region: string
-    clientInit: boolean
-    sshHosts: SshHost[];
-
+    state: string;
+    type: string;
+    ip: string;
+    region: string;
+    user: string;
 }
 
-export enum InstanceActions {
-    Start,
-    Stop,
-    Remove,
-}
-
-export type CloudFormState = "aws" | "loading" | "ready" | null
-export type CloudLaunchParams = {
-    image: string
-    type: string
-    region: string
-    vendor: string
-
-}
-export interface CloudFormOptions {
-    image: string[][]
-    type: string[][]
-    region: string[][]
-}
-
+// EC2 launch choices; the types run in every region, and each SSM parameter holds the image's latest x86_64 AMI id.
+export const EC2_IMAGES = [
+    { label: 'Amazon Linux 2023', ssmParameter: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64', user: 'ec2-user' },
+    { label: 'Ubuntu 24.04 LTS', ssmParameter: '/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id', user: 'ubuntu' },
+];
+export const EC2_TYPES = ['t3.micro', 't3.small', 't3.medium', 't3.large', 't3.xlarge', 't3.2xlarge', 'm5.large', 'm5.xlarge', 'm5.2xlarge', 'm5.4xlarge'];
+export const EC2_DEFAULTS = { type: 't3.medium', region: 'us-east-1' };

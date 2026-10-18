@@ -48,6 +48,8 @@ A cluster is entered through an SSH host, but work runs on compute nodes that Sl
 
 With `csbridge.experimentalFeatures` on, the `csbridge.transport` setting also offers `link` **(experimental)**: after signing in to CyberShuttle from **CS Bridge: Open Menu**, Linkspan opens a WebSocket to cs-plane instead of a Dev Tunnel, and **Connect** forwards SSH through cs-plane.
 
+EC2 instances **(experimental)**: **Sign In to AWS** from **CS Bridge: Open Menu**, then **Launch EC2 Instance**; each instance's card opens a terminal or a remote window.
+
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/02-sessions.png" alt="Sessions sidebar" width="480">
 
 **Start** submits the job. The session shows its state and, once running, its CPU, memory and GPU use.
@@ -74,6 +76,7 @@ The full design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - The temp folder holds the ControlMaster sockets.
 - VS Code keeps the Microsoft account token in the operating system keychain.
 - VS Code's SecretStorage keeps the credential of CyberShuttle sign-in **(experimental)**.
+- AWS credentials **(experimental)** stay in memory; the AWS-generated SSH key sits with the session SSH keys.
 
 **Remote**
 

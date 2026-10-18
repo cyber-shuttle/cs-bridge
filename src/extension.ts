@@ -6,6 +6,7 @@ import { attachWindow, detachWindow, getAllSessions } from './extensionStore';
 import { csHostAlias } from './modules/sshHostsStore';
 import { Plane } from './plane';
 import { SessionProvider } from './sessionProvider';
+import { AwsClient } from './modules/aws';
 import { SshHostProvider } from './sshHostProvider';
 import { StatsProvider } from './statsProvider';
 import { SshManager } from './modules/sshSupport';
@@ -34,11 +35,13 @@ export async function activate(context: vscode.ExtensionContext) {
     SshManager.initInstance(context.extensionUri, context.globalStorageUri.fsPath);
     const plane = new Plane(context.secrets);
     const transports = new Transports(plane);
-    const sessionProvider = new SessionProvider(context.extensionUri, transports, id);
+    const aws = new AwsClient();
+    const sessionProvider = new SessionProvider(context.extensionUri, transports, aws, id);
     const sshHostProvider = new SshHostProvider(context.extensionUri);
     const statsProvider = new StatsProvider(context.extensionUri);
-    const menu = new CsBridgeMenu(plane, sessionProvider, sshHostProvider, transports);
+    const menu = new CsBridgeMenu(plane, sessionProvider, sshHostProvider, transports, aws);
     context.subscriptions.push(
+        aws,
         sessionProvider,
         vscode.window.registerWebviewViewProvider(SessionProvider.viewType, sessionProvider),
         vscode.window.registerWebviewViewProvider(SshHostProvider.viewType, sshHostProvider),

@@ -31,7 +31,7 @@ export const csHostAlias = ({ alias, name }: Pick<SlurmSession, 'alias' | 'name'
     `${alias}-${name.slice(-6)}`;
 
 // Per-session block appended to the extension's ssh_config (4-space indent matches deleteSshConfigEntry).
-// alias is always csHostAlias() output.
+// alias is csHostAlias() output, or an EC2 instance id.
 export function buildSshConfigBlock(
     sessionId: string,
     alias: string,

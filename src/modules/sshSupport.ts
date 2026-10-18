@@ -1,4 +1,4 @@
-import { SshHost, SlurmSession} from '../models';
+import { SshHost, SlurmSession } from '../models';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -25,7 +25,8 @@ function privateControlDir(): string {
     return uid === process.getuid?.() && !(mode & 0o077) ? dir : fs.mkdtempSync(path.join(os.tmpdir(), 'csbridge-'));
 }
 
-const sessionKeyPath = (sessionId: string): string => path.join(CS_SSH_KEYS_DIR, `id_cshost-${sessionId}`);
+export const sshKeyPath = (name: string): string => path.join(CS_SSH_KEYS_DIR, name);
+const sessionKeyPath = (sessionId: string): string => sshKeyPath(`id_cshost-${sessionId}`);
 
 type CommandResult = { stdout: string; stderr: string; code: number };
 
@@ -100,10 +101,11 @@ export class SshManager {
         );
     }
 
-
-    public getCSHosts(): SshHost[] {
-        return this.readHostsFile(CS_SSH_CONFIG_PATH, 'user')
+    // Rides the SSH host's ControlMaster socket (Unix), so a shell on an already-authenticated host costs no second 2FA push.
+    public openTerminal(alias: string): void {
+        vscode.window.createTerminal({ name: alias, shellPath: 'ssh', shellArgs: [...this.buildControlMasterArgs(alias), alias] }).show();
     }
+
     public buildControlMasterArgs(alias: string): string[] {
         // Windows OpenSSH has no Unix-socket ControlMaster ("getsockname failed: Not a socket").
         if (process.platform === 'win32') {
@@ -321,14 +323,6 @@ export class SshManager {
             logger.error(`[ssh] Failed to add Include to ~/.ssh/config: ${errMsg(err)}`);
         }
     }
-
-    public getSSHConfigPath(): string {
-        return CS_SSH_CONFIG_PATH
-    }
-    
-    public getSSHKeyPath(): string {
-        return CS_SSH_KEYS_DIR
-    }
 }
 
 // Upsert/drop this alias in remote.SSH.serverInstallPath (alias->path map Remote-SSH reads at connect). Best-effort and
@@ -337,6 +331,7 @@ async function setServerInstallPath(alias: string, dir: string | undefined): Pro
     try {
         const cfg = vscode.workspace.getConfiguration('remote.SSH');
         const map = { ...(cfg.get<Record<string, string>>('serverInstallPath') ?? {}) };
+        if (map[alias] === dir) { return; }
         if (dir === undefined) { delete map[alias]; }
         else { map[alias] = dir; }
         await cfg.update('serverInstallPath', map, vscode.ConfigurationTarget.Global);
@@ -346,28 +341,34 @@ async function setServerInstallPath(alias: string, dir: string | undefined): Pro
     }
 }
 
-export async function addSshConfigEntry(session: SlurmSession, localPort: number): Promise<string> {
-    const alias = csHostAlias(session);
-    await deleteSshConfigEntry(session.id, alias, false); // keep the key: it is this session's, generated locally
+// forceNew=false relies on VS Code deduping by workspace identity: it focuses the window already holding this URI.
+export function openSshWindow(alias: string, folder: string, forceNew: boolean): Thenable<unknown> {
+    return vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(`vscode-remote://ssh-remote+${alias}${folder}/`), { forceNewWindow: forceNew });
+}
 
-    const hostname = '127.0.0.1';
-    const user = 'cs-ssh-user'; // any non-empty value works; the custom SSH server ignores the username
-    const configBlock = buildSshConfigBlock(session.id, alias, hostname, localPort, user, sessionKeyPath(session.id));
+export function addSshConfigEntry(session: SlurmSession, localPort: number): Promise<string> {
+    // Pin the server to node-local /tmp, not $HOME/.vscode-server: on HPC $HOME is a shared network fs where stalls miss
+    // the ptyHost heartbeat and one account's sessions fight over a single tree.
+    // The custom SSH server ignores the user.
+    return writeSshConfigEntry(session.id, csHostAlias(session), '127.0.0.1', localPort, 'cs-ssh-user', sessionKeyPath(session.id), `/tmp/cs-vscode/${session.id}`);
+}
+
+export async function writeSshConfigEntry(id: string, alias: string, hostname: string, port: number, user: string, identityFile: string, serverInstallPath?: string): Promise<string> {
+    await deleteSshConfigEntry(id, alias, false); // keep the key: the caller owns it
 
     // Locked: startup reattach can rewrite this concurrently, so the append must not interleave.
     lock(CS_SSH_CONFIG_PATH);
     try {
-        fs.appendFileSync(CS_SSH_CONFIG_PATH, `${configBlock}\n`);
+        fs.appendFileSync(CS_SSH_CONFIG_PATH, `${buildSshConfigBlock(id, alias, hostname, port, user, identityFile)}\n`);
     }
     catch (err) {
-        logger.error(`Failed to write SSH config for session ${session.id}:`, err);
+        logger.error(`Failed to write SSH config for ${alias}:`, err);
     }
     finally {
         release(CS_SSH_CONFIG_PATH);
     }
-    // Pin the server to node-local /tmp, not $HOME/.vscode-server: on HPC $HOME is a shared network fs where stalls miss
-    // the ptyHost heartbeat and one account's sessions fight over a single tree. Set after the prune above so it wins.
-    await setServerInstallPath(alias, `/tmp/cs-vscode/${session.id}`);
+    // Set after the prune above so it wins.
+    await setServerInstallPath(alias, serverInstallPath);
     return alias;
 }
 
@@ -421,27 +422,4 @@ export async function deleteSshConfigEntry(sessionId: string, alias: string, del
         release(CS_SSH_CONFIG_PATH);
     }
     await setServerInstallPath(alias, undefined);
-}
-
-
-
-export async function addSshConfigEntryAWS(instanceID: string, instanceName: string, instanceIp: string, localPort: number, privateKey: string): Promise<string> {
-    await deleteSshConfigEntry(instanceID, instanceName, false)
-
-    const user = 'ec2-user'; // any non-empty value works; the custom SSH server ignores the username
-    const configBlock = buildSshConfigBlock(instanceID, instanceName, instanceIp, localPort, user, privateKey);
-
-    // Locked: startup reattach can rewrite this concurrently, so the append must not interleave.
-    lock(CS_SSH_CONFIG_PATH);
-    try {
-        fs.appendFileSync(CS_SSH_CONFIG_PATH, `\n${configBlock}\n`);
-    }
-    catch (err) {
-        logger.error(`Failed to write SSH config for instance ${instanceName}:`, err);
-    }
-    finally {
-        release(CS_SSH_CONFIG_PATH);
-    }
-    await setServerInstallPath(instanceName, `/tmp/cs-vscode/${instanceID}`);
-    return instanceName;
 }
