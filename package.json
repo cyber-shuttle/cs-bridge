@@ -2,7 +2,7 @@
 	"name": "csbridge",
 	"displayName": "CS Bridge",
 	"publisher": "cybershuttle",
-	"description": "Manage SSH sessions and HPC jobs from VS Code",
+	"description": "Manage SSH sessions, HPC jobs and cloud instances from VS Code",
 	"license": "Apache-2.0",
 	"icon": "resources/csbridge.png",
 	"keywords": [
@@ -11,6 +11,8 @@
 		"slurm",
 		"dev-tunnel",
 		"remote",
+		"aws",
+		"ec2",
 		"cybershuttle"
 	],
 	"repository": {
@@ -21,7 +23,7 @@
 		"url": "https://github.com/cyber-shuttle/cs-bridge/issues"
 	},
 	"homepage": "https://github.com/cyber-shuttle/cs-bridge#readme",
-	"version": "0.2.3",
+	"version": "0.2.4",
 	"engines": {
 		"vscode": "^1.101.0"
 	},

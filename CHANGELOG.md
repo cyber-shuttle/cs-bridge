@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-21
+
+### Added
+
+- **EC2 instances** **(experimental)**: sign in to AWS with an access key, launch Amazon Linux 2023 or Ubuntu 24.04
+  in any enabled region, and open a terminal or a VS Code window on the instance from its card in the Sessions view.
+
 ## [0.2.3] - 2026-09-30
 
 ### Changed
@@ -318,7 +325,8 @@ Initial release of **CS Bridge** — remote HPC development from VS Code. Publis
 - Status bar countdown and progress toasts for active sessions
 - esbuild-based build producing a single bundled, minified `out/extension.js` (`tsc` used for type-checking only)
 
-[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.3...HEAD
+[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.4...HEAD
+[0.2.4]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.3...0.2.4
 [0.2.3]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.2...0.2.3
 [0.2.2]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.1...0.2.2
 [0.2.1]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.0...0.2.1

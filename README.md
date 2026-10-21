@@ -5,7 +5,7 @@
 [![Installs](https://vsmarketplacebadges.dev/downloads-short/cybershuttle.csbridge.svg)](https://marketplace.visualstudio.com/items?itemName=cybershuttle.csbridge)
 [![License](https://img.shields.io/github/license/cyber-shuttle/CS-Bridge?color=blue)](LICENSE)
 
-CS Bridge is a VS Code extension for working on high-performance computing (HPC) clusters. It requests a compute node through Slurm, reaches it through a Microsoft Dev Tunnel, and opens a VS Code window on it, so the editor, terminal and debugger run where the code runs.
+CS Bridge is a VS Code extension for working on high-performance computing (HPC) clusters and cloud instances. It requests a compute node through Slurm, reaches it through a Microsoft Dev Tunnel, and opens a VS Code window on it, so the editor, terminal and debugger run where the code runs. For work that needs no cluster, it launches an EC2 instance **(experimental)** and opens a window there instead.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/demo-overview.webp" alt="Demo" width="480">
 
@@ -18,6 +18,7 @@ CS Bridge is a VS Code extension for working on high-performance computing (HPC)
 - **Start again** — a finished session can be started again.
 - **Run history** — the Run History view records the CPU and memory efficiency of every run.
 - **No inbound ports** — connections go through a Microsoft Dev Tunnel, so the cluster opens no port.
+- **EC2 instances (experimental)** — launch an instance with your AWS key, then open a terminal or a VS Code window on it from its card.
 
 ## Supported Clusters
 
@@ -48,7 +49,7 @@ A cluster is entered through an SSH host, but work runs on compute nodes that Sl
 
 With `csbridge.experimentalFeatures` on, the `csbridge.transport` setting also offers `link` **(experimental)**: after signing in to CyberShuttle from **CS Bridge: Open Menu**, Linkspan opens a WebSocket to cs-plane instead of a Dev Tunnel, and **Connect** forwards SSH through cs-plane.
 
-EC2 instances **(experimental)**: **Sign In to AWS** from **CS Bridge: Open Menu**, then **Launch EC2 Instance**; each instance's card opens a terminal or a remote window.
+EC2 instances **(experimental)** skip Slurm and the tunnel: **Sign In to AWS** from **CS Bridge: Open Menu** with an access key, then **Launch EC2 Instance** picks an image, a type and a region. CS Bridge creates a key pair and an SSH security group per region, lists the instances as cards beside the sessions, and each card starts, stops or removes its instance, or opens a terminal or a remote window over plain SSH.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/02-sessions.png" alt="Sessions sidebar" width="480">
 
@@ -88,7 +89,7 @@ To reset, remove the `cybershuttle.csbridge` folder in VS Code's `User/globalSto
 
 ## Privacy
 
-CS Bridge collects no analytics. SSH credentials and Dev Tunnel traffic pass only between the user, the cluster and Microsoft Dev Tunnels. Opt-in analytics is on the [roadmap](#roadmap).
+CS Bridge collects no analytics. SSH credentials and Dev Tunnel traffic pass only between the user, the cluster and Microsoft Dev Tunnels. AWS credentials **(experimental)** go only to the EC2 API and are forgotten when the window closes. Opt-in analytics is on the [roadmap](#roadmap).
 
 ## FAQ
 
@@ -153,7 +154,7 @@ CS Bridge is pre-1.0, and interfaces may change between releases. The following 
 - [ ] **Issue reporting from the extension** — file an issue with a typed description and an automatically captured stack trace.
 - [ ] **Queue visibility** — queued jobs, queue positions and estimated start times shown in the Sessions view.
 - [ ] **Opt-in analytics** — anonymous analytics to a central endpoint, sent only after explicit consent.
-- [ ] **Cloud VM support** — provision a cloud VM and run a session on it, for work that needs no cluster.
+- [ ] **Cloud VM support** — EC2 is in **(experimental)**; other providers, and running a session's job on the instance, are to follow.
 - [ ] **File mounts** — mount local files and external datasets into the remote session.
 - [ ] **Checkpoint and restore** — checkpoint a session and resume it in another job with its running processes intact.
 

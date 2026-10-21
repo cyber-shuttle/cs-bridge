@@ -3,7 +3,8 @@
 CS Bridge is a Slurm session manager first and a Dev Tunnel client second. Everything runs in the local VS Code
 extension host (`extensionKind: ["ui"]`): it drives the cluster through the OS `ssh` binary, opens a Microsoft
 Dev Tunnel to the compute node, and hands the final attach to VS Code's remote-SSH URI handler. Nothing listens
-for inbound connections on the cluster.
+for inbound connections on the cluster. EC2 instances **(experimental)** reuse the last step only: the instance is
+reached over plain SSH, with no Slurm, Linkspan or tunnel.
 
 ```text
 Local VS Code                              Remote HPC cluster
@@ -88,6 +89,16 @@ run on either, and nothing else branches on `transport`.
 | Forward | `/access` gives the connect token, held in memory; each forwarded port is a `127.0.0.1` listener whose every connection opens a WebSocket to `/sessions/{id}/forward/{port}` |
 | Poll, connect | as for a Dev Tunnel, with Linkspan's API reached through a forward of its control port |
 | Stop, delete | release (`POST /stop`) the cs-plane session; delete also `DELETE`s it |
+
+## EC2 instances (experimental)
+
+`aws.ts` holds the sign-in and the poll, `ec2.ts` the API calls with no `vscode` import, so it unit-tests against a
+fake client. Sign-in takes an access key and lists the account's regions, which both validates the key and fixes the
+regions polled every 20 s; the key lives only in the extension host's memory. The first launch in a region creates one
+AWS-generated key pair, saved beside the session SSH keys, and one security group opening port 22. Instances carry a
+`CS-Bridge-User` tag naming the image's login user, which is also the filter that lists them. A terminal or remote
+window writes an `ssh_config` entry through the same `writeSshConfigEntry` as a session, aliased by instance id since
+the Name tag is editable, and then rides `SshManager.openTerminal` or `openSshWindow`.
 
 ## The per-session SSH host
 

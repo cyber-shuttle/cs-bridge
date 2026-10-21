@@ -17,8 +17,9 @@ and say whether we can reproduce it before any fix ships.
 
 ## Scope
 
-CS Bridge runs in your local VS Code and drives a cluster you already have SSH access to. These are the boundaries
-it is built around; a report is most useful when it shows one of them failing.
+CS Bridge runs in your local VS Code and drives a cluster you already have SSH access to, or an EC2 instance it
+launches with your AWS key **(experimental)**. These are the boundaries it is built around; a report is most useful
+when it shows one of them failing.
 
 - The private half of a session's SSH key never leaves the local machine; only the public half is handed to the agent.
 - The only writes to `~/.ssh/config` are the `Include ~/.cybershuttle/ssh_config` line and the SSH hosts you
@@ -31,6 +32,9 @@ it is built around; a report is most useful when it shows one of them failing.
   only as an environment assignment on `sbatch --export=ALL`, never the job script, a command line or a file, and
   cs-plane revokes it when the session stops. The forward token stays in the extension host's memory, and every forward
   listens on 127.0.0.1 only.
+- AWS credentials **(experimental)** are typed into VS Code, held only in the extension host's memory and sent only
+  to the EC2 API. The private key AWS generates per region is stored locally with mode `0600`; the security group
+  CS Bridge creates opens port 22 to the internet, and the instance accepts only that key.
 - The agent binary is fetched over HTTPS with no signature check, and everything CS Bridge runs remotely runs as
   the submitting user with no privilege that user does not already have.
 
