@@ -40,7 +40,7 @@ function minutesToWalltime(minutes: number): string {
 }
 
 // The #SBATCH lines match cs-plane's buildScript for the same session.
-export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch): string {
+export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch, controlPort: number): string {
     const { cores, memoryMb, wallMinutes, gpuType, gpuCount } = session.resources;
 
     const sbatchLines = [
@@ -71,7 +71,7 @@ export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch):
         `# --- Run Linkspan ---`,
         `LINKSPAN_BIN="$HOME/.cybershuttle/bin/linkspan"`,
         // Bind the control port pinned at launch (no log/port discovery).
-        `"$LINKSPAN_BIN" --port ${session.connectionInfo?.controlPort ?? 0} --tunnel-enable ${launch.tunnelArgs}`,
+        `"$LINKSPAN_BIN" --port ${controlPort} --tunnel-enable ${launch.tunnelArgs}`,
     ];
 
     return scriptLines.join('\n');

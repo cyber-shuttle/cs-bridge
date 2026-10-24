@@ -202,7 +202,7 @@ export class SlurmBackend implements Backend {
         // Job running but not yet up: drive bring-up over the Dev Tunnel rather than Slurm,
         // cross-checking sacct only after PROBE_GIVEUP failures, so a running session
         // never SSH-polls the SSH host.
-        if (status === 'preparing' && transport.tunnelRef(session) && (session.connectionInfo?.controlPort ?? 0) > 0) {
+        if (status === 'preparing' && transport.tunnelRef(session) && session.connectionInfo?.controlPort) {
             await this.pingOrCrossCheck(session, () => this.prepareRemote(session));
             return;
         }
@@ -314,7 +314,7 @@ export async function prepareLaunch(session: SlurmSession, transport: Transport)
     const launch = await transport.prepare(session, ci);
 
     let script: string;
-    try { script = buildSlurmScript(session, launch); }
+    try { script = buildSlurmScript(session, launch, ci.controlPort); }
     catch (err) { throw new Error(`Failed to generate Slurm script: ${errMsg(err)}`, { cause: err }); }
 
     setError(session, '');

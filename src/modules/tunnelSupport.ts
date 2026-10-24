@@ -1,4 +1,4 @@
-import { SlurmSession } from '../models';
+import { ConnectionInfo, SlurmSession } from '../models';
 import * as vscode from 'vscode';
 import { Logger } from '../logger';
 import { live, patch } from '../extensionStore';
@@ -71,7 +71,7 @@ class DevTunnelRelayClient extends ForwardRelayClient {
 export const devTunnels = {
     label: 'Microsoft DevTunnel',
     management: buildTunnelManagementClient,
-    relayClient: (management: TunnelManagementHttpClient, session: SlurmSession) => new DevTunnelRelayClient(new TunnelRelayTunnelClient(management), session.connectionInfo?.controlPort ?? 0),
+    relayClient: (management: TunnelManagementHttpClient, ci: ConnectionInfo) => new DevTunnelRelayClient(new TunnelRelayTunnelClient(management), ci.controlPort),
     tunnelRef: devTunnelRef,
     ensureTunnel: ensureDevTunnel,
     withLinkspan: ({ id, devtunnel, connectionInfo: ci }, call) => {

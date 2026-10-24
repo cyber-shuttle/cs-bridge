@@ -39,7 +39,7 @@ export interface TunnelRelayClient {
 export interface Tunnels {
     readonly label: string;
     management(): TunnelManagement;
-    relayClient(management: TunnelManagement, session: SlurmSession): TunnelRelayClient;
+    relayClient(management: TunnelManagement, ci: ConnectionInfo): TunnelRelayClient;
     tunnelRef(session: SlurmSession): TunnelRef | undefined; // the run's tunnel, once prepared
     ensureTunnel(session: SlurmSession): Promise<unknown>;
     withLinkspan<T>(session: SlurmSession, call: (baseUrl: string, headers: Record<string, string>) => Promise<T>): Promise<T>;
@@ -86,9 +86,9 @@ class Link implements Transport {
         const client = this.relayClient();
         try {
             const ref = this.tunnelRef(session);
-            if (!ref) { throw new Error(`Session ${session.id} has no cs-plane session to reach Linkspan through.`); }
+            if (!ref || !session.connectionInfo) { throw new Error(`Session ${session.id} has no cs-plane session to reach Linkspan through.`); }
             await client.connect(await this.management().getTunnel(ref));
-            return await call(`http://127.0.0.1:${await forwardedLocalPort(client, session.connectionInfo?.controlPort ?? 0)}/api/v1`, {});
+            return await call(`http://127.0.0.1:${await forwardedLocalPort(client, session.connectionInfo.controlPort)}/api/v1`, {});
         }
         finally { await client.dispose(); }
     };
@@ -166,7 +166,7 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
 
     // Register before connecting so a re-entrant connect can't orphan the prior client and a failed connect stays disposable.
     await disposeTunnelClient(session.id);
-    const client = t.relayClient(mgmtClient, session);
+    const client = t.relayClient(mgmtClient, ci);
     // Surface Dev Tunnel connection health: a stalled/reconnecting Dev Tunnel is otherwise invisible, and this tells contention from raw Dev Tunnel bandwidth.
     client.connectionStatusChanged?.((e) => {
         logger.info(`Session ${session.id}: Dev Tunnel ${e.previousStatus} → ${e.status}${e.disconnectError ? ` (${e.disconnectError.message})` : ''}`);

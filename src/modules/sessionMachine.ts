@@ -40,7 +40,7 @@ export function deriveStatus(s: Facts, live: LiveFacts, now: number): Status {
     if (DIED.includes(state)) { return 'failed'; }
     if (ENDED.includes(state) || isWallTimeExpired(s, now)) { return 'stopped'; }
     if (s.desired === 'stopped') { return 'stopping'; }
-    const sshUp = (s.connectionInfo?.sshPort ?? 0) > 0;
+    const sshUp = !!s.connectionInfo?.sshPort;
     if (live.unreachable && !sshUp) { return 'unreachable'; }
     if (state !== SlurmJobStatus.RUNNING) { return 'queued'; }
     if (!sshUp) { return 'preparing'; }
