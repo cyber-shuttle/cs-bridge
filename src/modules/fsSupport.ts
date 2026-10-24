@@ -57,15 +57,16 @@ export function deleteFile(file: string): void {
     catch { /* already gone */ }
 }
 
-// Per-file locked read-modify-write of a text file (atomic temp+rename). `transform` gets the current text (undefined
-// if absent) and returns the new text, or null to skip.
-export function lockedUpdateTextFile(file: string, transform: (cur: string | undefined) => string | null, mode?: number): void {
+// Per-file locked read-modify-write of a text file (atomic temp+rename). `transform` gets the current text ('' and
+// exists=false when absent) and returns the new text, or null to skip.
+export function lockedUpdateTextFile(file: string, transform: (cur: string, exists: boolean) => string | null, mode?: number): void {
     lock(file);
     try {
-        let cur: string | undefined;
+        let cur = '';
+        let exists = true;
         try { cur = fs.readFileSync(file, 'utf-8'); }
-        catch { /* missing → undefined */ }
-        const next = transform(cur);
+        catch { exists = false; }
+        const next = transform(cur, exists);
         if (next !== null) {
             fs.writeFileSync(`${file}.tmp`, next, mode !== undefined ? { mode } : undefined);
             fs.renameSync(`${file}.tmp`, file);

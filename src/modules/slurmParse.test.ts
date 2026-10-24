@@ -27,9 +27,9 @@ test('parseSacctStatus returns UNKNOWN for an unrecognized state and 0 elapsed f
     assert.deepEqual(parseSacctStatus('SOMETHING_ELSE|0:0|None|n/a'), { status: SlurmJobStatus.UNKNOWN, elapsedSeconds: 0 });
 });
 
-test('parseSacctStatus throws on empty or malformed output', () => {
-    assert.throws(() => parseSacctStatus(''), /No output from sacct/);
-    assert.throws(() => parseSacctStatus('FAILED|1:0'), /Unexpected output format/);
+test('parseSacctStatus reads no row yet as UNKNOWN, so accounting lag never looks like an unreachable host', () => {
+    assert.deepEqual(parseSacctStatus(''), { status: SlurmJobStatus.UNKNOWN, elapsedSeconds: 0 });
+    assert.deepEqual(parseSacctStatus('FAILED|1:0'), { status: SlurmJobStatus.FAILED, elapsedSeconds: 0 });
 });
 
 test('parsePartitionLine strips the default-partition marker and parses "24+" CPUs', () => {
@@ -62,7 +62,7 @@ test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan in
         partition: 'gpu', resources: { cores: 4, memoryMb: 8192, wallMinutes: 1500, gpuType: 'a100', gpuCount: 2 },
         devtunnel: { id: 'tid', cluster: 'use' }, connectionInfo: { controlPort: 25000, sshPort: 0 },
     });
-    const script = buildSlurmScript(session, devTunnelLaunch(session, 'tok'));
+    const script = buildSlurmScript(session, devTunnelLaunch({ id: 'tid', cluster: 'use' }, 'tok'), 25000);
     assert.match(script, /^#SBATCH --nodes=1$/m);
     assert.match(script, /^#SBATCH --cpus-per-task=4$/m);
     assert.match(script, /^#SBATCH --mem=8192M$/m);
@@ -75,8 +75,8 @@ test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan in
 });
 
 test('buildSlurmScript launches a link session with its URL and no token', () => {
-    const script = buildSlurmScript(scriptSession(), linkLaunch('wss://u', 'secret'));
-    assert.match(script, /^"\$LINKSPAN_BIN" --port 0 --tunnel-enable --tunnel-mode link --tunnel-link-args '--url wss:\/\/u'$/m);
+    const script = buildSlurmScript(scriptSession(), linkLaunch('wss://u', 'secret'), 25000);
+    assert.match(script, /^"\$LINKSPAN_BIN" --port 25000 --tunnel-enable --tunnel-mode link --tunnel-link-args '--url wss:\/\/u'$/m);
     assert.doesNotMatch(script, /TOKEN|secret/);
 });
 
@@ -84,16 +84,16 @@ test('buildSlurmScript launches a link session with its URL and no token', () =>
 function scriptSession(overrides: Partial<SlurmSession> = {}): SlurmSession {
     return { partition: 'cpu', account: 'acct1', resources: { cores: 2, memoryMb: 4096, wallMinutes: 60 }, ...overrides } as SlurmSession;
 }
-const launch = devTunnelLaunch(scriptSession(), 't');
+const launch = devTunnelLaunch({ id: 't', cluster: 'c' }, 't');
 
 test('buildSlurmScript omits the GPU directive when no GPU is selected', () => {
     const session = scriptSession();
-    const script = buildSlurmScript(session, launch);
+    const script = buildSlurmScript(session, launch, 25000);
     assert.doesNotMatch(script, /--gres=/);
 });
 
 test('buildSlurmScript omits --account without a Slurm account, and gpu: types a generic GPU', () => {
-    const script = buildSlurmScript(scriptSession({ account: '', resources: { cores: 2, memoryMb: 4096, wallMinutes: 60, gpuType: 'gpu', gpuCount: 1 } }), launch);
+    const script = buildSlurmScript(scriptSession({ account: '', resources: { cores: 2, memoryMb: 4096, wallMinutes: 60, gpuType: 'gpu', gpuCount: 1 } }), launch, 25000);
     assert.doesNotMatch(script, /--account/);
     assert.match(script, /^#SBATCH --gres=gpu:1$/m);
 });
@@ -148,7 +148,7 @@ test('parseSacctUtil returns an empty object for no output', () => {
 
 test('buildSlurmScript unsets the inherited XDG_RUNTIME_DIR/TMPDIR before launching Linkspan', () => {
     const session = scriptSession();
-    const script = buildSlurmScript(session, launch);
+    const script = buildSlurmScript(session, launch, 25000);
 
     // The compute node has no logind, so the inherited /run/user/<uid> XDG_RUNTIME_DIR is absent there;
     // unset it (and TMPDIR) so the VS Code server falls back to its node-local /tmp default.

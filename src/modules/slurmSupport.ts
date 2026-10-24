@@ -1,5 +1,4 @@
 import { UsageSample, SlurmDiscovery, SlurmJobStatus, SlurmSession } from '../models';
-import { Logger, errMsg } from '../logger';
 import { SshManager } from './sshSupport';
 import { parseAccounts, parsePartitionLine, parseSacctStatus } from './slurmParse';
 
@@ -16,41 +15,24 @@ export async function getSampleViaSrun(session: SlurmSession): Promise<UsageSamp
     return JSON.parse(await SshManager.getInstance().runRemoteCommand(session.alias, command, { batch: true })) as UsageSample;
 }
 
+// Everything the session form needs, or an error the form shows with Retry: a host that answers for accounts but not
+// for partitions or $HOME could only produce a session that fails later.
 export async function getSlurmDiscovery(alias: string): Promise<SlurmDiscovery> {
-    const sshManager = SshManager.getInstance();
-    const log = Logger.getInstance();
-    const info: SlurmDiscovery = { alias, accounts: [], partitions: [] };
+    const run = (command: string) => SshManager.getInstance().runRemoteCommand(alias, command);
     // Only the first command authenticates (later ones reuse the ControlMaster socket), so the auth box surfaces here.
     // Slurm's database lowercases account names; TACC's submit filter wants them as project.map spells them.
-    info.accounts = parseAccounts(await sshManager.runRemoteCommand(alias,
-        'sacctmgr -n show associations where user=$USER format=Account -P'
+    const accounts = parseAccounts(await run('sacctmgr -n show associations where user=$USER format=Account -P'
         + ' | if [ -r /usr/local/etc/project.map ]; then grep -iwf - /usr/local/etc/project.map | cut -d" " -f1; else cat; fi'));
-
-    try {
-        const partitions = await sshManager.runRemoteCommand(alias, 'sinfo -h -o "%P|%c|%m|%G"');
-        /* Example output:
-        interactive-cpu|24|191000+|gpu:v100:2(S:0-1)
-        interactive-cpu1|24|385000+|gpu:rtx_6000:4(S:0-1)
-        interactive-cpu2|64|515000|gpu:a100:2(S:2,5)
-        cpu-small*|24+|191000+|(null)
-        cpu-amd|128|515000+|(null)
-        */
-        info.partitions = partitions
-            .split(/\r?\n/)
-            .map(line => line.trim())
-            .filter(Boolean)
-            .map(parsePartitionLine);
-    }
-    catch (err) {
-        log.warn(`Failed to query partitions: ${errMsg(err)}`); // non-fatal: accounts info may still be useful
-    }
-
-    try {
-        info.homeDir = (await sshManager.runRemoteCommand(alias, 'echo $HOME')).trim();
-    }
-    catch (err) {
-        log.warn(`Failed to query $HOME: ${errMsg(err)}`);
-    }
-
-    return info;
+    /* Example output:
+    interactive-cpu|24|191000+|gpu:v100:2(S:0-1)
+    interactive-cpu1|24|385000+|gpu:rtx_6000:4(S:0-1)
+    interactive-cpu2|64|515000|gpu:a100:2(S:2,5)
+    cpu-small*|24+|191000+|(null)
+    cpu-amd|128|515000+|(null)
+    */
+    const partitions = (await run('sinfo -h -o "%P|%c|%m|%G"')).split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(parsePartitionLine);
+    if (!partitions.length) { throw new Error(`sinfo lists no partitions on ${alias}`); }
+    const homeDir = (await run('echo $HOME')).trim();
+    if (!homeDir) { throw new Error(`$HOME is unset on ${alias}`); }
+    return { alias, accounts, partitions, homeDir };
 }

@@ -96,9 +96,9 @@ run on either, and nothing else branches on `transport`.
 An EC2 session is a session record with an `ec2` field (region, instance type, image, login user, public IP); its `alias`
 is `aws-<region>` and `jobId` the instance id, so the store, cross-window sync, window heartbeats, `csHostAlias`, the
 remote-window detection and the card's actions apply unchanged. The lifecycle is the Slurm one with the backend swapped:
-`SessionMonitor` polls an EC2 session through a `Backend` (`tick`, `end`) and `SessionProvider` starts, stops, connects
-and removes through a `Lifecycle`, both implemented by `ec2Session.ts` over `ec2.ts`, the API calls with no `vscode`
-import. `aws.ts` holds the sign-in: an access key in VS Code's secret storage, restored on
+Every step a session's remote side needs goes through one `Backend` interface (`sessionSupport.ts`): `start`, `stop`,
+`connect`, `remove` for the provider and `tick`, `end` for the monitor. `SlurmBackend` holds the Slurm job's version
+and `ec2Session.ts` the instance's, over `ec2.ts`, the API calls with no `vscode` import. `aws.ts` holds the sign-in: an access key in VS Code's secret storage, restored on
 activation, whose first call lists the account's regions. Sign-in also adopts every tagged instance without a record.
 
 | Step | EC2 behaviour |
@@ -152,8 +152,8 @@ and this window's live ones (`extensionStore.live`: a launch or connect in fligh
 to reach the backend), and every reader goes through `statusOf`. Writers record facts, never a status, so a stale reading
 cannot revive an ended job and a reload cannot forget a stop. The predicates that gate behaviour live beside it:
 `isTerminal` (stopped/failed), `isDeletable` (terminal plus `not_started`), `isStoppable`, `isReachable`
-(`ready_to_connect`/`connecting`/`connected`). `SessionMonitor` polls and tears down; `SessionProvider` owns user
-actions and every dialog.
+(`ready_to_connect`/`connecting`/`connected`). `SessionMonitor` schedules each live session's ticks and its teardown
+through the session's `Backend`; `SessionProvider` owns user actions and every dialog.
 
 ## SSH transport
 

@@ -78,7 +78,7 @@ export class JsonDir<T> {
 
     private save(id: string, op: () => Promise<void>): Promise<void> {
         this.unsaved.set(id, (this.unsaved.get(id) ?? 0) + 1);
-        return this.enqueue(() => { this.unsaved.set(id, this.unsaved.get(id)! - 1); return op(); });
+        return this.enqueue(() => { this.unsaved.set(id, (this.unsaved.get(id) ?? 1) - 1); return op(); });
     }
 
     private enqueue(op: () => Promise<void>): Promise<void> {
@@ -99,7 +99,9 @@ export async function migrate(files: Files, steps: Steps): Promise<void> {
         throw new Error(`CS Bridge storage is at schema ${version}, newer than this CS Bridge reads (${SCHEMA_VERSION}); update CS Bridge.`);
     }
     for (; version < SCHEMA_VERSION; version++) {
-        await steps[version]?.();
+        const step = steps[version];
+        if (!step) { throw new Error(`CS Bridge has no migration from schema ${version}.`); }
+        await step();
         await files.write('schema.json', JSON.stringify({ version: version + 1 }));
     }
 }

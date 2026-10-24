@@ -29,7 +29,7 @@ export function usageGraphs(history: UsageSample[], gpuCount: number, allocated?
     ];
 }
 
-export const graphTitle = (g: Graph) => `${g.label} — ${g.lines.map(l => l.fmt(l.values.at(-1) ?? 0)).join(', ')}`;
+export const graphTitle = (g: Graph) => `${g.label} — ${g.lines.flatMap((l) => { const last = l.values.at(-1); return last === undefined ? [] : [l.fmt(last)]; }).join(', ')}`;
 export const drawable = (g: Graph) => (g.lines[0]?.values.length ?? 0) >= 2;
 
 export function UsageGraphs({ history, gpuCount }: { history: UsageSample[]; gpuCount: number }) {

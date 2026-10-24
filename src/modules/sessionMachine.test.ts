@@ -80,6 +80,6 @@ test('deriveStatus: the races the stored status had to guard are impossible by c
 });
 
 test('observedEc2 maps instance states onto the Slurm vocabulary', () => {
-    assert.deepEqual(['pending', 'running', 'stopping', 'stopped', 'terminated', 'odd'].map(observedEc2),
-        [SlurmJobStatus.RUNNING, SlurmJobStatus.RUNNING, SlurmJobStatus.RUNNING, SlurmJobStatus.CANCELLED, SlurmJobStatus.FAILED, SlurmJobStatus.UNKNOWN]);
+    assert.deepEqual((['pending', 'running', 'stopping', 'stopped', 'terminated'] as const).map(observedEc2),
+        [SlurmJobStatus.RUNNING, SlurmJobStatus.RUNNING, SlurmJobStatus.RUNNING, SlurmJobStatus.CANCELLED, SlurmJobStatus.FAILED]);
 });

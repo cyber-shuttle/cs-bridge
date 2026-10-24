@@ -46,8 +46,12 @@ export class AwsClient implements vscode.Disposable {
 
     private async connect(credentials: Credentials): Promise<boolean> {
         const clients = new Map<string, EC2Client>();
-        const client = (region: string) => new EC2Client({ region, credentials, requestHandler: { connectionTimeout: 5_000, requestTimeout: 15_000 } });
-        const ec2 = new Ec2(region => clients.get(region) ?? clients.set(region, client(region)).get(region)!, sshKeyPath);
+        const client = (region: string) => {
+            let c = clients.get(region);
+            if (!c) { clients.set(region, c = new EC2Client({ region, credentials, requestHandler: { connectionTimeout: 5_000, requestTimeout: 15_000 } })); }
+            return c;
+        };
+        const ec2 = new Ec2(client, sshKeyPath);
         try { this.session = { ec2, regions: await ec2.regions(), accessKeyId: credentials.accessKeyId }; }
         catch (err) {
             void vscode.window.showErrorMessage(`AWS sign-in failed: ${errMsg(err)}`);

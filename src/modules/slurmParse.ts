@@ -2,14 +2,15 @@ import { GresInfo, RunStats, SlurmJobStatus, SlurmPartitionInfo, SlurmSession } 
 
 // Pure Slurm text helpers (no SSH/vscode), so they unit-test in isolation. See slurmParse.test.ts.
 
-// A Slurm account is a bare token; a blank or a sentinel like "(no Slurm account)" yields '' (no --account).
-export const slurmAccount = (raw: string | undefined): string => (raw ?? '').trim().match(/^[\w.-]+$/)?.[0] ?? '';
+// A Slurm account is a bare token; a blank or a sentinel like "(no Slurm account)" yields NO_ACCOUNT (no --account).
+export const NO_ACCOUNT = '';
+export const slurmAccount = (raw = NO_ACCOUNT): string => raw.trim().match(/^[\w.-]+$/)?.[0] ?? NO_ACCOUNT;
 
 // Distinct accounts from `sacctmgr show associations ... format=Account -P`; it prints one
 // row per (account, partition) association, so per-partition accounts repeat.
 export function parseAccounts(output: string): string[] {
     const names = output.trim().split(/\r?\n/)
-        .map(l => (l.split('|')[0] ?? '').trim())
+        .map(l => l.replace(/\|.*$/, '').trim())
         .filter(Boolean);
     return [...new Set(names)];
 }
@@ -19,8 +20,8 @@ export const envAssignments = (env: Record<string, string>) => Object.entries(en
 
 export interface LinkspanLaunch { tunnelArgs: string; sbatchEnv: Record<string, string> }
 
-export const devTunnelLaunch = (session: SlurmSession, hostToken: string): LinkspanLaunch => ({
-    tunnelArgs: `--tunnel-mode devtunnel --tunnel-devtunnel-args '--id ${session.devtunnel?.id ?? ''} --cluster ${session.devtunnel?.cluster ?? ''}'`,
+export const devTunnelLaunch = (devtunnel: { id: string; cluster: string }, hostToken: string): LinkspanLaunch => ({
+    tunnelArgs: `--tunnel-mode devtunnel --tunnel-devtunnel-args '--id ${devtunnel.id} --cluster ${devtunnel.cluster}'`,
     sbatchEnv: { LINKSPAN_TUNNEL_HOST_TOKEN: hostToken },
 });
 
@@ -39,7 +40,7 @@ function minutesToWalltime(minutes: number): string {
 }
 
 // The #SBATCH lines match cs-plane's buildScript for the same session.
-export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch): string {
+export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch, controlPort: number): string {
     const { cores, memoryMb, wallMinutes, gpuType, gpuCount } = session.resources;
 
     const sbatchLines = [
@@ -70,28 +71,22 @@ export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch):
         `# --- Run Linkspan ---`,
         `LINKSPAN_BIN="$HOME/.cybershuttle/bin/linkspan"`,
         // Bind the control port pinned at launch (no log/port discovery).
-        `"$LINKSPAN_BIN" --port ${session.connectionInfo?.controlPort ?? 0} --tunnel-enable ${launch.tunnelArgs}`,
+        `"$LINKSPAN_BIN" --port ${controlPort} --tunnel-enable ${launch.tunnelArgs}`,
     ];
 
     return scriptLines.join('\n');
 }
 
-// One `sacct --parsable2` row: State|ExitCode|Reason|ElapsedRaw
+// One `sacct --parsable2` row: State|ExitCode|Reason|ElapsedRaw. No row yet (accounting lags a fresh submit) is an
+// UNKNOWN reading the monitor holds, not an unreachable host.
 export function parseSacctStatus(output: string): { status: SlurmJobStatus; elapsedSeconds: number } {
-    if (!output) {
-        throw new Error('Failed to get job status. No output from sacct command.');
-    }
-    const fields = output.split('|');
-    if (fields.length < 4) {
-        throw new Error('Failed to get job status. Unexpected output format from sacct command. Output: ' + output);
-    }
     /*
     FAILED|1:0|None|120
     CANCELLED by 1001|0:0|None|0
     RUNNING|0:0|None|345
     TIMEOUT|0:0|None|3600
     */
-    const [state = '', , , elapsedRaw = ''] = fields;
+    const [state = '', , , elapsedRaw = ''] = output.split('|');
     // ElapsedRaw is Slurm's authoritative run-time in whole seconds (no timezone/clock guessing).
     const elapsedSeconds = /^\d+$/.test(elapsedRaw.trim()) ? parseInt(elapsedRaw.trim(), 10) : 0;
 
@@ -134,14 +129,14 @@ const SCHEDULER_STATES: Readonly<Record<string, SlurmJobStatus>> = {
 // sacct decorates a state with the reason ("CANCELLED by 1001") and marks a
 // truncated one with a trailing "+", so only the first token is the state.
 export function classifySchedulerState(raw: string): SlurmJobStatus {
-    const token = raw.trim().split(/\s+/)[0] ?? '';
+    const token = raw.trim().replace(/\s.*$/s, '');
     return SCHEDULER_STATES[token.replace(/\+$/, '').toUpperCase()] ?? SlurmJobStatus.UNKNOWN;
 }
 
 // With `--units=K`, sacct emits every memory field (MaxRSS, ReqMem) in KiB, so a value is just its leading number —
 // parseFloat drops the trailing 'K' and any legacy per-CPU/node 'c'/'n'. Blank/unparseable → undefined.
 function parseKib(s: string | undefined): number | undefined {
-    const n = parseFloat((s ?? '').trim());
+    const n = s === undefined ? NaN : parseFloat(s.trim());
     return Number.isFinite(n) ? n : undefined;
 }
 

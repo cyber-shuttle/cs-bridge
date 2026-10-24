@@ -28,7 +28,7 @@ async function post(baseUrl: string, headers: Record<string, string>, path: stri
 }
 
 export async function getHealth(baseUrl: string, headers: Record<string, string>): Promise<void> {
-    await get(baseUrl, headers, '/health', j => (j as { status?: unknown })?.status === 'ok');
+    await get(baseUrl, headers, '/health', j => typeof j === 'object' && j !== null && 'status' in j && j.status === 'ok');
 }
 
 // GET /usage — Linkspan's live sample; a valid body also confirms Linkspan is up.

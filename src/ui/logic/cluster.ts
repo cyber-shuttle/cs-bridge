@@ -7,7 +7,7 @@ interface GpuOptions {
     types: string[];
 }
 
-const hasGres = (p: SlurmPartitionInfo): boolean => !!p.gres && p.gres.length > 0;
+const hasGres = (p: SlurmPartitionInfo): boolean => p.gres.length > 0;
 
 export function partitionsForTab(info: SlurmDiscovery, tab: ResourceTab): SlurmPartitionInfo[] {
     return info.partitions.filter(p => (tab === 'gpu' ? hasGres(p) : !hasGres(p)));

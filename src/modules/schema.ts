@@ -153,7 +153,9 @@ export function sessionV3({ status, ...r }: V2Session): SlurmSession {
 
 async function v2ToV3(files: Files): Promise<void> {
     for (const name of (await files.list('sessions')).filter(n => n.endsWith('.json'))) {
-        const record = JSON.parse((await files.read(`sessions/${name}`))!) as V2Session & Partial<SlurmSession>;
+        const text = await files.read(`sessions/${name}`);
+        if (!text) { continue; }
+        const record = JSON.parse(text) as V2Session & Partial<SlurmSession>;
         if (record.desired) { continue; } // a rerun after a crash
         await files.write(`sessions/${name}`, JSON.stringify(sessionV3(record), null, 2));
     }

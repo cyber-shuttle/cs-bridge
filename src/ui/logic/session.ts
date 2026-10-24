@@ -107,7 +107,7 @@ const PROVIDER: Record<'HPC' | 'AWS', Provider> = {
     AWS: {
         theme: 'warning',
         chips: s => [s.ec2!.type, ec2ImageLabel(s.ec2!)],
-        details: s => [s.ec2!.region, s.jobId, s.ec2!.ip].filter(Boolean),
+        details: s => [s.ec2!.region, s.jobId, s.ec2!.ip].filter((d): d is string => !!d),
         booting: 'Booting…',
         running: () => 'Running',
     },

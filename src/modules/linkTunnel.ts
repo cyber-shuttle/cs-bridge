@@ -5,15 +5,14 @@
 import * as net from 'node:net';
 import { SlurmSession } from '../models';
 import { Plane, PlaneError, PLANE_URL } from '../plane';
-import { Tunnel } from '@microsoft/dev-tunnels-contracts';
-import type { TunnelRelayClient } from './transport';
+import type { TunnelRef, TunnelRelayClient } from './transport';
 
 export class LinkManagementClient {
     constructor(private readonly plane: Plane) { }
 
     // cs-plane answers /access only for a READY session, so this also gates on Linkspan holding its link.
-    async getTunnel({ tunnelId }: Tunnel) {
-        return { tunnelId, accessTokens: { connect: (await this.plane.sessionAccess(tunnelId!)).jupyter.token } };
+    async getTunnel({ tunnelId }: TunnelRef): Promise<TunnelRef> {
+        return { tunnelId, accessTokens: { connect: (await this.plane.sessionAccess(tunnelId)).jupyter.token } };
     }
 
     // Attach refuses a live session and a lost release would leave one; a 404 on stop is a session deleted elsewhere.
@@ -28,9 +27,9 @@ export class LinkManagementClient {
     }
 
     // cs-plane deletes only a stopped session.
-    async deleteTunnel({ tunnelId }: Tunnel) {
-        await this.plane.stopSession(tunnelId!);
-        await this.plane.deleteSession(tunnelId!);
+    async deleteTunnel({ tunnelId }: TunnelRef) {
+        await this.plane.stopSession(tunnelId);
+        await this.plane.deleteSession(tunnelId);
     }
 }
 
@@ -81,9 +80,11 @@ export class ForwardRelayClient {
 }
 
 export class LinkRelayClient extends ForwardRelayClient {
-    async connect(tunnel: Tunnel) {
+    async connect(tunnel: TunnelRef) {
+        const token = tunnel.accessTokens?.connect;
+        if (!token) { throw new Error('cs-plane returned no connect token for the session.'); }
         this.forwardUrl = `${PLANE_URL.replace(/^http/, 'ws')}/sessions/${tunnel.tunnelId}/forward/`;
-        this.protocols = ['cybershuttle.v1', `capability.${tunnel.accessTokens?.connect ?? ''}`];
+        this.protocols = ['cybershuttle.v1', `capability.${token}`];
         this.connectionStatus = 'connected';
     }
 }

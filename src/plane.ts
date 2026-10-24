@@ -38,9 +38,14 @@ export class Plane {
 
     signOut() { return this.save(); }
     async signedIn() { return !!await this.load(); }
-    async identity() {
+    // The signed-in user's email from the id token, or null when signed out.
+    async identity(): Promise<string | null> {
         const credential = await this.load();
-        return credential && JSON.parse(Buffer.from(credential.idToken.split('.')[1] ?? '', 'base64url').toString()).email as string | undefined;
+        if (!credential) { return null; }
+        const payload = credential.idToken.split('.')[1];
+        if (!payload) { throw new Error('The CyberShuttle id token is malformed.'); }
+        const { email = '' } = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { email?: string };
+        return email;
     }
 
     createSession(session: SlurmSession) { return this.api<{ id: string }>('sessions', 'POST', toSpec(session)); }

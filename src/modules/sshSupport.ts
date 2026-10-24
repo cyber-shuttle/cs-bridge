@@ -87,14 +87,10 @@ export class SshManager {
         return SshManager.instance;
     }
 
-    private readHostsFile(filePath: string, source: 'user' | 'system'): SshHost[] {
-        try {
-            if (!fs.existsSync(filePath)) { return []; }
-            const text = fs.readFileSync(filePath, 'utf-8');
-            return parseHostsFromConfigText(text, source);
-        }
+    private readHostsFile(filePath: string, source: SshHost['source']): SshHost[] {
+        try { return parseHostsFromConfigText(fs.readFileSync(filePath, 'utf-8'), source); }
         catch (err) {
-            logger.error(`Error reading SSH config ${filePath}:`, err);
+            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') { logger.error(`Error reading SSH config ${filePath}:`, err); }
             return [];
         }
     }
@@ -272,8 +268,8 @@ export class SshManager {
         panel.webview.html = renderAuthHtml(prompt, nonce);
         return new Promise<string | undefined>((resolve) => {
             const finish = (v?: string) => { resolve(v); panel.dispose(); }; // resolve latches, dispose is idempotent
-            panel.webview.onDidReceiveMessage((m: { type?: string; value?: string }) =>
-                finish(m?.type === 'submit' ? (m.value ?? '') : undefined));
+            panel.webview.onDidReceiveMessage((m: { type: 'submit'; value: string } | { type: 'cancel' }) =>
+                finish(m.type === 'submit' ? m.value : undefined));
             panel.onDidDispose(() => finish(undefined));
         });
     }
@@ -314,10 +310,7 @@ export class SshManager {
             if (!fs.existsSync(sshDir)) {
                 fs.mkdirSync(sshDir, { mode: 0o700 });
             }
-            lockedUpdateTextFile(sshConfigPath, cur =>
-                cur === undefined ? `${includeLine}\n`
-                    : includeIsEffective(cur, includeLine) ? null
-                        : `${includeLine}\n${cur}`, 0o600);
+            lockedUpdateTextFile(sshConfigPath, cur => (includeIsEffective(cur, includeLine) ? null : `${includeLine}\n${cur}`), 0o600);
         }
         catch (err) {
             logger.error(`[ssh] Failed to add Include to ~/.ssh/config: ${errMsg(err)}`);
@@ -355,7 +348,6 @@ export function sessionPublicKey(sessionId: string): string {
     const keyPath = sessionKeyPath(sessionId);
     const keygen = (...args: string[]) => execFileSync('ssh-keygen', args, { encoding: 'utf-8', stdio: 'pipe' }).trim();
     if (!hasSessionKey(sessionId)) {
-        fs.mkdirSync(CS_SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
         keygen('-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', keyPath);
         fs.unlinkSync(`${keyPath}.pub`);
     }

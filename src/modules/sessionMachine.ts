@@ -1,3 +1,4 @@
+import type { InstanceStateName } from '@aws-sdk/client-ec2';
 import { SessionStatus as Status, SlurmJobStatus, SlurmSession } from '../models';
 
 export const wallMs = (session: Pick<SlurmSession, 'resources'>): number => session.resources.wallMinutes * 60_000;
@@ -39,15 +40,15 @@ export function deriveStatus(s: Facts, live: LiveFacts, now: number): Status {
     if (DIED.includes(state)) { return 'failed'; }
     if (ENDED.includes(state) || isWallTimeExpired(s, now)) { return 'stopped'; }
     if (s.desired === 'stopped') { return 'stopping'; }
-    const sshUp = (s.connectionInfo?.sshPort ?? 0) > 0;
+    const sshUp = !!s.connectionInfo?.sshPort;
     if (live.unreachable && !sshUp) { return 'unreachable'; }
     if (state !== SlurmJobStatus.RUNNING) { return 'queued'; }
     if (!sshUp) { return 'preparing'; }
     return live.connected ? 'connected' : live.connecting ? 'connecting' : 'ready_to_connect';
 }
 
-const EC2_OBSERVED: Readonly<Record<string, SlurmJobStatus>> = {
+const EC2_OBSERVED: Readonly<Record<InstanceStateName, SlurmJobStatus>> = {
     'pending': SlurmJobStatus.RUNNING, 'running': SlurmJobStatus.RUNNING, 'stopping': SlurmJobStatus.RUNNING,
     'stopped': SlurmJobStatus.CANCELLED, 'shutting-down': SlurmJobStatus.FAILED, 'terminated': SlurmJobStatus.FAILED,
 };
-export const observedEc2 = (state: string): SlurmJobStatus => EC2_OBSERVED[state] ?? SlurmJobStatus.UNKNOWN;
+export const observedEc2 = (state: InstanceStateName): SlurmJobStatus => EC2_OBSERVED[state];
