@@ -1,11 +1,12 @@
-import { before, test } from 'node:test';
+import * as vscode from 'vscode';
+import { afterEach, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { panels } from '../scripts/vscodeMock.js';
 import { memoryFiles } from './modules/memoryFiles';
 import type { JsonDir } from './modules/store';
-import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, patch, observe, onSessionsChange } from './extensionStore';
+import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, deleteSession, patch, observe, onSessionsChange } from './extensionStore';
 import { initRunStore, appendRun } from './modules/runStore';
-import { newSession, isEc2, Run, SlurmJobStatus, SummaryState, SessionsMessage, SessionsState } from './models';
+import { newSession, isEc2, Run, SlurmJobStatus, SessionsMessage, SessionsState } from './models';
 import { Backend, Backends, SessionMonitor, prepareLaunch } from './modules/sessionSupport';
 import { Ec2Backend } from './modules/ec2Session';
 import { SessionProvider } from './sessionProvider';
@@ -19,10 +20,12 @@ const files = memoryFiles();
 const fail = (err: unknown) => assert.fail(String(err));
 let windows: JsonDir<{ at: number }>;
 before(async () => { [, windows] = await initSessionStore(files, fail); await initRunStore(files, fail); });
+afterEach(() => { for (const s of getAllSessions()) { deleteSession(s.id); } }); // a provider's sweep sees only its own test's records
+const must = <T>(value: T | undefined): T => { assert.ok(value !== undefined); return value; };
 const running = () => {
     const s = newSession({ alias: 'delta', account: '', partition: 'cpu', rootFolder: '/home/u', resources: { cores: 1, memoryMb: 1024, wallMinutes: 30 } });
     addSession({ ...s, jobId: '7', observed: { state: SlurmJobStatus.RUNNING, at: Date.now() }, startedAt: Date.now() - 1000 });
-    return getSession(s.id)!;
+    return must(getSession(s.id));
 };
 
 test('a Stop asked by another window is claimed only once that window stops beating', async () => {
@@ -69,10 +72,10 @@ test('a tick that outlives its loop writes nothing, and a teardown is awaited by
 
 test('the summary shows a run as recorded, pinned to the job it opened on', async () => {
     const s = running();
-    openSummaryPanel({ fsPath: '/ext' } as never, s);
-    const panel = panels.at(-1)!;
+    openSummaryPanel(vscode.Uri.parse('/ext'), s);
+    const panel = must(panels.at(-1));
     panel.receive({ command: 'ready' });
-    const last = () => panel.webview.posted.at(-1)?.state as SummaryState;
+    const last = () => must(panel.webview.posted.at(-1)).state;
     let state = last();
     assert.equal(state.pending, true, 'no run recorded yet');
     await patch(s, { jobId: '8' }); // a restart moves the session on; the panel stays with job 7
@@ -104,7 +107,7 @@ test('an EC2 instance is adopted once, then started, stopped and removed through
     await backend.adopt();
     const adopted = getAllSessions().filter(s => s.jobId === 'i-9');
     assert.equal(adopted.length, 1, 'adopted once');
-    const s = adopted[0]!;
+    const s = must(adopted[0]);
     assert.ok(isEc2(s));
     assert.equal(statusOf(s), 'stopped');
 
@@ -174,7 +177,7 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
         signedIn: async () => true, prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }), release: async (session) => { released.push(session.id); },
     };
     const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
-    const provider = new SessionProvider({ fsPath: '/ext' } as never, { transportFor: () => transport, remove: async () => { } }, aws);
+    const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { } }, aws);
     const posted: { command: string; state: SessionsState }[] = [];
     let receive: (m: SessionsMessage) => void = () => { };
     provider.resolveWebviewView({
@@ -215,7 +218,7 @@ test('a second Start during a preview keeps the claim and gives the first attach
         signedIn: async () => true, prepare: async () => { log.push('attach'); return { tunnelArgs: '', sbatchEnv: {} }; }, release: async () => { log.push('release'); },
     };
     const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
-    const provider = new SessionProvider({ fsPath: '/ext' } as never, { transportFor: () => transport, remove: async () => { } }, aws);
+    const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { } }, aws);
     let receive: (m: SessionsMessage) => void = () => { };
     provider.resolveWebviewView({
         webview: { options: {}, html: '', cspSource: 'x', asWebviewUri: (u: unknown) => u, postMessage: async () => true, onDidReceiveMessage: (l: (m: SessionsMessage) => void) => { receive = l; return { dispose() { } }; } },

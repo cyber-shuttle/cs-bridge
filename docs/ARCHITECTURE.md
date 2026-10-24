@@ -52,7 +52,7 @@ Local VS Code                              Remote HPC cluster
 7. **Remote sshd.** `ensureRemoteSession` asks Linkspan for an SSH server that accepts the session's public key,
    named by a `ref` derived from that key, so Linkspan answers a repeat with the server already running. The session
    reaches `ready_to_connect`.
-8. **Connect.** `connectTransport` composes the step: `connectSessionToTunnel` forwards the control port through an
+8. **Connect.** `SlurmBackend.connect` composes the step: `connectSessionToTunnel` forwards the control port through an
    in-process `TunnelRelayTunnelClient` and binds `127.0.0.1:N`, whose every connection rides Linkspan's
    `/api/v1/forward/{sshPort}`, and records that port on the session; `syncSshConfig` renders the extension's
    `ssh_config` and the `remote.SSH.serverInstallPath` map from the records on every change, and only once they are
@@ -105,7 +105,7 @@ activation, whose first call lists the account's regions. Sign-in also adopts ev
 |---|---|
 | Create | the menu's **Create Cloud VM** pages pick region, type and image; the record lands `not_started`, with no instance yet |
 | Start | `RunInstances` with `resolve:ssm:` for the image's latest AMI, or `StartInstances` for a stopped one; the first launch in a region creates the default VPC if the account lacks one, one AWS-generated key pair per machine saved beside the session SSH keys, and one security group opening port 22 |
-| Poll | `DescribeInstances` every 5 s through `computeEc2Transition`; `preparing` holds until port 22 accepts a connection, which sets `connectionInfo.sshPort` and reaches `ready_to_connect` |
+| Poll | `DescribeInstances` every 5 s through `Ec2Backend.tick`; `preparing` holds until port 22 accepts a connection, which sets `connectionInfo.sshPort` and reaches `ready_to_connect` |
 | Connect | writes the per-session SSH host (public IP, port 22, the image's user, the region's key) and opens the window in the user's home |
 | Stop | waits out a pending boot, `StopInstances`, then holds the task until the instance reads `stopped`; a reload resumes it like a Slurm stop |
 | Delete | `TerminateInstances`; an instance terminated outside CS Bridge fails its session |
@@ -207,13 +207,15 @@ current shape.
 
 ## Build pipeline
 
-`esbuild.js` runs two esbuild contexts plus a codicon copy. The extension bundles `src/extension.ts` to
+`esbuild.js` runs three esbuild contexts plus a codicon copy. The extension bundles `src/extension.ts` to
 `out/extension.js` (CJS, `platform: node`, `target: node22`, `vscode` and `node-rsa` external). The webviews bundle
-`src/ui/webviews/{sessions,hosts,stats,summary}.tsx` to `out/*.js` (IIFE, `platform: browser`, Preact JSX). Both
+`src/ui/webviews/{sessions,hosts,stats,summary}.tsx` to `out/*.js` (IIFE, `platform: browser`, Preact JSX); the host
+smoke suite bundles `src/host/index.ts` to `out/hostTests.js` (CJS, `vscode` and `mocha` external). All three
 share `bundle: true`, sourcemaps off and minification on under `--production`, and the `@` → `src` alias. esbuild
 never type-checks: `tsc` does, once per tsconfig, since the root config excludes `src/ui`, which has its own with
-DOM libs and Preact JSX. The `.vsix` ships `out/`, `resources/`, `scripts/`, `package.json` and the root
-documents; `src/`, `docs/`, `.github/` and `node_modules/` are excluded (see `.vscodeignore`).
+DOM libs and Preact JSX. The `.vsix` ships `out/` without the host suite, `resources/`, the askpass
+`scripts/`, `package.json` and the root documents; `src/`, `docs/`, `.github/`, `node_modules/` and the test files are
+excluded (see `.vscodeignore`).
 
 ## External dependencies
 

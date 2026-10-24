@@ -27,10 +27,6 @@ test('JsonDir skips its own writes and merges another window\'s in place', async
     assert.deepEqual(a, { n: 2, m: 7 }); // Object.assign here; extensionStore's merge drops cleared fields
     assert.equal(changes, 2);
 
-    await files.write('recs/a.json', '{"n": 3'); // read mid-write
-    await dir.reload('a');
-    assert.equal(a.n, 2);
-
     await files.remove('recs/a.json');
     await dir.reload('a');
     assert.equal(dir.get('a'), undefined);
@@ -51,11 +47,6 @@ test('JsonDir.patch lands its fields on another window\'s newer record and tells
     assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 7, k: 9 });
     assert.deepEqual(dir.get('a'), { n: 2, m: 7, k: 9 });
     assert.equal(changes, 3);
-
-    await files.write('recs/a.json', '{"n": 3'); // another window mid-write
-    dir.patch('a', { m: 8 });
-    await dir.reload('a');
-    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 8, k: 9 });
 
     await files.write('recs/a.json', JSON.stringify({ n: 2, m: 99, k: 9 })); // another window's newer m
     await dir.patch('a', { k: 10 });

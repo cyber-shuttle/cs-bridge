@@ -53,6 +53,7 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('csbridge.refreshHosts', () => sshHostProvider.refreshSshHosts()),
         vscode.commands.registerCommand('csbridge.refreshStats', () => statsProvider.refresh()),
         vscode.commands.registerCommand('csbridge.clearRunHistory', () => statsProvider.clearHistory()),
+        logger, // last: the providers log as they dispose
     );
 
     void sessionProvider.reattachLiveSessions();
@@ -86,6 +87,5 @@ function remoteSessionId(folder: vscode.Uri): string | undefined {
 export function deactivate() {
     const detached = detachWindow(); // awaited by VS Code, so a closed window stops counting as open at once
     SshManager.disposeInstance();
-    Logger.getInstance().dispose();
     return detached;
 }

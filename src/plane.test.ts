@@ -10,8 +10,8 @@ async function plane(t: TestContext, answer: (path: string) => { status?: number
     const secrets = new Map<string, string>(stored ? [[CREDENTIAL_KEY, JSON.stringify(stored)]] : []);
     const calls: { path: string; method: string; headers: IncomingHttpHeaders }[] = [];
     const server = createServer((req, res) => {
-        const path = req.url!.slice('/api/v1/'.length);
-        calls.push({ path, method: req.method!, headers: req.headers });
+        const path = String(req.url).slice('/api/v1/'.length);
+        calls.push({ path, method: String(req.method), headers: req.headers });
         const { status = 200, body } = answer(path);
         res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(body));
     }).listen(0, '127.0.0.1');

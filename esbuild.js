@@ -33,7 +33,7 @@ const problemMatcher = {
 async function main() {
 	copyCodicons();
 
-	// Options shared by both bundles; per-context keys override below.
+	// Options shared by every bundle; per-context keys override below.
 	const shared = {
 		bundle: true,
 		sourcemap: !production,
@@ -63,7 +63,7 @@ async function main() {
 		external: ['vscode', 'mocha'],
 	});
 
-	// One bundle per sidebar view; each gets its own root and is loaded by data-view-less HTML keyed on the view name.
+	// One bundle per webview; renderHtml loads out/<view>.js.
 	const webviewCtx = await esbuild.context({
 		...shared,
 		entryPoints: [

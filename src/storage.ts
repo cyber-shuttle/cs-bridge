@@ -13,7 +13,8 @@ export function storageFiles(root: vscode.Uri): Files {
     };
     return {
         read: name => Promise.resolve(fs.readFile(uri(name))).then(b => new TextDecoder().decode(b), missing(undefined)),
-        write: (name, text) => Promise.resolve(fs.writeFile(uri(name), new TextEncoder().encode(text))), // creates the folder
+        // Written whole: a rename lands the file in one step, so no window reads a truncated record.
+        write: async (name, text) => { await fs.writeFile(uri(`${name}.tmp`), new TextEncoder().encode(text)); await fs.rename(uri(`${name}.tmp`), uri(name), { overwrite: true }); },
         // Synchronous: deactivate removes the window heartbeat, and an async delete may not land before the host exits.
         remove: name => Promise.resolve(nodeFs.rmSync(uri(name).fsPath, { force: true })),
         list: dir => Promise.resolve(fs.readDirectory(uri(dir))).then(es => es.map(([name]) => name), missing([])),

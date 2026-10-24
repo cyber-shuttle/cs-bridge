@@ -36,7 +36,8 @@ export async function ensureDevTunnel(session: SlurmSession, ci: ConnectionInfo)
     const devtunnel = { id: tunnel.tunnelId, cluster: tunnel.clusterId };
     if (session.devtunnel?.id !== devtunnel.id || session.devtunnel.cluster !== devtunnel.cluster) { patch(session, { devtunnel }); } // every tick refreshes; write on change
     const connectToken = tunnel.accessTokens?.[TunnelAccessScopes.Connect];
-    if (connectToken) { connectTokens.set(session.id, connectToken); }
+    if (!connectToken) { throw new Error('Dev Tunnels returned no connect token.'); }
+    connectTokens.set(session.id, connectToken);
 
     // Nothing reaches the job on a port the Dev Tunnel does not carry, and a failure here is the session's failure.
     if (ci.controlPort && !tunnel.ports?.some(p => p.portNumber === ci.controlPort)) {
@@ -72,8 +73,9 @@ export const devTunnels = {
     tunnelRef: devTunnelRef,
     ensureTunnel: async (session, ci) => { await ensureDevTunnel(session, ci); },
     withLinkspan: ({ id, devtunnel }, ci, call) => {
-        if (!devtunnel) { throw new Error('The session has no Dev Tunnel to reach Linkspan through.'); }
-        return call(`https://${devtunnel.id}-${ci.controlPort}.${devtunnel.cluster}.devtunnels.ms/api/v1`, { 'X-Tunnel-Authorization': `tunnel ${connectTokens.get(id)}` });
+        const token = connectTokens.get(id);
+        if (!devtunnel || !token) { throw new Error('The session has no Dev Tunnel to reach Linkspan through.'); }
+        return call(`https://${devtunnel.id}-${ci.controlPort}.${devtunnel.cluster}.devtunnels.ms/api/v1`, { 'X-Tunnel-Authorization': `tunnel ${token}` });
     },
     deleteTunnel: deleteDevTunnel,
 } satisfies Tunnels;

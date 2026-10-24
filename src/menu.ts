@@ -62,7 +62,8 @@ export class CsBridgeMenu {
             (async () => item?.run?.())().catch(fail).finally(() => this.refreshAccounts());
         });
         pick.onDidHide(() => { stack.length = 0; nested(false); pick.dispose(); });
-        go(start);
+        try { go(start); }
+        catch (err) { pick.dispose(); fail(err); return; }
         pick.show();
         void this.refreshAccounts().then(() => { if (stack.at(-1) === this.root) { render(this.root); } });
     }
