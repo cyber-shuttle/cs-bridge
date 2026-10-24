@@ -132,7 +132,7 @@ const activeTunnelClients = new Map<string, TunnelRelayClient>();
 
 // Step 1: the session's sshd. Linkspan answers a repeat with the running one, so asking each time self-heals a port a
 // Linkspan restart changed. Returns the connection info to record; the caller writes it, once it knows the run still wants it.
-export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Promise<ConnectionInfo> {
+export async function ensureRemoteSession(t: Pick<Tunnels, 'label' | 'tunnelRef' | 'ensureTunnel' | 'withLinkspan'>, session: SlurmSession): Promise<ConnectionInfo> {
     if (!session.connectionInfo) { throw new Error(`Session ${session.id} has no run to reach.`); }
     const ci = { ...session.connectionInfo };
     await t.ensureTunnel(session, ci); // refreshes the tunnel and its connect token
@@ -152,7 +152,7 @@ export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Pr
 export const isTunnelClientConnected = (sessionId: string): boolean => live.connected.has(sessionId);
 
 // Resolves to the local port the sshd is forwarded to; the caller records it once it knows the run still wants it.
-export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, ci: ConnectionInfo, onDevTunnelLost: () => void): Promise<number> {
+export async function connectSessionToTunnel(t: Pick<Tunnels, 'label' | 'tunnelRef' | 'management' | 'relayClient'>, session: SlurmSession, ci: ConnectionInfo, onDevTunnelLost: () => void): Promise<number> {
     logger.info(`Connecting session ${session.id} to its ${t.label}...`);
 
     const ref = t.tunnelRef(session);
