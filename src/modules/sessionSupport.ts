@@ -47,13 +47,22 @@ export class Backends {
 interface Loop { session: SlurmSession; timer: ReturnType<typeof setInterval>; ticking: boolean }
 export class SessionMonitor {
     private loops = new Map<string, Loop>();
+    private ending = new Map<string, Promise<void>>(); // each session's teardown while it runs
 
     constructor(private readonly backends: Backends) { }
 
     // Teardown for a Stop and for a backend that ended on its own.
-    async endSession(session: SlurmSession): Promise<void> {
+    endSession(session: SlurmSession): Promise<void> {
         this.stopMonitoring(session.id);
-        await this.backends.use(session, (b, s) => b.end(s));
+        const end = this.backends.use(session, (b, s) => b.end(s)).finally(() => { if (this.ending.get(session.id) === end) { this.ending.delete(session.id); } });
+        this.ending.set(session.id, end);
+        return end;
+    }
+
+    // Resolves once the session has no loop and no teardown in flight, so what follows is not undone by either.
+    async quiesce(session: SlurmSession): Promise<void> {
+        if (this.loops.has(session.id)) { await this.endSession(session); }
+        else { await this.ending.get(session.id); }
     }
 
     // A slow tick must not overlap its next fire.

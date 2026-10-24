@@ -85,7 +85,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
             }
         }
         catch (err) {
-            if (!sent) { patch(session, { desired: 'running' }); }
+            patch(session, { desired: 'running' }); // nothing throws once the stop is sent
             throw err;
         }
         await this.monitor().endSession(session);
