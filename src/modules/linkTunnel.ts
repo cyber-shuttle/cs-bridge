@@ -41,7 +41,7 @@ export class ForwardRelayClient {
     protected forwardUrl = '';
     protected protocols: string[] = [];
 
-    constructor(protected readonly WebSocket: typeof globalThis.WebSocket = globalThis.WebSocket) { }
+    constructor(private readonly WebSocket: typeof globalThis.WebSocket = globalThis.WebSocket) { }
 
     async waitForForwardedPort(remotePort: number) {
         if (this.disposed) { throw new Error('The relay client is disposed.'); }
