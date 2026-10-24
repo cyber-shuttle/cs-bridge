@@ -142,7 +142,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             deleteSession(sessionId);
         }
         catch (err) { vscode.window.showErrorMessage(`Failed to delete session: ${errMsg(err)}`); }
-        finally { live.busy.delete(sessionId); }
+        finally { live.busy.delete(sessionId); this.settle(session); }
     }
 
     public createCloudVm(ec2: Ec2Spec): void {
