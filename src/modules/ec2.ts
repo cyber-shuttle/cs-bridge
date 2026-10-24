@@ -8,7 +8,7 @@ import {
     TerminateInstancesCommand, DescribeRegionsCommand, paginateDescribeInstances,
     _InstanceType, Instance, InstanceStateName,
 } from '@aws-sdk/client-ec2';
-import { EC2_DEFAULTS, EC2_IMAGES } from '../models';
+import { EC2_DEFAULTS, Ec2Spec } from '../models';
 import { getOrSet } from './util';
 
 // Marks CS Bridge instances, so every listed one has a login user.
@@ -24,7 +24,7 @@ type InstanceAction = keyof typeof ACTIONS;
 interface Ec2Instance { id: string; name?: string; state: InstanceStateName; type: string; ip?: string; user: string }
 const LIVE_FILTERS = [
     { Name: 'tag-key', Values: [USER_TAG] },
-    { Name: 'instance-state-name', Values: ['pending', 'running', 'shutting-down', 'stopping', 'stopped'] },
+    { Name: 'instance-state-name', Values: ['pending', 'running', 'stopping', 'stopped'] },
 ];
 
 const tag = (i: Instance, key: string) => i.Tags?.find(t => t.Key === key)?.Value;
@@ -51,9 +51,7 @@ export class Ec2 {
     }
 
     // name becomes the Name tag, so the console shows the same label as the VS Code window.
-    async launch(image: string, type: string, region: string, name: string): Promise<string> {
-        const user = EC2_IMAGES.find(i => i.ssmParameter === image)?.user;
-        if (!user) { throw new Error(`Unknown image ${image}`); }
+    async launch({ image, type, region, user }: Ec2Spec, name: string): Promise<string> {
         const group = await this.prepare(region);
         const { Instances } = await this.client(region).send(new RunInstancesCommand({
             ImageId: `resolve:ssm:${image}`, InstanceType: type as _InstanceType, KeyName: keyName(region, this.machine), SecurityGroupIds: [group], MinCount: 1, MaxCount: 1,

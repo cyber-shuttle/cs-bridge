@@ -40,7 +40,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
         const known = new Set(getAllSessions().flatMap(s => [s.jobId, csHostAlias(s)]));
         for (const region of regions) {
             const found = await ec2.list(region).catch((err) => { logger.error(`EC2 list of ${region} failed:`, err); return []; });
-            for (const i of found.filter(i => !known.has(i.id) && !(i.name && known.has(i.name)) && i.state !== 'shutting-down')) {
+            for (const i of found.filter(i => !known.has(i.id) && !(i.name && known.has(i.name)))) {
                 // Named by the instance id, so its last six characters alias the SSH host.
                 const session = ec2Session({ region, type: i.type, image: '', user: i.user, ip: i.ip },
                     { name: i.id, jobId: i.id, desired: i.state === 'stopped' ? 'stopped' : 'running', observed: { state: observedEc2(i.state), at: Date.now() } });
@@ -56,7 +56,8 @@ export class Ec2Backend implements Backend<Ec2Session> {
         // An instance AWS no longer has, or is terminating, is replaced by a fresh launch.
         const existing = session.jobId ? await ec2.describe(spec.region, session.jobId) : undefined;
         const reusable = existing && existing.state !== 'terminated' && existing.state !== 'shutting-down';
-        const jobId = reusable ? session.jobId : await ec2.launch(spec.image, spec.type, spec.region, csHostAlias(session));
+        if (!reusable && !spec.image) { throw new Error('The instance is gone, and one adopted from the account has no image to launch again; create a new VM.'); }
+        const jobId = reusable ? session.jobId : await ec2.launch(spec, csHostAlias(session));
         if (reusable) { await ec2.act('start', spec.region, jobId); }
         patch(session, { jobId, ec2: { ...spec, ip: undefined }, connectionInfo: undefined });
         observe(session, SlurmJobStatus.RUNNING);
