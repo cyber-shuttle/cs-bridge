@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { enabled } from './features';
 import { uuidv7 } from 'uuidv7';
 import { errMsg } from './logger';
-import { HostRuntime, SlurmSession, SessionsState, WebviewMessage, CloudInstance } from './models';
+import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, WebviewMessage } from './models';
 import { WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSshConfigEntry, addSshConfigEntry, hasSessionKey, SshManager, openSshWindow } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
@@ -16,8 +16,19 @@ import { validateSlurmConfig } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
 import { isTerminal, isDeletable, isStoppable, isReachable, isWallTimeExpired } from './modules/sessionMachine';
 import { AwsClient } from './modules/aws';
+import { Ec2Backend } from './modules/ec2Session';
+
+// A session's user-driven steps, by backend: the Slurm job (this module and sessionSupport) or an EC2 instance.
+interface Lifecycle {
+    start(session: SlurmSession, sbatchEnv: Record<string, string>): Promise<void>;
+    stop(session: SlurmSession): Promise<void>;
+    connect(session: SlurmSession): Promise<boolean>;
+    remove(session: SlurmSession): Promise<void>;
+}
 
 function openSessionWindow(session: SlurmSession, forceNew: boolean): void {
+    const { windowFolder } = windowState(session);
+    if (!forceNew && windowFolder) { void vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(windowFolder), { forceNewWindow: false }); return; }
     // The per-session SSH host's alias VS Code runs `ssh` against and shows as the "[SSH: …]" label.
     void openSshWindow(csHostAlias(session), session.rootFolder, forceNew);
 }
@@ -33,15 +44,25 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private readonly shared: vscode.Disposable[] = [];
     private readonly connecting = new Set<string>();
     private readonly opening = new Set<string>();
-    private readonly monitor;
+    private readonly monitor: SessionMonitor;
+    private readonly ec2: Ec2Backend;
     private sharedReady = false;
-    private cloudFormOpen = false;
+    private readonly slurm: Lifecycle = {
+        start: (s, sbatchEnv) => launchSession(s, this.monitor, sbatchEnv),
+        stop: s => stopSession(s, this.monitor),
+        connect: s => this.connectTransport(s),
+        remove: s => this.transports.remove(s),
+    };
 
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
-    constructor(extensionUri: vscode.Uri, private readonly transports: Transports, private readonly aws: AwsClient, private readonly remoteSessionId?: string) {
+    constructor(extensionUri: vscode.Uri, private readonly transports: Transports, aws: AwsClient, private readonly remoteSessionId?: string) {
         super(extensionUri);
-        this.monitor = new SessionMonitor(transports.transportFor);
+        this.ec2 = new Ec2Backend(aws, () => this.monitor);
+        this.monitor = new SessionMonitor(transports.transportFor, this.ec2);
+        this.shared.push(aws.onDidSignIn(() => this.ec2.adopt().catch(err => this.logger.error('Adopting EC2 instances failed:', err))));
     }
+
+    private lifecycle(session: SlurmSession): Lifecycle { return session.ec2 ? this.ec2 : this.slurm; }
 
     private release(session: SlurmSession | null) { return session && this.transports.transportFor(session).release(session); }
 
@@ -65,7 +86,6 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         }));
         // Live samples land in the per-session files (bypassing updateSession); pushState reads them at render time.
         this.shared.push(onRunsChange(() => void this.pushState()));
-        this.shared.push(this.aws.onDidChange(() => void this.pushState()));
     }
 
     // At activation (sidebar only): resume monitoring and rebuild the tunnel connection (gone after restart) for every live-backend session.
@@ -78,7 +98,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             this.monitor.startMonitoring(s);
             // Reconnecting an expired session would only flash "connecting…" then fail back, and startup never forces a sign-in.
             if (s.connectionInfo?.sshPort && !hasTunnelClient(s.id) && !isWallTimeExpired(s, Date.now())
-                && await this.transports.transportFor(s).signedIn()) { void this.connectTransport(s); }
+                && (s.ec2 || await this.transports.transportFor(s).signedIn())) { void this.lifecycle(s).connect(s); }
         }
     }
 
@@ -92,14 +112,14 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         dismissDraftSession: () => { this.draftAlias = null; },
         dismissPreview: () => { void this.release(this.previewSession); this.previewSession = null; this.previewSbatchEnv = {}; },
         dismissAlert: () => { this.alert = null; },
-        dismissCloudForm: () => { this.cloudFormOpen = false; },
     };
 
     private readonly handlers: Record<string, (data: WebviewMessage, id: string) => void> = {
         ready: () => void this.pushState(),
         addSession: data => this.createSession(data),
         refreshSlurmDiscovery: data => this.fetchSlurmDiscovery(data.alias ?? '', true),
-        prepareLaunchSession: (_data, id) => void this.prepareLaunchSession(id),
+        // An EC2 session has no job script to preview, so Start submits at once.
+        prepareLaunchSession: (_data, id) => getSession(id)?.ec2 ? this.submitSession(id) : void this.prepareLaunchSession(id),
         launchSession: (_data, id) => this.submitSession(id),
         stopSessionExecution: (_data, id) => this.stopSessionExecution(id),
         stopRemoteSession: () => {
@@ -107,21 +127,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         },
         connectTunnel: (_data, id) => void this.connectSession(id),
         deleteSession: (_data, id) => this.confirmAndDeleteSession(id),
-        launchCloudInstance: ({ launch }) => {
-            if (launch) { void this.aws.launch(launch.image, launch.type, launch.region); }
-            this.cloudFormOpen = false;
-            void this.pushState();
-        },
-        startCloudInstance: this.onInstance(i => this.aws.act('start', i)),
-        stopCloudInstance: this.onInstance(i => this.aws.act('stop', i)),
-        removeCloudInstance: this.onInstance(i => this.aws.act('terminate', i)),
-        openCloudTerminal: this.onInstance(i => this.aws.openTerminal(i)),
-        openCloudRemote: this.onInstance(i => this.aws.openRemote(i)),
     };
-
-    private onInstance(fn: (instance: CloudInstance) => Promise<void>) {
-        return ({ instance }: WebviewMessage) => { if (instance) { void fn(instance); } };
-    }
 
     protected handleMessage(data: WebviewMessage) {
         this.logger.info('Received message from webview:', data);
@@ -186,17 +192,29 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             return;
         }
 
-        const confirmed = await confirmModal('Delete session?', 'Delete',
-            'This deletes the session record and cleans up its SSH config entry and key file.');
+        const confirmed = await confirmModal('Delete session?', 'Delete', session.ec2
+            ? 'This terminates the instance, deleting its disk, and removes the session record.'
+            : 'This deletes the session record and cleans up its SSH config entry and key file.');
         if (!confirmed) {
             void this.pushState();
             return;
         }
 
         await disposeTunnelClient(sessionId);
-        await this.transports.remove(session);
-        await deleteSshConfigEntry(sessionId, csHostAlias(session)); // logs its own failure
+        try { await this.lifecycle(session).remove(session); }
+        catch (err) {
+            vscode.window.showErrorMessage(`Failed to delete session: ${errMsg(err)}`);
+            void this.pushState();
+            return;
+        }
+        await deleteSshConfigEntry(sessionId, csHostAlias(session), !session.ec2); // logs its own failure; an EC2 key is the region's
         deleteSession(sessionId);
+        void this.pushState();
+    }
+
+    public createCloudVm(ec2: Ec2Spec): void {
+        addSession(this.ec2.newSession(ec2));
+        void vscode.commands.executeCommand('csbridge.sessionsView.focus');
         void this.pushState();
     }
 
@@ -269,8 +287,6 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 previewSession: this.previewSession,
                 validating: this.validating,
                 alert: this.alert,
-                cloudInstances: this.aws.getInstances(),
-                cloudForm: this.cloudFormOpen ? this.aws.regions ?? null : null,
             };
             view.webview.postMessage({ command: 'state', state });
         }
@@ -352,7 +368,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                 this.openOrFocusWindow(session);
                 return;
             }
-            if (await this.connectTransport(session)) { this.openOrFocusWindow(session); }
+            if (await this.lifecycle(session).connect(session)) { this.openOrFocusWindow(session); }
         }
         finally { void this.pushState(); }
     }
@@ -375,10 +391,10 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         this.runStop(session);
     }
 
-    // The real stop (via stopSession), shared by the sidebar Stop and activation resuming an unfinished one.
+    // The real stop, shared by the sidebar Stop and activation resuming an unfinished one.
     private runStop(session: SlurmSession): void {
-        this.runSessionTask(session, 'stop', () => stopSession(session, this.monitor),
-            'Please check the cluster to ensure the job has stopped and clean up any resources if necessary.');
+        this.runSessionTask(session, 'stop', () => this.lifecycle(session).stop(session),
+            session.ec2 ? 'Please check the AWS console to ensure the instance has stopped.' : 'Please check the cluster to ensure the job has stopped and clean up any resources if necessary.');
     }
 
     private submitSession(sessionId: string) {
@@ -390,8 +406,8 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         session.startedAt = undefined; // fresh launch: re-anchor the walltime countdown when the new job starts running
         setStatus(session, 'submitting', '');
         void this.pushState();
-        this.runSessionTask(session, 'launch', () => launchSession(session, this.monitor, sbatchEnv),
-            'Please clean up any resources on the cluster if necessary.');
+        this.runSessionTask(session, 'launch', () => this.lifecycle(session).start(session, sbatchEnv),
+            session.ec2 ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.');
     }
 
     // A failure marks the session failed and shows a dialog.
@@ -425,11 +441,6 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         }
         if (this.previewSession?.id !== sessionId) { void this.release(this.previewSession); }
         this.previewSession = session;
-        void this.pushState();
-    }
-
-    openCloudForm(): void {
-        this.cloudFormOpen = true;
         void this.pushState();
     }
 }

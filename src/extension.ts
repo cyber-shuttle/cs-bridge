@@ -26,7 +26,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const id = currentWindowSessionId();
     if (id) {
         logger.info(`Window is connected to CS Bridge session ${id}`);
-        attachWindow(id);
+        attachWindow(id, vscode.workspace.workspaceFolders![0].uri.toString());
     }
 
     const isRemoteWindow = !!id;
@@ -35,7 +35,7 @@ export async function activate(context: vscode.ExtensionContext) {
     SshManager.initInstance(context.extensionUri, context.globalStorageUri.fsPath);
     const plane = new Plane(context.secrets);
     const transports = new Transports(plane);
-    const aws = new AwsClient();
+    const aws = new AwsClient(context.secrets);
     const sessionProvider = new SessionProvider(context.extensionUri, transports, aws, id);
     const sshHostProvider = new SshHostProvider(context.extensionUri);
     const statsProvider = new StatsProvider(context.extensionUri);
@@ -55,6 +55,7 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     void sessionProvider.reattachLiveSessions();
+    void aws.restore();
 
     if (id) {
         // Remote window: own the walltime status bar + graceful end for this session.

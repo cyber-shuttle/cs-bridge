@@ -81,7 +81,7 @@ export class RemoteSessionController implements vscode.Disposable {
         clearInterval(this.ticker);
         this.item.hide();
         this.stopItem.hide();
-        await enqueuePendingSummary(this.context, this.sessionId);
+        if (!getSession(this.sessionId)?.ec2) { await enqueuePendingSummary(this.context, this.sessionId); } // no Slurm accounting to summarize
         // remote.close reuses this window with remoteAuthority:null → local reload. If unavailable, fall back to closing.
         try { await vscode.commands.executeCommand('workbench.action.remote.close'); }
         catch { void vscode.commands.executeCommand('workbench.action.closeWindow'); }

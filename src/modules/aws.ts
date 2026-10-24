@@ -1,31 +1,31 @@
-// AWS sign-in held in memory, a poll of every enabled region, and SSH through a CS ssh_config entry aliased by instance
-// id, since the Name tag is editable. Ec2 makes the API calls.
+// AWS sign-in kept in VS Code's secret storage and restored on activation. The signed-in Ec2 client is what
+// Ec2Backend drives sessions with; sign-in also announces itself so instances launched elsewhere can be adopted.
 import * as vscode from 'vscode';
 import { EC2Client } from '@aws-sdk/client-ec2';
-import { CloudInstance } from '../models';
-import { Ec2, InstanceAction, keyName } from './ec2';
-import { SshManager, sshKeyPath, writeSshConfigEntry, deleteSshConfigEntry, openSshWindow } from './sshSupport';
-import { confirmModal } from '@/webviewProvider';
-import { Logger, errMsg } from '@/logger';
+import { Ec2 } from './ec2';
+import { sshKeyPath } from './sshSupport';
+import { errMsg } from '@/logger';
 
-const logger = Logger.getInstance();
+const CREDENTIALS_KEY = 'aws.credentials';
+type Credentials = { accessKeyId: string; secretAccessKey: string; sessionToken?: string };
 
 export class AwsClient implements vscode.Disposable {
-    private readonly changed = new vscode.EventEmitter<void>();
-    readonly onDidChange = this.changed.event;
-    private timer?: NodeJS.Timeout;
-    private polls = 0;
-    // Set only by a successful sign-in, so every call below runs signed in.
-    private session?: { ec2: Ec2; regions: string[] };
-    private instances: CloudInstance[] = [];
+    private readonly signedIn = new vscode.EventEmitter<void>();
+    readonly onDidSignIn = this.signedIn.event;
+    private session?: { ec2: Ec2; regions: string[]; accessKeyId: string };
+
+    constructor(private readonly secrets: vscode.SecretStorage) { }
 
     get regions(): string[] | undefined { return this.session?.regions; }
-    getInstances(): CloudInstance[] { return this.instances; }
+    get account(): string | null { return this.session?.accessKeyId ?? null; }
+    get ec2(): Ec2 | undefined { return this.session?.ec2; }
 
-    dispose(): void {
-        clearInterval(this.timer);
-        this.changed.dispose();
+    requireEc2(): Ec2 {
+        if (!this.session) { throw new Error('Sign in to AWS first.'); }
+        return this.session.ec2;
     }
+
+    dispose(): void { this.signedIn.dispose(); }
 
     async signIn(): Promise<void> {
         const ask = (title: string, password = false) => vscode.window.showInputBox({ title, password, ignoreFocusOut: true }).then(v => v?.trim());
@@ -33,64 +33,34 @@ export class AwsClient implements vscode.Disposable {
         const secretAccessKey = accessKeyId && await ask('AWS Secret Access Key', true);
         const sessionToken = secretAccessKey && await ask('AWS Session Token (blank for a long-term key)', true);
         if (!accessKeyId || !secretAccessKey || sessionToken === undefined) { return; }
-        const credentials = { accessKeyId, secretAccessKey, sessionToken: sessionToken || undefined };
+        if (await this.connect({ accessKeyId, secretAccessKey, sessionToken: sessionToken || undefined })) {
+            void vscode.window.showInformationMessage('Signed in to AWS.');
+        }
+    }
+
+    // Signs back in with the stored key; a key that no longer works is dropped so the menu offers Sign In again.
+    async restore(): Promise<void> {
+        const stored = await this.secrets.get(CREDENTIALS_KEY);
+        if (stored) { await this.connect(JSON.parse(stored) as Credentials); }
+    }
+
+    private async connect(credentials: Credentials): Promise<boolean> {
         const clients = new Map<string, EC2Client>();
-        const ec2 = new Ec2(region => clients.get(region) ?? clients.set(region, new EC2Client({ region, credentials })).get(region)!, sshKeyPath);
-        try { this.session = { ec2, regions: await ec2.regions() }; }
+        const client = (region: string) => new EC2Client({ region, credentials, requestHandler: { connectionTimeout: 5_000, requestTimeout: 15_000 } });
+        const ec2 = new Ec2(region => clients.get(region) ?? clients.set(region, client(region)).get(region)!, sshKeyPath);
+        try { this.session = { ec2, regions: await ec2.regions(), accessKeyId: credentials.accessKeyId }; }
         catch (err) {
             void vscode.window.showErrorMessage(`AWS sign-in failed: ${errMsg(err)}`);
-            return;
+            await this.secrets.delete(CREDENTIALS_KEY);
+            return false;
         }
-        this.timer ??= setInterval(() => void this.poll(), 20_000);
-        await this.poll();
+        await this.secrets.store(CREDENTIALS_KEY, JSON.stringify(credentials));
+        this.signedIn.fire();
+        return true;
     }
 
-    launch(image: string, type: string, region: string): Thenable<void> {
-        return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Launching EC2 instance…' }, async () => {
-            try {
-                await this.session!.ec2.launch(image, type, region);
-                void this.poll();
-            }
-            catch (err) {
-                void vscode.window.showErrorMessage(`Failed to launch EC2 instance: ${errMsg(err)}`);
-            }
-        });
-    }
-
-    async act(action: InstanceAction, instance: CloudInstance): Promise<void> {
-        if (action === 'terminate' && !await confirmModal(`Remove ${instance.name}?`, 'Remove', 'This terminates the instance and deletes its disk.')) { return; }
-        try {
-            await this.session!.ec2.act(action, instance);
-            if (action === 'terminate') { await deleteSshConfigEntry(instance.id, instance.id, false); }
-            void this.poll();
-        }
-        catch (err) {
-            void vscode.window.showErrorMessage(`Failed to ${action} ${instance.name}: ${errMsg(err)}`);
-        }
-    }
-
-    // Only the latest poll lands, so an overtaken one cannot overwrite a fresher list.
-    private async poll(): Promise<void> {
-        const poll = ++this.polls;
-        const { ec2, regions } = this.session!;
-        const found = await Promise.all(regions.map(region => ec2.list(region).catch((err) => {
-            logger.error(`EC2 poll of ${region} failed:`, err);
-            return [];
-        })));
-        if (poll !== this.polls) { return; }
-        this.instances = found.flat();
-        this.changed.fire();
-    }
-
-    private sshAlias(i: CloudInstance): Promise<string> {
-        return writeSshConfigEntry(i.id, i.id, i.ip, 22, i.user, sshKeyPath(keyName(i.region)));
-    }
-
-    async openTerminal(i: CloudInstance): Promise<void> {
-        SshManager.getInstance().openTerminal(await this.sshAlias(i));
-    }
-
-    async openRemote(i: CloudInstance): Promise<void> {
-        await openSshWindow(await this.sshAlias(i), '', true);
+    async signOut(): Promise<void> {
+        this.session = undefined;
+        await this.secrets.delete(CREDENTIALS_KEY);
     }
 }

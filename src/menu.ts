@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import { Logger, errMsg } from './logger';
 import { Plane } from './plane';
-import { SlurmSession } from './models';
+import { SlurmSession, EC2_IMAGES, EC2_TYPES } from './models';
 import { SessionProvider } from './sessionProvider';
 import { AwsClient } from './modules/aws';
 import { SshHostProvider } from './sshHostProvider';
@@ -77,7 +77,7 @@ export class CsBridgeMenu {
             items: [
                 { label: '$(add) Create New SSH Session', open: this.hosts },
                 { label: '$(server) Add SSH Host', open: this.addHost },
-                ...enabled('aws') && this.aws.regions ? [{ label: '$(cloud) Launch EC2 Instance', run: () => this.sessions.openCloudForm() }] : [],
+                ...enabled('aws') && this.aws.regions ? [{ label: '$(cloud) Create Cloud VM', open: this.cloudVm }] : [],
                 ...cybershuttle ? [{ label: '$(arrow-swap) Default Transport', description: this.of(this.current()).label, open: this.transport }] : [],
                 { label: 'Accounts', kind: vscode.QuickPickItemKind.Separator },
                 ...cybershuttle ? [email === null
@@ -86,7 +86,9 @@ export class CsBridgeMenu {
                 microsoft === null
                     ? { label: '$(sign-in) Sign In to Microsoft DevTunnel', run: switchDevTunnelAccount }
                     : { label: '$(sign-out) Sign Out of Microsoft DevTunnel', description: microsoft, run: () => vscode.commands.executeCommand('_signOutOfAccount', { providerId: 'microsoft', accountLabel: microsoft }) },
-                ...enabled('aws') ? [{ label: '$(sign-in) Sign In to AWS', description: 'access key', run: () => this.aws.signIn() }] : [],
+                ...enabled('aws') ? [this.aws.account === null
+                    ? { label: '$(sign-in) Sign In to AWS', description: 'access key', run: () => this.aws.signIn() }
+                    : { label: '$(sign-out) Sign Out of AWS', description: this.aws.account, run: () => this.aws.signOut() }] : [],
             ],
         };
     };
@@ -129,6 +131,20 @@ export class CsBridgeMenu {
             }),
         };
     };
+
+    private readonly cloudVm: Build = () => ({
+        title: 'Create Cloud VM: Region',
+        placeholder: 'Select the AWS region to launch in',
+        items: this.aws.regions!.map(region => ({ label: region, open: () => ({
+            title: 'Create Cloud VM: Instance Type',
+            placeholder: 'Select the instance type',
+            items: EC2_TYPES.map(type => ({ label: type, open: () => ({
+                title: 'Create Cloud VM: Image',
+                placeholder: 'Select the image; the VM is added to the Sessions view, where Start launches it',
+                items: EC2_IMAGES.map(image => ({ label: image.label, run: () => this.sessions.createCloudVm({ region, type, image: image.ssmParameter, user: image.user, ip: '' }) })),
+            }) })),
+        }) })),
+    });
 
     private readonly transport: Build = () => ({
         title: 'Default Transport',

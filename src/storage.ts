@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as nodeFs from 'fs';
 import { Files, Steps, migrate } from './modules/store';
 import { initSessionStore } from './extensionStore';
 import { initRunStore } from './modules/runStore';
@@ -13,7 +14,8 @@ function storageFiles(root: vscode.Uri): Files {
     return {
         read: name => Promise.resolve(fs.readFile(uri(name))).then(b => new TextDecoder().decode(b), missing(undefined)),
         write: (name, text) => Promise.resolve(fs.writeFile(uri(name), new TextEncoder().encode(text))), // creates the folder
-        remove: name => Promise.resolve(fs.delete(uri(name))).catch(missing(undefined)),
+        // Synchronous: deactivate removes the window heartbeat, and an async delete may not land before the host exits.
+        remove: name => Promise.resolve(nodeFs.rmSync(uri(name).fsPath, { force: true })),
         list: dir => Promise.resolve(fs.readDirectory(uri(dir))).then(es => es.map(([name]) => name), missing([])),
     };
 }

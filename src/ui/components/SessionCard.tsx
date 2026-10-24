@@ -1,7 +1,7 @@
 import { createContext } from 'preact';
 import { useContext } from 'preact/hooks';
 import type { CSSProperties, VNode } from 'preact';
-import { SAMPLE_HISTORY_LEN, type ViewSession } from '@/models';
+import { SAMPLE_HISTORY_LEN, ec2ImageLabel, type ViewSession } from '@/models';
 import { dotColor, sessionActions, remainingMs, fmtTime, wallMs, elapsedLabel, type SessionAction } from '@/ui/logic/session';
 import { isReachable, isDeletable } from '@/modules/sessionMachine';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button, Spinner, Chip } from '@/ui/components/base';
@@ -60,6 +60,9 @@ export function Divided({ items }: { items: VNode[] }) {
 // Raw resource text (e.g. "MEM: 2G", "CPU: 1", "GPU: 1") above each live sparkline when reachable; a plain row
 // otherwise. Columns bracketed by vertical separators.
 function ResourceStats({ session }: { session: ViewSession }) {
+    if (session.ec2) {
+        return <Divided items={[session.ec2.region, session.jobId, session.ec2.ip].filter(Boolean).map(t => <Text key={t} size={11}>{t}</Text>)} />;
+    }
     const graphs = usageGraphs(session.samples ?? [], session.resources.gpuCount ?? 0, session.resources);
     if (!isReachable(session.status)) {
         return <Divided items={graphs.map(g => <Text key={g.label} size={11}>{g.text}</Text>)} />;
@@ -83,8 +86,8 @@ function StatusText({ session }: { session: ViewSession }) {
     switch (s) {
         case 'not_started': return <Row style={statusStyle}>Not started</Row>;
         case 'ready_to_connect':
-        case 'connected': return <Row style={statusStyle}>{fmtTime(remainingMs(session, now))} left</Row>;
-        case 'preparing': return <Row style={statusStyle}>Starting Linkspan…</Row>;
+        case 'connected': return <Row style={statusStyle}>{session.ec2 ? 'Running' : `${fmtTime(remainingMs(session, now))} left`}</Row>;
+        case 'preparing': return <Row style={statusStyle}>{session.ec2 ? 'Booting…' : 'Starting Linkspan…'}</Row>;
         case 'unreachable': return <Row style={statusStyle}><Text title={session.errorMessage || undefined}>{session.errorMessage ? `Unreachable: ${session.errorMessage}` : 'SSH host unreachable — retrying…'}</Text></Row>;
         case 'connecting': return <Row style={statusStyle}>Connecting…</Row>;
         case 'submitting': return <Row style={statusStyle}>Submitting…</Row>;
@@ -108,14 +111,19 @@ export function SessionCard({ session, remote }: Props) {
         if (command) { post({ command, sessionId: session.id }); }
     };
 
+    // The theme's validation colors hold in light and dark alike; softened, since the dark info blue overpowers at full strength.
+    const kind = session.ec2 ? 'warning' : 'info';
+    const edge = `color-mix(in srgb, var(--vscode-inputValidation-${kind}Border) 25%, var(--vscode-panel-border))`;
+    const tint = `color-mix(in srgb, var(--vscode-inputValidation-${kind}Background) 70%, var(--vscode-sideBar-background))`;
     return (
-        <Card>
-            {/* Fixed height keeps the gap to the detail row constant whether or not the delete button shows. */}
-            <Row gap={6} style={{ minHeight: '20px' }}>
+        <Card border={edge}>
+            {/* Fixed height keeps the gap to the detail row constant whether or not the delete button shows. Negative
+                margins run the header tint out to the card's edge. */}
+            <Row gap={5} style={{ minHeight: '20px', margin: '-5px -8px 0', padding: '1px 8px', letterSpacing: '-0.2px', borderRadius: '5px 5px 0 0', background: tint, borderBottom: `1px solid ${edge}` }}>
                 <Icon name={status.name} spin={status.spin} style={{ color: statusColor, flexShrink: 0, marginRight: '-3px' }} />
                 <Text weight={600}>{session.alias}</Text>
-                <Chip label={session.account} />
-                <Chip label={session.partition} />
+                <Chip label={session.ec2 ? session.ec2.type : session.account} />
+                <Chip label={session.ec2 ? ec2ImageLabel(session.ec2) : session.partition} />
                 {!remote && canDelete
                     ? (
                             <Row gap={4} style={{ marginLeft: 'auto' }}>
@@ -124,11 +132,11 @@ export function SessionCard({ session, remote }: Props) {
                         )
                     : null}
             </Row>
-            <div style={{ borderTop: '1px solid var(--vscode-panel-border)', marginBottom: '3px' }} />
             <Stack gap={6}>
                 <ResourceStats session={session} />
                 <Row gap={6}>
-                    <Chip label={fmtTime(wallMs(session))} />
+                    <Chip label={session.ec2 ? 'AWS' : 'HPC'} background={tint} />
+                    {session.ec2 ? null : <Chip label={fmtTime(wallMs(session))} />}
                     <StatusText session={session} />
                     {!remote && actions.length ? (
                         <Row gap={6} style={{ marginLeft: 'auto', flexShrink: 0, zoom: 0.85 }}>

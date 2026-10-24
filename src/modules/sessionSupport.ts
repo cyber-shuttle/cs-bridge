@@ -24,6 +24,12 @@ const WALL_TIME_GRACE_MS = 30_000;
 // only its own session and updateSession is synchronous, so ticks never race.
 const sessionLine = (name: string, msg: string): string => `Session ${name}: ${msg}`;
 
+// What the monitor polls and tears down for an EC2 session (ec2Session.ts); a Slurm job is this class's own code.
+export interface Backend {
+    tick(session: SlurmSession): Promise<StatusTransition>;
+    end(session: SlurmSession): Promise<void>;
+}
+
 export class SessionMonitor {
     private sessions = new Map<string, SlurmSession>();
     private tickers = new Map<string, ReturnType<typeof setInterval>>();
@@ -31,7 +37,7 @@ export class SessionMonitor {
     private probeFailedCounts = new Map<string, number>();
     private lastSacctAt = new Map<string, number>(); // throttles the in-run sacct refresh, per session
 
-    constructor(private readonly transportFor: (session: SlurmSession) => Transport) { }
+    constructor(private readonly transportFor: (session: SlurmSession) => Transport, private readonly ec2: Backend) { }
 
     private log(session: SlurmSession, msg: string): void { logger.info(sessionLine(session.name, msg)); }
     private warn(session: SlurmSession, msg: string): void { logger.warn(sessionLine(session.name, msg)); }
@@ -43,6 +49,7 @@ export class SessionMonitor {
     // the local port and keeps the refs for reattach; the run is released either way, killing its tokens.
     async endSession(session: SlurmSession): Promise<void> {
         this.stopMonitoring(session.id);
+        if (session.ec2) { return this.ec2.end(session); }
         const transport = this.transportFor(session);
         await (session.status === 'stopped' ? disconnectSessionFromTunnel(transport, session) : disposeTunnelClient(session.id))
             .catch(err => logger.error(`Session ${session.name}: Failed to disconnect from its ${transport.label}:`, err));
@@ -123,6 +130,8 @@ export class SessionMonitor {
                 return;
             }
 
+            if (session.ec2) { return this.applyTransition(session, await this.ec2.tick(session)); }
+
             // Job running but not yet up: drive bring-up over the Dev Tunnel rather than Slurm,
             // cross-checking sacct only after PROBE_GIVEUP failures, so a running session
             // never SSH-polls the SSH host.
@@ -168,11 +177,12 @@ export class SessionMonitor {
             this.applyTransition(session, computeStatusTransition(session.status, slurmStatus));
         }
         catch (error) {
-            // SSH host unreachable (dead ControlMaster, Duo-needed under BatchMode) — not death; stay recoverable.
-            this.warn(session, `SSH host unreachable (will retry): ${errMsg(error)}`);
+            // SSH host unreachable (dead ControlMaster, Duo-needed under BatchMode) or the AWS API down — not death; stay recoverable.
+            const label = session.ec2 ? 'AWS' : 'SSH host';
+            this.warn(session, `${label} unreachable (will retry): ${errMsg(error)}`);
             const next = unreachableStatus(session.status);
             if (next && session.status !== next) {
-                setStatus(session, next, `SSH host unreachable: ${errMsg(error)}`);
+                setStatus(session, next, `${label} unreachable: ${errMsg(error)}`);
             }
         }
         finally {

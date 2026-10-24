@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **EC2 instances** **(experimental)**: an instance is now a session. It follows the session lifecycle, with the
+  same card, Start, Stop, Connect and Delete, the window heartbeat and the remote window's Stop, and its record
+  survives a reload. The menu shows the signed-in AWS key with **Sign Out of AWS**, and **Create Cloud VM** walks
+  through region, instance type and image; a launch creates the region's default VPC when the account lacks one, and
+  signing in adopts instances CS Bridge launched elsewhere. The sign-in survives a window reload.
+
 ## [0.2.4] - 2026-10-21
 
 ### Added

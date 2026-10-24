@@ -58,3 +58,23 @@ export function computeStatusTransition(current: Status, slurm: SlurmJobStatus):
             return {};
     }
 }
+
+// The EC2 counterpart, over DescribeInstances state names. Running-while-'preparing' is left to the backend's port
+// probe, which promotes to ready_to_connect.
+export function computeEc2Transition(current: Status, state: string): StatusTransition {
+    if (current === 'stopping' && (state === 'running' || state === 'pending')) { return {}; }
+    switch (state) {
+        case 'pending':
+        case 'running':
+            return CONNECT_PHASE.includes(current) ? {} : { next: 'preparing' };
+        case 'stopping':
+            return current === 'stopping' ? {} : { next: 'stopping' };
+        case 'stopped':
+            return { next: 'stopped', stopMonitoring: true };
+        case 'shutting-down':
+        case 'terminated':
+            return { next: 'failed', stopMonitoring: true, error: 'Instance terminated outside CS Bridge' };
+        default:
+            return {};
+    }
+}
