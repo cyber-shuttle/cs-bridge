@@ -20,7 +20,7 @@ export function usageGraphs(history: UsageSample[], gpuCount?: number, allocated
         { label: 'CPU', text: allocated ? `CPU: ${allocated.cores}` : 'CPU', lines: [{ values: cpuCoreSeries(history), color: CHART.cpu, fmt: v => `${v.toFixed(1)} cores` }] },
         ...Array.from({ length: gpuN }, (_, i): Graph => ({
             label: gpuN > 1 ? `GPU${i}` : 'GPU',
-            text: gpuN > 1 ? `GPU${i}` : allocated ? `GPU: ${gpuCount}` : 'GPU',
+            text: gpuN > 1 ? `GPU${i}` : gpuCount ? `GPU: ${gpuCount}` : 'GPU',
             lines: [
                 { values: at(s => s.gpus?.[i]?.utilPct), color: CHART.gpu, domain: PCT, fmt: pct('util') },
                 { values: at(s => gpuMemPct(s.gpus?.[i])), color: CHART.gpuMem, domain: PCT, fmt: pct('mem') },

@@ -9,7 +9,6 @@ import { newSession, isEc2, Run, SlurmJobStatus, SummaryState, SessionsMessage, 
 import { Backend, Backends, SessionMonitor, prepareLaunch } from './modules/sessionSupport';
 import { Ec2Backend } from './modules/ec2Session';
 import { SessionProvider } from './sessionProvider';
-import { AwsClient } from './modules/aws';
 import type { Transport } from './modules/transport';
 import { Ec2 } from './modules/ec2';
 import { fakeClient } from './modules/fakeEc2Client';
@@ -174,7 +173,7 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
         tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); }, deleteTunnel: async () => { },
         signedIn: async () => true, prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }), release: async (session) => { released.push(session.id); },
     };
-    const aws = new AwsClient({ get: async () => undefined, store: async () => { }, delete: async () => { }, onDidChange: () => ({ dispose() { } }) } as never);
+    const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
     const provider = new SessionProvider({ fsPath: '/ext' } as never, { transportFor: () => transport, remove: async () => { } }, aws);
     const posted: { command: string; state: SessionsState }[] = [];
     let receive: (m: SessionsMessage) => void = () => { };
@@ -215,7 +214,7 @@ test('a second Start during a preview keeps the claim and gives the first attach
         tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); }, deleteTunnel: async () => { },
         signedIn: async () => true, prepare: async () => { log.push('attach'); return { tunnelArgs: '', sbatchEnv: {} }; }, release: async () => { log.push('release'); },
     };
-    const aws = new AwsClient({ get: async () => undefined, store: async () => { }, delete: async () => { }, onDidChange: () => ({ dispose() { } }) } as never);
+    const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
     const provider = new SessionProvider({ fsPath: '/ext' } as never, { transportFor: () => transport, remove: async () => { } }, aws);
     let receive: (m: SessionsMessage) => void = () => { };
     provider.resolveWebviewView({
