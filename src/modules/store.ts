@@ -1,8 +1,8 @@
 // Records live in extension storage through Files, a folder of JSON files. A JsonDir keeps a
 // directory in memory, so reads are synchronous; writes, and reloads of other windows' writes that storage.ts's
-// watcher reports, run in order behind them. A whole-record write wins over an earlier one; a patch lands its fields on
-// whatever another window wrote last; a write that fails leaves its fields queued for the next one. schema.json versions
-// the layout; the steps below 2 import ~/.cybershuttle.
+// watcher reports, run in order behind them. Every write, whole or field, lands its changed fields on whatever another
+// window wrote last and is dropped if that window deleted the record; a write that fails leaves its fields queued for the
+// next one. schema.json versions the layout; the steps below 2 import ~/.cybershuttle.
 import { parseJson } from './json';
 import { getOrSet } from './util';
 
@@ -36,7 +36,7 @@ export class JsonDir<T extends object> {
     values(): T[] { return [...this.records.values()].map(r => r.value); }
     entries(): [string, T][] { return [...this.records].map(([id, r]) => [id, r.value]); }
 
-    // A whole-record write: every field is held, so it wins over another window's changes.
+    // A whole-record write holds every field it carries and every one it clears; otherwise it lands like a patch.
     set(id: string, value: T): Promise<void> {
         const prev = this.records.get(id);
         const record = { value, text: prev?.text };
@@ -49,7 +49,7 @@ export class JsonDir<T extends object> {
 
     // A field write. The write carries every field changed since the last one began and lands on the record as
     // another window last wrote it: the fields that window changed since this one last read the file come in, unless
-    // changed here since that read. A record deleted elsewhere stays deleted.
+    // changed here since that read.
     patch(id: string, fields: Partial<T>): Promise<void> {
         const record = this.records.get(id);
         if (!record) { return this.queue; }
@@ -67,6 +67,7 @@ export class JsonDir<T extends object> {
             this.pending.delete(id);
             try {
                 const text = await this.files.read(this.path(id));
+                if (this.records.get(id) !== record) { return; } // a set during the read carries everything
                 if (text === undefined && record.text !== undefined) {
                     this.records.delete(id);
                     this.emit();
