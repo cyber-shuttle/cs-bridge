@@ -61,7 +61,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         this.shared.push(onRunsChange(() => void this.pushState()));
     }
 
-    private release(session: SlurmSession | undefined) { return session && this.transports.transportFor(session).release(session); }
+    private release(session: SlurmSession): Promise<void> { return this.transports.transportFor(session).release(session); }
 
     // A preview that goes unsubmitted gives back its run and its claim.
     private dropDraft() {
@@ -318,9 +318,10 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     private async prepareLaunchSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'prepare launch');
-        if (!session || !this.drive(session)) { return; }
+        if (!session || live.busy.has(session.id) || !this.drive(session)) { return; } // a second Start while one prepares is a no-op
         // An EC2 session has no job script to preview, so Start submits at once.
         if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
+        live.busy.add(session.id);
         try {
             await this.release(session); // the previous run's, before a transport switch hides it
             patch(session, { transport: configuredTransport() });
@@ -334,6 +335,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             this.logger.error('Failed to prepare session launch:', err);
             this.settle(session);
         }
+        finally { live.busy.delete(session.id); }
         void this.pushState();
     }
 

@@ -61,7 +61,7 @@ export async function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(new RemoteSessionController(context, id));
     }
     else {
-        void consumePendingSummary(context, context.extensionUri);
+        void consumePendingSummary(context);
     }
 
     const marker = vscode.Uri.joinPath(context.globalStorageUri, 'opened.marker');

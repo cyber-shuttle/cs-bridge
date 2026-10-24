@@ -327,11 +327,6 @@ export async function prepareLaunch(session: SlurmSession, transport: Transport)
     resetLive(session.id);
 
     const launch = await transport.prepare(session, ci);
-
-    let script: string;
-    try { script = buildSlurmScript(session, launch, ci.controlPort); }
-    catch (err) { throw new Error(`Failed to generate Slurm script: ${errMsg(err)}`, { cause: err }); }
-
     patch(session, { connectionInfo: ci, errorMessage: '' });
-    return { script, sbatchEnv: launch.sbatchEnv };
+    return { script: buildSlurmScript(session, launch, ci.controlPort), sbatchEnv: launch.sbatchEnv };
 }

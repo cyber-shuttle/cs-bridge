@@ -15,12 +15,12 @@ export async function enqueuePendingSummary(context: vscode.ExtensionContext, id
     await context.globalState.update(PENDING_KEY, queue.slice(-MAX_PENDING));
 }
 
-export async function consumePendingSummary(context: vscode.ExtensionContext, extensionUri: vscode.Uri): Promise<void> {
+export async function consumePendingSummary(context: vscode.ExtensionContext): Promise<void> {
     const [id, ...rest] = context.globalState.get<string[]>(PENDING_KEY, []);
     if (!id) { return; }
     await context.globalState.update(PENDING_KEY, rest);
     const session = getSession(id);
-    if (session) { openSummaryPanel(extensionUri, session); }
+    if (session) { openSummaryPanel(context.extensionUri, session); }
 }
 
 // A past run (from the Run History view) shows as it ended, while the live session may have been started again.
