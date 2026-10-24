@@ -37,5 +37,5 @@ export async function getSlurmDiscovery(alias: string): Promise<SlurmDiscovery> 
     if (!nonEmpty(partitions)) { throw new Error(`sinfo lists no partitions on ${alias}`); }
     const homeDir = (await run('echo $HOME')).trim();
     if (!homeDir) { throw new Error(`$HOME is unset on ${alias}`); }
-    return { alias, accounts, partitions, homeDir };
+    return { accounts, partitions, homeDir };
 }

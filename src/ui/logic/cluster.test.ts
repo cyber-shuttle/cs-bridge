@@ -5,7 +5,7 @@ import { tabGroups, cpuOptions, memoryOptions, gpuOptions, resolvePick } from '.
 
 const cpuPart: SlurmPartitionInfo = { name: 'cpu', cpuCount: 3, memoryMb: 8192, gres: [] };
 const gpuPart: SlurmPartitionInfo = { name: 'gpu', cpuCount: 16, memoryMb: 0, gres: [{ name: 'a100', count: 2 }] };
-const info: SlurmDiscovery = { alias: 'h', accounts: ['acct'], partitions: [cpuPart, gpuPart], homeDir: '/home/u' };
+const info: SlurmDiscovery = { accounts: ['acct'], partitions: [cpuPart, gpuPart], homeDir: '/home/u' };
 
 test('tabGroups splits by presence of gres and omits an empty tab', () => {
     assert.deepEqual(tabGroups(info), [{ tab: 'cpu', parts: [cpuPart] }, { tab: 'gpu', parts: [gpuPart] }]);

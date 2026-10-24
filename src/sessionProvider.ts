@@ -101,7 +101,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         prepareLaunchSession: ({ sessionId }) => void this.prepareLaunchSession(sessionId),
         launchSession: () => this.launchDraft(),
         stopSessionExecution: ({ sessionId }) => void this.stopSessionExecution(sessionId),
-        stopRemoteSession: () => { if (this.remoteSessionId) { void vscode.commands.executeCommand('csbridge.stopRemoteSession'); } },
+        stopRemoteSession: () => void vscode.commands.executeCommand('csbridge.stopRemoteSession'), // posted only by a remote window's card
         connectTunnel: ({ sessionId }) => void this.connectSession(sessionId),
         deleteSession: ({ sessionId }) => void this.confirmAndDeleteSession(sessionId),
     };
