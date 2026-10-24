@@ -51,6 +51,7 @@ const now = 1_000_000;
 test('deriveStatus reaches every status from its facts', () => {
     assert.equal(deriveStatus(facts({ jobId: '' }), idle, now), 'not_started');
     assert.equal(deriveStatus(facts({ jobId: '' }), { ...idle, launching: true }, now), 'submitting');
+    assert.equal(deriveStatus(facts(), { ...idle, launching: true }, now), 'submitting', 'an EC2 restart keeps its instance id');
     assert.equal(deriveStatus(facts(), idle, now), 'queued');
     assert.equal(deriveStatus(facts(reading(SlurmJobStatus.QUEUED)), idle, now), 'queued');
     assert.equal(deriveStatus(facts(running), idle, now), 'preparing');

@@ -75,10 +75,12 @@ export class SessionMonitor {
             }
 
             await this.backends.use(session, (b, s) => b.tick(s));
+            if (this.loops.get(sessionId) !== loop) { return; } // a Stop ended the loop meanwhile
             if (live.unreachable.delete(session.id)) { setError(session, ''); }
             if (isTerminal(statusOf(session))) { void this.endSession(session); }
         }
         catch (error) {
+            if (this.loops.get(sessionId) !== loop) { return; }
             // SSH host unreachable (dead ControlMaster, Duo-needed under BatchMode) or the AWS API down — not death; stay recoverable.
             logger.warn(sessionLine(session.name, `${label} unreachable (will retry): ${errMsg(error)}`));
             live.unreachable.add(session.id);

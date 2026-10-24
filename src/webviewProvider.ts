@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
-import { Logger, errMsg } from './logger';
+import { Logger } from './logger';
 import { WebviewMessage } from './models';
 
 type ViewKind = 'sessions' | 'hosts' | 'stats' | 'summary';
@@ -40,11 +40,6 @@ export abstract class WebviewProvider<M extends WebviewMessage = { command: 'rea
     }
 
     protected pushState(): void { }
-
-    protected showError(message: string, error: unknown): void {
-        this.logger.error(message, error);
-        vscode.window.showErrorMessage(`${message}: ${errMsg(error)}`);
-    }
 }
 
 export async function confirmModal(title: string, confirmLabel: string, detail?: string): Promise<boolean> {

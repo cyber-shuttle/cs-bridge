@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { errMsg } from './logger';
 import { HostsState, HostsMessage } from './models';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { SshManager } from './modules/sshSupport';
@@ -41,7 +42,8 @@ export class SshHostProvider extends WebviewProvider<HostsMessage> {
             deleteHostFromConfigFile(USER_SSH_CONFIG_PATH, alias);
         }
         catch (err) {
-            this.showError(`Failed to delete SSH host ${alias}`, err);
+            this.logger.error(`Failed to delete SSH host ${alias}`, err);
+            vscode.window.showErrorMessage(`Failed to delete SSH host ${alias}: ${errMsg(err)}`);
         }
         this.pushState();
     }

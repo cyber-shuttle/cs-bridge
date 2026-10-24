@@ -41,7 +41,8 @@ const DIED: SlurmJobStatus[] = [SlurmJobStatus.FAILED, SlurmJobStatus.OUT_OF_MEM
 // Derived, not stored, so no writer has a status another writer must guard against.
 export function deriveStatus(s: Facts, live: LiveFacts, now: number): Status {
     if (s.failure) { return 'failed'; }
-    if (!s.jobId) { return live.launching ? 'submitting' : 'not_started'; }
+    if (live.launching) { return 'submitting'; }
+    if (!s.jobId) { return 'not_started'; }
     const state = s.observed?.state ?? SlurmJobStatus.UNKNOWN;
     if (DIED.includes(state)) { return 'failed'; }
     if (ENDED.includes(state) || isWallTimeExpired(s, now)) { return 'stopped'; }
