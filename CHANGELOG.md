@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A freshly submitted job no longer flashes "SSH host unreachable" while Slurm accounting has no row for it yet.
+- An EC2 launch that returns no instance id fails outright instead of leaving a running instance recorded as never
+  started.
+
+### Fixed
+
 - Starting a stopped session again showed it queued since its first run; the card now counts from the new submit.
 
 ### Changed

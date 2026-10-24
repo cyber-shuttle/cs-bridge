@@ -143,10 +143,6 @@ export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Pr
     return ci;
 }
 
-export function hasTunnelClient(sessionId: string): boolean {
-    return activeTunnelClients.has(sessionId);
-}
-
 // True while this window's tunnel client holds a live connection — its keepAlive already watches the connection, so this is
 // the authoritative liveness signal for a connected session.
 export const isTunnelClientConnected = (sessionId: string): boolean => live.connected.has(sessionId);
