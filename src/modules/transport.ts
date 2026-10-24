@@ -5,7 +5,7 @@
 import { SlurmSession } from '../models';
 import { Logger, errMsg } from '../logger';
 import { Plane } from '../plane';
-import { updateSession } from '../extensionStore';
+import { live, updateSession } from '../extensionStore';
 import type { TunnelRequestOptions } from '@microsoft/dev-tunnels-management';
 import { ConnectionStatus, type TunnelConnectionOptions, type TunnelRelayTunnelClient } from '@microsoft/dev-tunnels-connections';
 import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
@@ -150,9 +150,7 @@ export function hasTunnelClient(sessionId: string): boolean {
 
 // True while this window's tunnel client holds a live connection — its keepAlive already watches the connection, so this is
 // the authoritative liveness signal for a connected session.
-export function isTunnelClientConnected(sessionId: string): boolean {
-    return activeTunnelClients.get(sessionId)?.connectionStatus === ConnectionStatus.Connected;
-}
+export const isTunnelClientConnected = (sessionId: string): boolean => live.connected.has(sessionId);
 
 export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, onDevTunnelLost: () => void): Promise<number> {
     logger.info(`Connecting session ${session.id} to its ${t.label}...`);
@@ -183,7 +181,11 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
     await disposeTunnelClient(session.id);
     const client = t.relayClient(mgmtClient, session);
     // Surface Dev Tunnel connection health: a stalled/reconnecting Dev Tunnel is otherwise invisible, and this tells contention from raw Dev Tunnel bandwidth.
-    client.connectionStatusChanged?.(e => logger.info(`Session ${session.id}: Dev Tunnel ${e.previousStatus} → ${e.status}${e.disconnectError ? ` (${e.disconnectError.message})` : ''}`));
+    client.connectionStatusChanged?.((e) => {
+        logger.info(`Session ${session.id}: Dev Tunnel ${e.previousStatus} → ${e.status}${e.disconnectError ? ` (${e.disconnectError.message})` : ''}`);
+        if (e.status === ConnectionStatus.Connected) { live.connected.add(session.id); }
+        else { live.connected.delete(session.id); }
+    });
     client.keepAliveFailed?.((e) => {
         logger.warn(`Session ${session.id}: Dev Tunnel keep-alive missed ${e.count} consecutive probe(s)`);
         // A half-open Dev Tunnel stays "Connected", so the SDK's enableReconnect never fires; rebuild once misses cross the
@@ -207,12 +209,14 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
     }
 
     session.connectionInfo!.localPort = localPort;
+    live.connected.add(session.id);
     logger.info(`${t.label} connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
     return localPort;
 }
 
 // Frees the local port only. Never deletes the remote sshd or tunnel (job-scoped, reaped by Linkspan) — that would break reattach.
 export async function disposeTunnelClient(sessionId: string): Promise<void> {
+    live.connected.delete(sessionId);
     const client = activeTunnelClients.get(sessionId);
     if (!client) { return; }
     try {

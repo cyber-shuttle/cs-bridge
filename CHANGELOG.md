@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- A session's status is derived from recorded facts (the last reading, the stop intent, a failure verdict, the
+  walltime) and this window's live connection instead of being stored, so a stale reading cannot revive an ended
+  session, a reload cannot lose a stop, and the sidebar and the remote window's status bar always agree.
+
+### Changed
+
 - **EC2 instances** **(experimental)**: an instance is now a session. It follows the session lifecycle, with the
   same card, Start, Stop, Connect and Delete, the window heartbeat and the remote window's Stop, and its record
   survives a reload. The menu shows the signed-in AWS key with **Sign Out of AWS**, and **Create Cloud VM** walks

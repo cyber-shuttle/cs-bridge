@@ -3,12 +3,12 @@
 // accepts a connection; connect only writes the per-session SSH host, since the instance is reached over plain SSH.
 import * as net from 'net';
 import { uuidv7 } from 'uuidv7';
-import { Ec2Spec, SlurmSession } from '../models';
+import { Ec2Spec, SlurmJobStatus, SlurmSession } from '../models';
 import { Logger } from '../logger';
-import { addSession, getAllSessions, setStatus, updateSession } from '../extensionStore';
+import { addSession, getAllSessions, live, observe, statusOf, updateSession } from '../extensionStore';
 import { AwsClient } from './aws';
 import { keyName } from './ec2';
-import { computeEc2Transition, isTerminal, StatusTransition } from './sessionMachine';
+import { isTerminal, observedEc2 } from './sessionMachine';
 import { Backend, SessionMonitor } from './sessionSupport';
 import { deleteSshConfigEntry, sshKeyPath, writeSshConfigEntry } from './sshSupport';
 import { csHostAlias } from './sshHostsStore';
@@ -29,7 +29,7 @@ export class Ec2Backend implements Backend {
     newSession(ec2: Ec2Spec): SlurmSession {
         const now = Date.now();
         return {
-            id: uuidv7(), name: `${now}`, status: 'not_started', alias: `aws-${ec2.region}`, account: '', partition: '', rootFolder: `/home/${ec2.user}`,
+            id: uuidv7(), name: `${now}`, desired: 'running', alias: `aws-${ec2.region}`, account: '', partition: '', rootFolder: `/home/${ec2.user}`,
             resources: { cores: 0, memoryMb: 0, wallMinutes: 0 }, jobId: '', submittedAt: now, errorMessage: '', transport: 'devtunnel', ec2,
         };
     }
@@ -44,9 +44,9 @@ export class Ec2Backend implements Backend {
             for (const [n, i] of found.filter(i => !known.has(i.id) && !known.has(i.name) && i.state !== 'shutting-down').entries()) {
                 const session = this.newSession({ region, type: i.type, image: '', user: i.user, ip: i.ip });
                 // One millisecond can adopt several records, and the name's last six characters alias the SSH host.
-                Object.assign(session, { name: `${session.name}${n}`, jobId: i.id, status: computeEc2Transition('not_started', i.state).next ?? 'failed' });
+                Object.assign(session, { name: `${session.name}${n}`, jobId: i.id, desired: i.state === 'stopped' ? 'stopped' : 'running', observed: { state: observedEc2(i.state), at: Date.now() } });
                 addSession(session);
-                if (!isTerminal(session.status)) { this.monitor().startMonitoring(session); }
+                if (!isTerminal(statusOf(session))) { this.monitor().startMonitoring(session); }
                 logger.info(`Adopted EC2 instance ${i.id} in ${region} as session ${session.name}`);
             }
         }
@@ -59,7 +59,7 @@ export class Ec2Backend implements Backend {
         else { session.jobId = await ec2.launch(spec.image, spec.type, spec.region, csHostAlias(session)); }
         spec.ip = '';
         session.connectionInfo = undefined;
-        setStatus(session, 'preparing');
+        observe(session, SlurmJobStatus.RUNNING);
         this.monitor().startMonitoring(session);
     }
 
@@ -73,9 +73,8 @@ export class Ec2Backend implements Backend {
     }
 
     async connect(session: SlurmSession): Promise<boolean> {
-        setStatus(session, 'connecting');
         await this.writeHost(session);
-        setStatus(session, 'connected');
+        live.connected.add(session.id);
         return true;
     }
 
@@ -83,24 +82,26 @@ export class Ec2Backend implements Backend {
         if (session.jobId) { await this.aws.requireEc2().act('terminate', session.ec2!.region, session.jobId); }
     }
 
-    async tick(session: SlurmSession): Promise<StatusTransition> {
+    async tick(session: SlurmSession): Promise<void> {
         const ec2 = this.aws.ec2;
-        if (!ec2) { return {}; } // signed out, or activation has not restored the key yet: hold
+        if (!ec2) { return; } // signed out, or activation has not restored the key yet: hold
         const spec = session.ec2!;
         const { state, ip } = await ec2.describe(spec.region, session.jobId);
+        observe(session, observedEc2(state));
         if (ip !== spec.ip) {
             spec.ip = ip; // a stopped instance comes back with a new public IP
             updateSession(session);
-            if (session.status === 'connected') { await this.writeHost(session); }
+            if (live.connected.has(session.id)) { await this.writeHost(session); }
         }
-        if (session.status === 'preparing' && state === 'running' && ip && await portOpen(ip, SSH_PORT)) {
+        if (state === 'running' && !session.connectionInfo && ip && await portOpen(ip, SSH_PORT)) {
             session.connectionInfo = { sshPort: SSH_PORT, controlPort: 0 };
-            return { next: 'ready_to_connect', error: '' };
+            session.errorMessage = '';
+            updateSession(session);
         }
-        return computeEc2Transition(session.status, state);
     }
 
     async end(session: SlurmSession): Promise<void> {
+        live.connected.delete(session.id);
         session.connectionInfo = undefined;
         updateSession(session);
         await deleteSshConfigEntry(session.id, csHostAlias(session), false); // the key is the region's

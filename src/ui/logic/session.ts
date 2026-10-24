@@ -42,11 +42,11 @@ export function elapsedRunMs(session: Pick<SlurmSession, 'resources' | 'startedA
 
 // Colour buckets for the status dot: orange = error, green = live.
 // Everything else (idle/pending/stopping/stopped) falls through to neutral grey.
-const ORANGE: SlurmSession['status'][] = ['failed', 'unreachable'];
+const ORANGE: ViewSession['status'][] = ['failed', 'unreachable'];
 
 const STOP: SessionAction = { kind: 'stop', label: 'Stop', icon: 'debug-stop' };
 
-export function dotColor(status: SlurmSession['status']): string {
+export function dotColor(status: ViewSession['status']): string {
     if (ORANGE.includes(status)) { return 'var(--vscode-charts-orange)'; }
     if (isReachable(status)) { return 'var(--vscode-charts-green)'; }
     return 'var(--vscode-descriptionForeground)';

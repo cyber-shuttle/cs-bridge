@@ -4,21 +4,13 @@ import { Stack, Row, Text, Card, Icon, Spinner } from '@/ui/components/base';
 import { fmtTime, wallMs, elapsedRunMs } from '@/ui/logic/session';
 import { StatsView, MetricRow as Field } from '@/ui/components/StatsView';
 import { UsageGraphs } from '@/ui/components/UsageGraphs';
-import { isTerminal, isWallTimeExpired } from '@/modules/sessionMachine';
-import type { SlurmSession, SummaryState } from '@/models';
+import type { SummaryState, ViewSession } from '@/models';
 
-const STATUS_LABEL: Partial<Record<SlurmSession['status'], string>> = {
+const STATUS_LABEL: Partial<Record<ViewSession['status'], string>> = {
     stopped: 'Stopped', failed: 'Failed',
 };
 
-// The record may not be terminal yet at summary time: the walltime path tears down at the deadline,
-// ~30s before any sidebar marks it 'stopped' (and a reload demotes 'connected' → 'ready_to_connect').
-// So derive the ended-state label rather than trusting the raw status.
-function finalStateLabel(s: SlurmSession): string {
-    if (isTerminal(s.status)) { return STATUS_LABEL[s.status] ?? s.status; }
-    if (isWallTimeExpired(s, Date.now())) { return 'Walltime reached'; }
-    return 'Ended';
-}
+const finalStateLabel = (s: ViewSession): string => STATUS_LABEL[s.status] ?? 'Ended';
 
 function Root() {
     const state = useWebviewState<SummaryState>();

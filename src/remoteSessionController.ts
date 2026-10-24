@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { getSession, setStatus, onSessionsChange } from './extensionStore';
-import { isTerminal, isWallTimeExpired } from './modules/sessionMachine';
+import { getSession, statusOf, updateSession, onSessionsChange } from './extensionStore';
+import { isTerminal } from './modules/sessionMachine';
 import { remainingMs, fmtTime, wallMs } from './ui/logic/session';
 import { enqueuePendingSummary } from './summaryPanel';
 import { confirmModal } from './webviewProvider';
@@ -39,7 +39,7 @@ export class RemoteSessionController implements vscode.Disposable {
     private render(): void {
         const s = getSession(this.sessionId);
         if (!s) { return; }
-        if (isWallTimeExpired(s, Date.now()) || isTerminal(s.status)) { void this.teardown(); return; }
+        if (isTerminal(statusOf(s))) { void this.teardown(); return; }
 
         const total = wallMs(s);
         if (total <= 0) {
@@ -72,7 +72,8 @@ export class RemoteSessionController implements vscode.Disposable {
 
         this.torndown = true; // claim now so the 1s render tick can't race the reload
         this.stopItem.text = '$(loading~spin) Stopping…';
-        setStatus(session, 'stopping', '');
+        session.desired = 'stopped';
+        updateSession(session);
         await this.endToLocal();
     }
 

@@ -145,12 +145,14 @@ effect-light part into a `vscode`-free module and test that. `slurmLaunch` is th
 ## Session status model
 
 Statuses are `not_started`, `submitting`, `queued`, `preparing`, `ready_to_connect`, `connecting`, `connected`,
-`stopping`, `stopped`, `failed`, `unreachable` (`models.ts`). The predicates that gate behaviour
-live in `sessionMachine.ts` as the single source of truth shared by the provider, the monitor and the webview:
+`stopping`, `stopped`, `failed`, `unreachable` (`models.ts`). No status is stored: `deriveStatus` in `sessionMachine.ts`
+computes it from the record's facts (`desired`, `observed`, `failure`, `jobId`, `startedAt`, the walltime, `sshPort`)
+and this window's live ones (`extensionStore.live`: a launch or connect in flight, a connection held, a poll that failed
+to reach the backend), and every reader goes through `statusOf`. Writers record facts, never a status, so a stale reading
+cannot revive an ended job and a reload cannot forget a stop. The predicates that gate behaviour live beside it:
 `isTerminal` (stopped/failed), `isDeletable` (terminal plus `not_started`), `isStoppable`, `isReachable`
-(`ready_to_connect`/`connecting`/`connected`). `computeStatusTransition(current, slurmStatus)` is the pure poll-loop
-transition table. `SessionMonitor` owns poll-driven transitions; `SessionProvider` owns user-action transitions and
-every dialog.
+(`ready_to_connect`/`connecting`/`connected`). `SessionMonitor` polls and tears down; `SessionProvider` owns user
+actions and every dialog.
 
 ## SSH transport
 
@@ -171,8 +173,7 @@ Code's extension storage: a folder on desktop, IndexedDB in the browser. A `Json
 in memory, so reads are synchronous; writes, and reloads of other windows' writes from a file watcher (`storage.ts`),
 run in order on that directory's queue, and the last write to a record wins. A window connected to a session rewrites
 its heartbeat, carrying the folder URI it has open, until it closes; Switch focuses that exact URI. Of the connection, only `sshPort` and `controlPort` are persisted, the latter so a
-reattached session health-pings Linkspan instead of polling the SSH host; secrets and the local port stay in memory. On
-load, `connected` and `connecting` demote to `ready_to_connect` (the connection is gone after a reload).
+reattached session health-pings Linkspan instead of polling the SSH host; secrets and the local port stay in memory.
 
 Field names match cs-plane's wire types: a session is `alias`, `account`, `partition`, `rootFolder` and `resources`
 (`cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`); a run is `Run` with `RunStats` and `samples`.
@@ -186,7 +187,8 @@ A remote window recognises itself: `extension.ts` reads the workspace URI author
 `schema.json` in extension storage holds one version. At activation, before any store reads, `migrate()`
 (`store.ts`) applies each step from the version it finds to `SCHEMA_VERSION`, recording the version after each.
 Versions 0 and 1 lived in `~/.cybershuttle`; desktop's `legacySteps` (`schema.ts`) import them under a lock in
-extension storage. The stores read only the current shape.
+extension storage, and step 2 replaces the stored status with the facts it derives from. The stores read only the
+current shape.
 
 | Change | Rule |
 |---|---|

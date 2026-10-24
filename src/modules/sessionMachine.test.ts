@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatusTransition, computeEc2Transition, isTerminal, isDeletable, isStoppable, isReachable, unreachableStatus, isWallTimeExpired } from './sessionMachine';
+import { deriveStatus, observedEc2, isTerminal, isDeletable, isStoppable, isReachable, isWallTimeExpired } from './sessionMachine';
 import { SlurmJobStatus } from '../models';
 
 test('status-category predicates classify each status correctly', () => {
@@ -27,20 +27,6 @@ test('status-category predicates classify each status correctly', () => {
     assert.equal(isDeletable('unreachable'), false); // must Stop, not Delete
 });
 
-test('unreachableStatus downgrades only monitorable-offline statuses; never a reachable one', () => {
-    for (const s of ['submitting', 'queued', 'preparing', 'unreachable'] as const) {
-        assert.equal(unreachableStatus(s), 'unreachable', `${s} should become unreachable`);
-    }
-    // Never downgrade a reachable session for a monitoring-plane blip.
-    for (const s of ['ready_to_connect', 'connecting', 'connected'] as const) {
-        assert.equal(unreachableStatus(s), undefined, `${s} must not downgrade`);
-    }
-    // Terminal / not-yet-launched states are left alone.
-    for (const s of ['stopped', 'failed', 'not_started', 'stopping'] as const) {
-        assert.equal(unreachableStatus(s), undefined, `${s} must not downgrade`);
-    }
-});
-
 test('isWallTimeExpired: a started session past startedAt+walltime is expired; otherwise not', () => {
     // Slurm kills a job at its --time limit, so a passed deadline is authoritative even when sacct is unreachable.
     const wall = { cores: 2, memoryMb: 4096, wallMinutes: 30 }; // 1_800_000 ms
@@ -53,66 +39,47 @@ test('isWallTimeExpired: a started session past startedAt+walltime is expired; o
     assert.equal(isWallTimeExpired({ resources: { ...wall, wallMinutes: 0 }, startedAt: 1_000 }, 9_999_999_999), false);
 });
 
-test('unreachable status climbs back to preparing on a successful RUNNING poll', () => {
-    assert.deepEqual(computeStatusTransition('unreachable', SlurmJobStatus.RUNNING), { next: 'preparing' });
-    assert.deepEqual(computeStatusTransition('unreachable', SlurmJobStatus.QUEUED), { next: 'queued' });
+const idle = { launching: false, connecting: false, connected: false, unreachable: false };
+const facts = (over: Partial<Parameters<typeof deriveStatus>[0]> = {}) => ({
+    desired: 'running' as const, jobId: '42', resources: { cores: 1, memoryMb: 1, wallMinutes: 60 }, ...over,
+});
+const reading = (state: SlurmJobStatus) => ({ observed: { state, at: 0 } });
+const running = reading(SlurmJobStatus.RUNNING);
+const ssh = { connectionInfo: { sshPort: 2222, controlPort: 20000 } };
+const now = 1_000_000;
+
+test('deriveStatus reaches every status from its facts', () => {
+    assert.equal(deriveStatus(facts({ jobId: '' }), idle, now), 'not_started');
+    assert.equal(deriveStatus(facts({ jobId: '' }), { ...idle, launching: true }, now), 'submitting');
+    assert.equal(deriveStatus(facts(), idle, now), 'queued');
+    assert.equal(deriveStatus(facts(reading(SlurmJobStatus.QUEUED)), idle, now), 'queued');
+    assert.equal(deriveStatus(facts(running), idle, now), 'preparing');
+    assert.equal(deriveStatus(facts({ ...running, ...ssh }), idle, now), 'ready_to_connect');
+    assert.equal(deriveStatus(facts({ ...running, ...ssh }), { ...idle, connecting: true }, now), 'connecting');
+    assert.equal(deriveStatus(facts({ ...running, ...ssh }), { ...idle, connected: true }, now), 'connected');
+    assert.equal(deriveStatus(facts({ ...running, desired: 'stopped' }), idle, now), 'stopping');
+    assert.equal(deriveStatus(facts({ ...reading(SlurmJobStatus.CANCELLED), desired: 'stopped' }), idle, now), 'stopped');
+    assert.equal(deriveStatus(facts(reading(SlurmJobStatus.COMPLETED)), idle, now), 'stopped');
+    assert.equal(deriveStatus(facts(reading(SlurmJobStatus.TIMEOUT)), idle, now), 'stopped');
+    assert.equal(deriveStatus(facts(reading(SlurmJobStatus.OUT_OF_MEMORY)), idle, now), 'failed');
+    assert.equal(deriveStatus(facts({ failure: 'sbatch refused' }), idle, now), 'failed');
+    assert.equal(deriveStatus(facts(), { ...idle, unreachable: true }, now), 'unreachable');
 });
 
-test('RUNNING promotes a non-connect-phase session to preparing', () => {
-    assert.deepEqual(computeStatusTransition('queued', SlurmJobStatus.RUNNING), { next: 'preparing' });
-    assert.deepEqual(computeStatusTransition('submitting', SlurmJobStatus.RUNNING), { next: 'preparing' });
+test('deriveStatus: the races the stored status had to guard are impossible by construction', () => {
+    // Walltime passed: the job is dead whatever sacct last said and whatever connection this window still holds.
+    assert.equal(deriveStatus(facts({ ...running, ...ssh, startedAt: now - 61 * 60_000 }), { ...idle, connected: true }, now), 'stopped');
+    // A stop in flight stays a stop while the reading still says RUNNING, and across a reload (no live connection).
+    assert.equal(deriveStatus(facts({ ...running, ...ssh, desired: 'stopped' }), idle, now), 'stopping');
+    // A reload drops the connection, so connected demotes to ready_to_connect on its own.
+    assert.equal(deriveStatus(facts({ ...running, ...ssh }), idle, now), 'ready_to_connect');
+    // Once the sshd is up a failed poll is a tunnel blip, never an unreachable session.
+    assert.equal(deriveStatus(facts({ ...running, ...ssh }), { ...idle, unreachable: true }, now), 'ready_to_connect');
+    // A failure verdict outranks everything, including a later RUNNING reading.
+    assert.equal(deriveStatus(facts({ ...running, ...ssh, failure: 'scancel failed' }), { ...idle, connected: true }, now), 'failed');
 });
 
-test('RUNNING does NOT pull a connect-phase session back to preparing', () => {
-    for (const s of ['preparing', 'ready_to_connect', 'connected', 'connecting'] as const) {
-        assert.deepEqual(computeStatusTransition(s, SlurmJobStatus.RUNNING), {}, `should not transition from ${s}`);
-    }
-});
-
-test('terminal Slurm states stop monitoring with the right status', () => {
-    // COMPLETED collapses into 'stopped', same as walltime/cancellation — the job is gone but the session can be started again.
-    assert.deepEqual(computeStatusTransition('preparing', SlurmJobStatus.COMPLETED), { next: 'stopped', stopMonitoring: true });
-    assert.deepEqual(computeStatusTransition('preparing', SlurmJobStatus.CANCELLED), { next: 'stopped', stopMonitoring: true });
-    assert.deepEqual(computeStatusTransition('connected', SlurmJobStatus.TIMEOUT), { next: 'stopped', stopMonitoring: true });
-});
-
-test('failure states stop monitoring and carry an error message', () => {
-    for (const s of [SlurmJobStatus.FAILED, SlurmJobStatus.OUT_OF_MEMORY]) {
-        const t = computeStatusTransition('preparing', s);
-        assert.equal(t.next, 'failed');
-        assert.equal(t.stopMonitoring, true);
-        assert.match(t.error ?? '', new RegExp(`Job ended with status: ${s}`));
-    }
-});
-
-test('QUEUED maps to queued without stopping monitoring', () => {
-    assert.deepEqual(computeStatusTransition('submitting', SlurmJobStatus.QUEUED), { next: 'queued' });
-});
-
-test('UNKNOWN holds (never terminalizes) — a transient/unrecognized sacct state is not job death', () => {
-    assert.deepEqual(computeStatusTransition('preparing', SlurmJobStatus.UNKNOWN), {});
-    assert.deepEqual(computeStatusTransition('connected', SlurmJobStatus.UNKNOWN), {});
-});
-
-test('a stopping session is never resurrected: RUNNING/QUEUED hold, only a terminal state finishes it', () => {
-    assert.deepEqual(computeStatusTransition('stopping', SlurmJobStatus.RUNNING), {});
-    assert.deepEqual(computeStatusTransition('stopping', SlurmJobStatus.QUEUED), {});
-    assert.deepEqual(computeStatusTransition('stopping', SlurmJobStatus.UNKNOWN), {});
-    assert.deepEqual(computeStatusTransition('stopping', SlurmJobStatus.CANCELLED), { next: 'stopped', stopMonitoring: true });
-    assert.deepEqual(computeStatusTransition('stopping', SlurmJobStatus.COMPLETED), { next: 'stopped', stopMonitoring: true });
-});
-
-test('EC2: pending and running promote to preparing, never pull a connect-phase session back', () => {
-    assert.deepEqual(computeEc2Transition('submitting', 'pending'), { next: 'preparing' });
-    assert.deepEqual(computeEc2Transition('unreachable', 'running'), { next: 'preparing' });
-    for (const s of ['preparing', 'ready_to_connect', 'connected', 'connecting'] as const) {
-        assert.deepEqual(computeEc2Transition(s, 'running'), {}, `should not transition from ${s}`);
-    }
-});
-
-test('EC2: a stopping session is not revived by a lagging running reading; stopped and terminated end monitoring', () => {
-    assert.deepEqual(computeEc2Transition('stopping', 'running'), {});
-    assert.deepEqual(computeEc2Transition('connected', 'stopping'), { next: 'stopping' });
-    assert.deepEqual(computeEc2Transition('stopping', 'stopped'), { next: 'stopped', stopMonitoring: true });
-    assert.equal(computeEc2Transition('connected', 'terminated').next, 'failed');
+test('observedEc2 maps instance states onto the Slurm vocabulary', () => {
+    assert.deepEqual(['pending', 'running', 'stopping', 'stopped', 'terminated', 'odd'].map(observedEc2),
+        [SlurmJobStatus.RUNNING, SlurmJobStatus.RUNNING, SlurmJobStatus.RUNNING, SlurmJobStatus.CANCELLED, SlurmJobStatus.FAILED, SlurmJobStatus.UNKNOWN]);
 });

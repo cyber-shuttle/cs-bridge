@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getSession, onSessionsChange } from './extensionStore';
+import { getSession, statusOf, onSessionsChange } from './extensionStore';
 import { renderHtml } from './webviewProvider';
 import { isSameRun, readAllRuns, readRecentSamples, readSessionStats, onRunsChange } from './modules/runStore';
 import { UsageSample, RunStats, SlurmSession, SummaryState } from './models';
@@ -39,7 +39,7 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
         const run = runSnapshot ? undefined : readAllRuns().find(r => isSameRun(r, s));
         const samples = runSnapshot ? runSnapshot.samples : readRecentSamples(s.id);
         const stats = runSnapshot ? runSnapshot.stats : (run?.stats ?? readSessionStats(s.id));
-        const state: SummaryState = { session: s, samples, stats };
+        const state: SummaryState = { session: { ...s, status: statusOf(s) }, samples, stats };
         void panel.webview.postMessage({ command: 'state', state });
     };
     const msgSub = panel.webview.onDidReceiveMessage((m: { command?: string }) => { if (m?.command === 'ready') { post(); } });

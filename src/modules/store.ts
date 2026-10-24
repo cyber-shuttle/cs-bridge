@@ -91,7 +91,7 @@ export class JsonDir<T> {
 
 export type Steps = Record<number, () => Promise<void>>;
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // steps[n] takes the store from version n to n + 1.
 export async function migrate(files: Files, steps: Steps): Promise<void> {

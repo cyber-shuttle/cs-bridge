@@ -1,5 +1,6 @@
 import { Logger } from './logger';
-import { SlurmSession, persistableConnectionInfo } from './models';
+import { SessionStatus, SlurmJobStatus, SlurmSession, persistableConnectionInfo } from './models';
+import { deriveStatus } from './modules/sessionMachine';
 import { Files, JsonDir } from './modules/store';
 import { deleteRunsFile } from './modules/runStore';
 
@@ -24,10 +25,6 @@ export async function initSessionStore(files: Files, onError: (err: unknown) => 
         s => ({ ...s, connectionInfo: persistableConnectionInfo(s.connectionInfo) }));
     windows = new JsonDir<WindowBeat>(files, 'windows', onError);
     await Promise.all([sessions.load(), windows.load()]);
-    for (const s of sessions.values()) {
-        // The connection is gone after a reload; demote so the UI offers Connect (which reattaches from the persisted refs).
-        if (s.status === 'connected' || s.status === 'connecting') { s.status = 'ready_to_connect'; }
-    }
     // A window that died without detaching leaves a beat that lapses with no write to watch.
     const prune = () => { for (const [id, w] of windows.entries()) { if (!isBeating(w)) { windows.delete(id); } } };
     prune();
@@ -52,9 +49,27 @@ export function updateSession(session: SlurmSession) {
     if (sessions.get(session.id)) { sessions.set(session.id, session); }
 }
 
-export function setStatus(session: SlurmSession, status: SlurmSession['status'], errorMessage?: string): void {
-    session.status = status;
-    if (errorMessage !== undefined) { session.errorMessage = errorMessage; }
+export const live = { launching: new Set<string>(), connecting: new Set<string>(), connected: new Set<string>(), unreachable: new Set<string>() };
+
+// A remote window beating for the session is a connection too, whichever window holds the tunnel.
+export function statusOf(session: SlurmSession, now = Date.now()): SessionStatus {
+    const { id } = session;
+    return deriveStatus(session, {
+        launching: live.launching.has(id), connecting: live.connecting.has(id),
+        connected: live.connected.has(id) || windowState(session).windowAlive, unreachable: live.unreachable.has(id),
+    }, now);
+}
+
+// Writing only on change keeps the 5 s polls from churning the store.
+export function observe(session: SlurmSession, state: SlurmJobStatus): void {
+    if (session.observed?.state === state) { return; }
+    session.observed = { state, at: Date.now() };
+    updateSession(session);
+}
+
+export function fail(session: SlurmSession, message: string): void {
+    session.failure = message;
+    session.errorMessage = message;
     updateSession(session);
 }
 
