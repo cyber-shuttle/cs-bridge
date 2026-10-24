@@ -35,6 +35,7 @@ test('concurrent first launches in a region share one key pair and create the mi
     const client = fakeClient({
         CreateDefaultVpcCommand: () => ({ Vpc: { VpcId: `vpc-${++vpcs}` } }),
         DescribeSecurityGroupsCommand: () => ({ SecurityGroups: [{ GroupId: 'sg-1' }] }),
+        RunInstancesCommand: () => ({ Instances: [{ InstanceId: 'i-new' }] }),
         CreateKeyPairCommand: () => ({ KeyMaterial: `key${++created}` }),
     });
     const dir = mkdtempSync(join(tmpdir(), 'ec2-'));

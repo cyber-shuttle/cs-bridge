@@ -54,7 +54,9 @@ export class Ec2 {
                 { Key: USER_TAG, Value: user },
             ] }],
         }));
-        return Instances?.[0]?.InstanceId ?? '';
+        const id = Instances?.[0]?.InstanceId;
+        if (!id) { throw new Error('RunInstances returned no instance id'); }
+        return id;
     }
 
     // Once per region, so concurrent first launches share one key pair; a failure is retried on the next launch.
@@ -90,8 +92,9 @@ export class Ec2 {
         const existing = SecurityGroups?.[0]?.GroupId;
         if (existing) { return existing; }
         const { GroupId } = await client.send(new CreateSecurityGroupCommand({ GroupName: SECURITY_GROUP, Description: 'CS Bridge SSH access' }));
+        if (!GroupId) { throw new Error('CreateSecurityGroup returned no group id'); }
         await client.send(new AuthorizeSecurityGroupIngressCommand({ GroupId, IpPermissions: [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '0.0.0.0/0' }] }] }));
-        return GroupId ?? '';
+        return GroupId;
     }
 
     act(action: InstanceAction, region: string, id: string): Promise<unknown> {

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { getSession, statusOf, onSessionsChange } from './extensionStore';
 import { renderHtml } from './webviewProvider';
 import { isSameRun, readAllRuns, readRecentSamples, readSessionStats, onRunsChange } from './modules/runStore';
-import { UsageSample, RunStats, SlurmSession, SummaryState } from './models';
+import { UsageSample, RunStats, SlurmSession, SummaryState, WebviewMessage } from './models';
 
 // A finished run's fixed snapshot (from the Run History view), shown instead of the live session, which may have been started again.
 interface RunSnapshot { stats?: RunStats; samples?: UsageSample[] }
@@ -41,7 +41,7 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
         const state: SummaryState = { session: { ...s, status: statusOf(s) }, samples, stats };
         void panel.webview.postMessage({ command: 'state', state });
     };
-    const msgSub = panel.webview.onDidReceiveMessage((m: { command?: string }) => { if (m?.command === 'ready') { post(); } });
+    const msgSub = panel.webview.onDidReceiveMessage((m: WebviewMessage) => { if (m.command === 'ready') { post(); } });
     const runsSub = onRunsChange(() => post());
     const sessSub = onSessionsChange(() => post());
     panel.webview.html = renderHtml(panel.webview, extensionUri, 'summary');

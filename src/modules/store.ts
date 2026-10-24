@@ -99,7 +99,9 @@ export async function migrate(files: Files, steps: Steps): Promise<void> {
         throw new Error(`CS Bridge storage is at schema ${version}, newer than this CS Bridge reads (${SCHEMA_VERSION}); update CS Bridge.`);
     }
     for (; version < SCHEMA_VERSION; version++) {
-        await steps[version]?.();
+        const step = steps[version];
+        if (!step) { throw new Error(`CS Bridge has no migration from schema ${version}.`); }
+        await step();
         await files.write('schema.json', JSON.stringify({ version: version + 1 }));
     }
 }

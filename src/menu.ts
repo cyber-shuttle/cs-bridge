@@ -22,7 +22,7 @@ const fail = (err: unknown) => void vscode.window.showErrorMessage(`CS Bridge: $
 const nested = (value: boolean) => void vscode.commands.executeCommand('setContext', 'csbridge.menuNested', value);
 
 export class CsBridgeMenu {
-    private email?: string | null = null;
+    private email: string | null = null;
     private microsoft: string | null = null;
 
     constructor(
