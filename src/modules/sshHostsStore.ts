@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { parse, LineType, type Directive } from 'ssh-config';
-import { SlurmSession, SshHost } from '../models';
+import { SlurmSession, SshHost, isEc2 } from '../models';
 import { keyName } from './ec2';
 import { SshConfigEntry } from './sshCommandParser';
 import { lockedUpdateTextFile } from './fsSupport';
@@ -37,7 +37,7 @@ export const sessionKeyName = (sessionId: string): string => `id_cshost-${sessio
 export function renderSshConfig(sessions: SlurmSession[], keyPath: (name: string) => string): string {
     return sessions.flatMap((s) => {
         const ci = s.connectionInfo;
-        if (s.ec2) { return ci?.sshPort && s.ec2.ip ? [buildSshConfigBlock(s.id, csHostAlias(s), s.ec2.ip, ci.sshPort, s.ec2.user, keyPath(keyName(s.ec2.region)))] : []; }
+        if (isEc2(s)) { return ci?.sshPort && s.ec2.ip ? [buildSshConfigBlock(s.id, csHostAlias(s), s.ec2.ip, ci.sshPort, s.ec2.user, keyPath(keyName(s.ec2.region)))] : []; }
         // The custom SSH server ignores the user.
         return ci?.localPort ? [buildSshConfigBlock(s.id, csHostAlias(s), '127.0.0.1', ci.localPort, 'cs-ssh-user', keyPath(sessionKeyName(s.id)))] : [];
     }).map(block => `${block}\n`).join('');
@@ -47,7 +47,7 @@ export function renderSshConfig(sessions: SlurmSession[], keyPath: (name: string
 // where stalls miss the ptyHost heartbeat and one account's sessions fight over a single tree.
 export const SERVER_INSTALL_ROOT = '/tmp/cs-vscode/';
 export function renderServerInstallPaths(sessions: SlurmSession[], current: Record<string, string>): Record<string, string> {
-    const ours = Object.fromEntries(sessions.filter(s => !s.ec2 && s.connectionInfo?.localPort).map(s => [csHostAlias(s), `${SERVER_INSTALL_ROOT}${s.id}`]));
+    const ours = Object.fromEntries(sessions.filter(s => !isEc2(s) && s.connectionInfo?.localPort).map(s => [csHostAlias(s), `${SERVER_INSTALL_ROOT}${s.id}`]));
     return { ...Object.fromEntries(Object.entries(current).filter(([, dir]) => !dir.startsWith(SERVER_INSTALL_ROOT))), ...ours };
 }
 
