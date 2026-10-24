@@ -1,4 +1,4 @@
-// legacySteps gives store.migrate desktop's steps 0 to 2. Version 0 is every ~/.cybershuttle up to 0.2.0; version 1
+// legacySteps gives store.migrate the steps 0 to 2. Version 0 is every ~/.cybershuttle up to 0.2.0; version 1
 // renamed its fields to cs-plane's; version 2 moves the records and SSH keys into extension storage and clears
 // its own entries from ~/.cybershuttle; version 3 derives the status it stored. Each step runs under a lock and is
 // idempotent, so a crash or a second window reruns it cleanly.

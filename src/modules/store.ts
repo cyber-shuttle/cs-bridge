@@ -1,7 +1,7 @@
 // Records live in extension storage through Files, a folder of JSON files. A JsonDir keeps a
 // directory in memory, so reads are synchronous; writes, and reloads of other windows' writes that storage.ts's
 // watcher reports, run in order behind them. A whole-record write wins over an earlier one; a patch lands its fields on
-// whatever another window wrote last. schema.json versions the layout; desktop's steps below 2 import ~/.cybershuttle.
+// whatever another window wrote last. schema.json versions the layout; the steps below 2 import ~/.cybershuttle.
 import { parseJson } from './json';
 import { getOrSet } from './util';
 
