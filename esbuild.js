@@ -53,6 +53,16 @@ async function main() {
 		external: ['vscode', 'node-rsa'],
 	});
 
+	const hostTestCtx = await esbuild.context({
+		...shared,
+		entryPoints: ['src/host/index.ts'],
+		format: 'cjs',
+		platform: 'node',
+		target: 'node22',
+		outfile: 'out/hostTests.js',
+		external: ['vscode', 'mocha'],
+	});
+
 	// One bundle per sidebar view; each gets its own root and is loaded by data-view-less HTML keyed on the view name.
 	const webviewCtx = await esbuild.context({
 		...shared,
@@ -71,10 +81,10 @@ async function main() {
 	});
 
 	if (watch) {
-		await Promise.all([extensionCtx.watch(), webviewCtx.watch()]);
+		await Promise.all([extensionCtx.watch(), webviewCtx.watch(), hostTestCtx.watch()]);
 	} else {
-		await Promise.all([extensionCtx.rebuild(), webviewCtx.rebuild()]);
-		await Promise.all([extensionCtx.dispose(), webviewCtx.dispose()]);
+		await Promise.all([extensionCtx.rebuild(), webviewCtx.rebuild(), hostTestCtx.rebuild()]);
+		await Promise.all([extensionCtx.dispose(), webviewCtx.dispose(), hostTestCtx.dispose()]);
 	}
 }
 

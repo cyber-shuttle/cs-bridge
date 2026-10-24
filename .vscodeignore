@@ -13,3 +13,5 @@ esbuild.js
 scripts/vscodeMock.*
 bun.lock
 lefthook.yml
+out/hostTests.js*
+.vscode-test/**

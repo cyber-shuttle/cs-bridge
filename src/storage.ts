@@ -4,7 +4,7 @@ import { Files, Steps, migrate } from './modules/store';
 import { initSessionStore } from './extensionStore';
 import { initRunStore } from './modules/runStore';
 
-function storageFiles(root: vscode.Uri): Files {
+export function storageFiles(root: vscode.Uri): Files {
     const fs = vscode.workspace.fs;
     const uri = (name: string) => vscode.Uri.joinPath(root, name);
     const missing = <T>(value: T) => (err: unknown) => {

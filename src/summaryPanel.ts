@@ -24,7 +24,7 @@ export async function consumePendingSummary(context: vscode.ExtensionContext): P
 }
 
 // A past run (from the Run History view) shows as it ended, while the live session may have been started again.
-export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession, past?: Run): void {
+export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession, past?: Run): vscode.WebviewPanel {
     const panel = vscode.window.createWebviewPanel(
         'csbridge.summary', `Session ${session.name} summary`,
         vscode.ViewColumn.One, { enableScripts: true },
@@ -50,4 +50,5 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
     const sessSub = onSessionsChange(() => post());
     panel.webview.html = renderHtml(panel.webview, extensionUri, 'summary');
     panel.onDidDispose(() => { msgSub.dispose(); sessSub.dispose(); runsSub.dispose(); });
+    return panel;
 }
