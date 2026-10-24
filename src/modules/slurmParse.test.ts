@@ -76,7 +76,7 @@ test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan in
 
 test('buildSlurmScript launches a link session with its URL and no token', () => {
     const script = buildSlurmScript(scriptSession(), linkLaunch('wss://u', 'secret'), 25000);
-    assert.match(script, /^"\$LINKSPAN_BIN" --port 0 --tunnel-enable --tunnel-mode link --tunnel-link-args '--url wss:\/\/u'$/m);
+    assert.match(script, /^"\$LINKSPAN_BIN" --port 25000 --tunnel-enable --tunnel-mode link --tunnel-link-args '--url wss:\/\/u'$/m);
     assert.doesNotMatch(script, /TOKEN|secret/);
 });
 
