@@ -11,12 +11,12 @@ const STATS_RETRIES = 2;
 const STATS_RETRY_MS = 3000;
 
 export async function recordSessionRun(session: SlurmSession): Promise<void> {
-    if (!session.jobId) { return; }
     if (readSessionRuns(session.id).some(r => isSameRun(r, session))) { return; }
-    // Captured before the sacct wait: a restart meanwhile would change the job and reset the samples.
+    // Captured before the sacct wait: a restart meanwhile would change the job and reset the live samples and stats.
     const { id: sessionId, alias, jobId, account, partition, startedAt } = session;
     const run = { sessionId, alias, jobId, account, partition, startedAt, endedAt: Date.now(), finalState: statusOf(session), samples: readRecentSamples(session.id) };
-    const stats = await fetchStats(run) ?? readSessionStats(session.id);
+    const inRun = readSessionStats(session.id);
+    const stats = await fetchStats(run) ?? inRun;
     if (getSession(sessionId)) { appendRun({ ...run, stats }); } // a session deleted during the wait keeps no runs file
 }
 
