@@ -25,6 +25,7 @@ export interface SlurmSession {
     desired: 'running' | 'stopped';
     observed?: { state: SlurmJobStatus; at: number }; // the backend's last reading; EC2 states map onto the Slurm vocabulary
     failure?: string;
+    owner?: string; // the window driving the live session, for as long as that window beats
     alias: string; // the SSH host the job is submitted from
     account: string; // '' submits without --account
     partition: string;
@@ -50,11 +51,11 @@ export interface Ec2Spec {
     ip: string;
 }
 
-// sshPort > 0 means Step 1 is up: Linkspan serves the session's sshd. This window's local forward and connect token
-// live in extensionStore.live.
+// sshPort > 0 means Step 1 is up: Linkspan serves the session's sshd.
 export interface ConnectionInfo {
     sshPort: number;
     controlPort: number;
+    localPort?: number; // the owner window's 127.0.0.1 forward to the sshd
 }
 
 export interface SshHost {

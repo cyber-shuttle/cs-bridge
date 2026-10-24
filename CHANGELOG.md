@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- One window drives each live session: it alone polls the job and holds the relay, and a closed window's sessions
+  pass to the next window. Several open windows no longer poll the same job or race to connect it.
+- The per-session SSH hosts and `remote.SSH.serverInstallPath` entries are rendered from the session records instead
+  of edited in place, so an entry can no longer be left behind or clobbered by another window.
+
+### Changed
+
 - A remote command that fails now reports its exit code and stderr the same way everywhere, so a launch, stop or
   discovery failure reads as the command's own error.
 - A session record no longer carries a window's local port or Dev Tunnel token; they stay in that window's memory.

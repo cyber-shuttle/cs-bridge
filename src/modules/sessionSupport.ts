@@ -1,7 +1,7 @@
 import { UsageSample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession, SessionStatus as Status } from '../models';
 import { Logger, errMsg } from './../logger';
 import { PlaneError } from '../plane';
-import { updateSession, observe, fail, statusOf, live } from '../extensionStore';
+import { updateSession, observe, fail, statusOf, live, claim, owns } from '../extensionStore';
 import { recordSessionRun, sacctStats } from '../sessionRunSupport';
 import { SshManager } from './sshSupport';
 import { getSampleViaSrun, getSlurmJobStatus } from './slurmSupport';
@@ -101,6 +101,11 @@ export class SessionMonitor {
         if (!session || this.ticking.has(sessionId)) { return; }
         this.ticking.add(sessionId);
         try {
+            if (!owns(session)) {
+                this.stopMonitoring(sessionId);
+                await disposeTunnelClient(sessionId);
+                return;
+            }
             const status = statusOf(session);
             if (isTerminal(status)) {
                 void this.endSession(session);
@@ -188,7 +193,7 @@ export class SessionMonitor {
     // Begin an independent poll loop for one active session (no-op if already running or not yet launched). The first
     // poll fires now so status isn't stale for a full interval; the rest run on the interval.
     public startMonitoring(session: SlurmSession): void {
-        if (!session.jobId || this.tickers.has(session.id)) { return; }
+        if (!session.jobId || this.tickers.has(session.id) || !claim(session)) { return; }
         this.sessions.set(session.id, session);
         this.tickers.set(session.id, setInterval(() => void this.tick(session.id), POLLING_INTERVAL_MS));
         this.log(session, `monitoring started (JobId=${session.jobId})`);

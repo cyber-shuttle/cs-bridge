@@ -54,8 +54,9 @@ Local VS Code                              Remote HPC cluster
    reaches `ready_to_connect`.
 8. **Connect.** `connectTransport` composes the step: `connectSessionToTunnel` forwards the control port through an
    in-process `TunnelRelayTunnelClient` and binds `127.0.0.1:N`, whose every connection rides Linkspan's
-   `/api/v1/forward/{sshPort}`, and returns that port; `addSshConfigEntry` writes the per-session SSH host, and only
-   on success does `openOrFocusWindow` open `vscode-remote://ssh-remote+<alias>/…`.
+   `/api/v1/forward/{sshPort}`, and records that port on the session; `syncSshConfig` renders the extension's
+   `ssh_config` and the `remote.SSH.serverInstallPath` map from the records on every change, and only once they are
+   written does `openOrFocusWindow` open `vscode-remote://ssh-remote+<alias>/…`.
 9. **Attach.** VS Code's remote-SSH URI handler runs the OS `ssh` binary against that alias, installs VS Code
    Server, and attaches the window to the compute node. CS Bridge pins that alias's
    `remote.SSH.serverInstallPath` to node-local `/tmp/cs-vscode/<sessionId>`, keeping the server off the shared
@@ -173,9 +174,11 @@ newline-preserving monospace block is what lets a device-flow QR prompt render, 
 Sessions, run history and window heartbeats are one JSON record per id under `sessions/`, `runs/` and `windows/` in VS
 Code's extension storage: a folder on desktop, IndexedDB in the browser. A `JsonDir` (`store.ts`) holds each directory
 in memory, so reads are synchronous; writes, and reloads of other windows' writes from a file watcher (`storage.ts`),
-run in order on that directory's queue, and the last write to a record wins. A window connected to a session rewrites
-its heartbeat, carrying the folder URI it has open, until it closes; Switch focuses that exact URI. A record holds only
-what every window shares; this window's local forward, connect token and connection are `extensionStore.live`.
+run in order on that directory's queue, and the last write to a record wins. Every window rewrites its heartbeat until it
+closes; a remote window's names its session and the folder URI it has open, which Switch focuses. A live session has one
+owner window (`owner`), claimed while no beating window holds it: the owner alone monitors it and holds its relay, and a
+window that loses the claim stops on its next tick. A record holds only what every window shares; this window's connect
+token and connection are `extensionStore.live`.
 
 Field names match cs-plane's wire types: a session is `alias`, `account`, `partition`, `rootFolder` and `resources`
 (`cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`); a run is `Run` with `RunStats` and `samples`.

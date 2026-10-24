@@ -8,10 +8,10 @@ const logger = Logger.getInstance();
 
 let sessions: JsonDir<SlurmSession>;
 
-// A window connected to a session rewrites windows/{windowId}.json until it closes. env.sessionId repeats across
-// browser tabs, and a hidden tab's timers can slow to once a minute. folder is the URI the window has open, which
-// Switch focuses: VS Code finds a window only by the exact URI, and the user may have opened another folder there.
-interface WindowBeat { sessionId: string; at: number; folder?: string }
+// Every window rewrites windows/{windowId}.json until it closes; a remote window's beat names its session and the
+// folder URI it has open, which Switch focuses: VS Code finds a window only by the exact URI, and the user may have
+// opened another folder there. env.sessionId repeats across browser tabs, and a hidden tab's timers can slow to once a minute.
+interface WindowBeat { sessionId?: string; at: number; folder?: string }
 let windows: JsonDir<WindowBeat>;
 const BEAT_MS = 20_000;
 const isBeating = (w: WindowBeat) => Date.now() - w.at < 90_000;
@@ -64,7 +64,7 @@ class LiveSet extends Set<string> {
 
 export const live = {
     launching: new LiveSet(), connecting: new LiveSet(), connected: new LiveSet(), unreachable: new LiveSet(),
-    connectTokens: new Map<string, string>(),
+    busy: new Set<string>(), connectTokens: new Map<string, string>(),
 };
 
 // A remote window beating for the session is a connection too, whichever window holds the tunnel.
@@ -94,11 +94,21 @@ export function deleteSession(sessionId: string) {
     deleteRunsFile(sessionId);
 }
 
-export function attachWindow(sessionId: string, folder: string): void {
-    const write = () => windows.set(windowId, { sessionId, at: Date.now(), folder });
+export function startBeat(remote?: { sessionId: string; folder: string }): void {
+    const write = () => windows.set(windowId, { ...remote, at: Date.now() });
     write();
     beat = setInterval(write, BEAT_MS);
 }
+
+// A claim holds while its window beats, so a closed or crashed window's sessions pass to the next window that looks.
+export function claim(session: SlurmSession): boolean {
+    const owner = session.owner && windows.get(session.owner);
+    if (session.owner !== windowId && owner && isBeating(owner)) { return false; }
+    if (session.owner !== windowId) { session.owner = windowId; updateSession(session); }
+    return true;
+}
+
+export const owns = (session: SlurmSession): boolean => session.owner === windowId;
 
 export function detachWindow(): Promise<void> | undefined {
     clearInterval(beat);
@@ -116,3 +126,5 @@ export function onSessionsChange(listener: () => void): { dispose(): void } {
     liveListeners.add(listener);
     return { dispose: () => { subs.forEach(s => s.dispose()); liveListeners.delete(listener); } };
 }
+
+export const onWindowsChange = (listener: () => void) => windows.onDidChange(listener);

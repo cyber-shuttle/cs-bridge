@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    renderSshConfig, renderServerInstallPaths,
     includeIsEffective,
     parseHostsFromConfigText,
     addHostToConfigText,
@@ -76,15 +77,6 @@ test('buildSshConfigBlock emits the six SSH resilience options', () => {
     assert.match(block, /^ {4}IdentityFile "\/keys\/id_cshost-sess1"$/m);
 });
 
-// deleteSshConfigEntry's removal regex only matches 4-space-indented directive lines.
-test('buildSshConfigBlock indents every directive so deleteSshConfigEntry can remove it', () => {
-    const block = buildSshConfigBlock('s', csHostAlias({ alias: 'delta', name: 'abc123' }), '127.0.0.1', 22, 'u', '/k');
-    for (const line of block.split('\n')) {
-        if (line === '' || line.startsWith('#') || line.startsWith('Host ')) { continue; }
-        assert.match(line, /^ {4}\S/);
-    }
-});
-
 test('mergeHostsByPriority keeps the first occurrence of each alias (user wins over system)', () => {
     const user = [{ alias: 'a', source: 'user' as const }, { alias: 'b', hostname: 'user-b', source: 'user' as const }];
     const system = [{ alias: 'b', hostname: 'system-b', source: 'system' as const }, { alias: 'c', source: 'system' as const }];
@@ -102,4 +94,19 @@ test('includeIsEffective accepts only an uncommented Include above the first Hos
     assert.equal(includeIsEffective(`# ${line}\n`, line), false, 'a commented Include does nothing');
     assert.equal(includeIsEffective(`Host *\n    ${line}\n`, line), false, 'scoped to a Host block, not global');
     assert.equal(includeIsEffective(`Match host bar\n    ${line}\n`, line), false, 'scoped to a Match block');
+});
+
+test('renderSshConfig lists a Slurm session with a forward and an EC2 instance with an address, nothing else', () => {
+    const base = { name: 'n-493119', desired: 'running' as const, account: '', partition: '', rootFolder: '', resources: { cores: 1, memoryMb: 1, wallMinutes: 1 }, submittedAt: 0, errorMessage: '', transport: 'devtunnel' as const };
+    const text = renderSshConfig([
+        { ...base, id: 'a', alias: 'delta', jobId: '1', connectionInfo: { sshPort: 40, controlPort: 20000, localPort: 50122 } },
+        { ...base, id: 'b', alias: 'delta', jobId: '2', connectionInfo: { sshPort: 40, controlPort: 20000 } },
+        { ...base, id: 'c', alias: 'aws-us-east-1', jobId: 'i-1', connectionInfo: { sshPort: 22, controlPort: 0 }, ec2: { region: 'us-east-1', type: 't', image: '', user: 'ubuntu', ip: '1.2.3.4' } },
+    ], name => `/keys/${name}`);
+    assert.deepEqual(text.match(/^Host .*$/gm), ['Host delta-493119', 'Host aws-us-east-1-493119']);
+    assert.match(text, /^# CS-Bridge auto-generated for session a\nHost delta-493119\n {4}HostName 127\.0\.0\.1\n {4}Port 50122\n {4}User cs-ssh-user/m);
+    assert.match(text, /^Host aws-us-east-1-493119\n {4}HostName 1\.2\.3\.4\n {4}Port 22\n {4}User ubuntu\n(?:.*\n)*? {4}IdentityFile "\/keys\/cs-aws-generated-key-us-east-1"/m);
+    assert.equal(renderSshConfig([], () => ''), '');
+    assert.deepEqual(renderServerInstallPaths([{ ...base, id: 'a', alias: 'delta', jobId: '1', connectionInfo: { sshPort: 40, controlPort: 1, localPort: 5 } }], { 'delta-000000': '/tmp/cs-vscode/old', 'mine': '/srv/code' }),
+        { 'mine': '/srv/code', 'delta-493119': '/tmp/cs-vscode/a' });
 });

@@ -12,8 +12,7 @@ import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
 import { LinkspanLaunch, devTunnelLaunch, linkLaunch } from './slurmParse';
 import { deleteDevTunnel, devTunnels, ensureDevTunnel, getMicrosoftAccountLabel } from './tunnelSupport';
 import { LinkManagementClient, LinkRelayClient, forwardedLocalPort } from './linkTunnel';
-import { sessionPublicKey, deleteSshConfigEntry } from './sshSupport';
-import { csHostAlias } from './sshHostsStore';
+import { sessionPublicKey } from './sshSupport';
 import { ensureSshServer } from './linkspanSupport';
 
 const logger = Logger.getInstance();
@@ -208,6 +207,8 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
         throw err;
     }
 
+    session.connectionInfo.localPort = localPort;
+    updateSession(session);
     live.connected.add(session.id);
     logger.info(`${t.label} connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
     return localPort;
@@ -234,7 +235,6 @@ export async function disposeAllTunnelClients(): Promise<void> {
 
 export async function disconnectSessionFromTunnel(t: Tunnels, session: SlurmSession): Promise<void> {
     await disposeTunnelClient(session.id);
-    await deleteSshConfigEntry(session.id, csHostAlias(session));
     session.connectionInfo = undefined;
     updateSession(session);
     logger.info(`Session ${session.id} disconnected from its ${t.label}.`);
