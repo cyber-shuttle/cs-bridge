@@ -15,9 +15,11 @@ interface LogSink {
 
 // A step throws on failure, except the version check, which answers false; the caller persists what a step returns.
 
+type Host = Pick<SlurmSession, 'alias'>;
+
 export interface LaunchDraft { script: string; sbatchEnv: Record<string, string>; connectionInfo: ConnectionInfo } // the run's, recorded on submit
 
-export async function checkSlurmAvailability(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
+export async function checkSlurmAvailability(session: Host, run: RemoteRunner, log: LogSink): Promise<void> {
     await run.runRemoteCommand(session.alias, 'sinfo');
     log.info(`Slurm is available on SSH host ${session.alias}`);
 }
@@ -40,7 +42,7 @@ export function keepsInstalledLinkspan(local: string, latest: string): boolean {
 }
 
 // As in cs-plane, the latest tag decides, and the floor counts a build as its release.
-export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<boolean> {
+export async function linkspanIsUpToDate(session: Host, run: RemoteRunner, log: LogSink): Promise<boolean> {
     let versions: string;
     try { versions = await run.runRemoteCommand(session.alias, `printf 'installed=%s\\nlatest=%s\\n' "$(~/.cybershuttle/bin/linkspan --version 2>/dev/null | head -1)" "$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cyber-shuttle/linkspan/releases/latest 2>/dev/null | sed 's#.*/##')"`); }
     catch (err) {
@@ -69,7 +71,7 @@ export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunne
 // as a machine Linkspan is not released for.
 const RELEASE_ARCH: Readonly<Record<string, string>> = { x86_64: 'x86_64', aarch64: 'arm64', arm64: 'arm64' };
 
-export async function installLinkspan(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
+export async function installLinkspan(session: Host, run: RemoteRunner, log: LogSink): Promise<void> {
     const machine = (await run.runRemoteCommand(session.alias, 'uname -m')).trim();
     const arch = RELEASE_ARCH[machine];
     if (!arch) {
@@ -107,7 +109,7 @@ export async function validateSlurmConfig(session: SlurmSession, run: RemoteRunn
 }
 
 // sbatchEnv reaches the job as assignments on sbatch over the shell's stdin, never an argv, the job script or a file.
-export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner, log: LogSink, draft: Pick<LaunchDraft, 'script' | 'sbatchEnv'>): Promise<string> {
+export async function submitJobToSlurm(session: Pick<SlurmSession, 'alias' | 'name'>, run: RemoteRunner, log: LogSink, draft: Pick<LaunchDraft, 'script' | 'sbatchEnv'>): Promise<string> {
     const scriptB64 = Buffer.from(draft.script).toString('base64');
     const env = envAssignments(draft.sbatchEnv);
     const submitCommand = `echo '${scriptB64}' | base64 -d | ${env}sbatch${env && ' --export=ALL'}`;

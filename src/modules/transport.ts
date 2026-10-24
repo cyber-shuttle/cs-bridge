@@ -210,7 +210,7 @@ export async function disposeAllTunnelClients(): Promise<void> {
     await Promise.all([...activeTunnelClients.keys()].map(id => disposeTunnelClient(id)));
 }
 
-export async function disconnectSessionFromTunnel(t: Tunnels, session: SlurmSession): Promise<void> {
+export async function disconnectSessionFromTunnel(t: Pick<Tunnels, 'label'>, session: SlurmSession): Promise<void> {
     await disposeTunnelClient(session.id);
     patch(session, { connectionInfo: undefined });
     logger.info(`Session ${session.id} disconnected from its ${t.label}.`);
