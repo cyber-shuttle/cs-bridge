@@ -210,8 +210,7 @@ export class SlurmBackend implements Backend {
         const status = statusOf(session);
         const transport = this.transports.transportFor(session);
         // Job running but not yet up: drive bring-up over the tunnel rather than Slurm,
-        // cross-checking sacct only after PROBE_GIVEUP failures, so a running session
-        // never SSH-polls the SSH host.
+        // cross-checking sacct only after PROBE_GIVEUP failures.
         if (status === 'preparing' && transport.tunnelRef(session) && session.connectionInfo?.controlPort) {
             await this.pingOrCrossCheck(session, alive, () => this.prepareRemote(session, alive));
             return;
@@ -248,7 +247,7 @@ export class SlurmBackend implements Backend {
         if (slurmStatus === SlurmJobStatus.RUNNING && !session.startedAt) { patch(session, { startedAt: Date.now() - elapsedSeconds * 1000 }); }
 
         // Pre-running states (queued/unreachable): sacct is the reading. RUNNING makes the session 'preparing', after
-        // which the tunnel branch above takes over — no more SSH host polls.
+        // which the tunnel branches above take over.
         if (slurmStatus === SlurmJobStatus.UNKNOWN) { this.warn(session, `job status=${slurmStatus}`); }
         observe(session, slurmStatus);
     }
