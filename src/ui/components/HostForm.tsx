@@ -12,8 +12,9 @@ interface Props {
     validating?: boolean;
 }
 
+const DEFAULT_WALL = '30';
 const WALL_OPTIONS: [string, string][] = [
-    ['30', '30 min'], ['60', '1 hour'], ['120', '2 hours'],
+    [DEFAULT_WALL, '30 min'], ['60', '1 hour'], ['120', '2 hours'],
     ['240', '4 hours'], ['480', '8 hours'], ['720', '12 hours'], ['1440', '24 hours'],
 ];
 
@@ -41,7 +42,7 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
     const [memoryPick, setMemory] = useState('');
     const [gpuCountPick, setGpuCount] = useState('');
     const [gpuTypePick, setGpuType] = useState('');
-    const [wall, setWall] = useState(WALL_OPTIONS[0][0]);
+    const [wall, setWall] = useState(DEFAULT_WALL);
 
     const parts = partitionsForTab(info, tab);
     const partition = parts.find(p => p.name === partName) ?? parts[0];
@@ -88,7 +89,7 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
             <Select label="Partition" value={partName} onChange={setPartName}>
                 {parts.map(p => (
                     <option key={p.name} value={p.name}>
-                        {p.gres.length ? `${p.name} (${p.cpuCount} CPUs, ${p.gres[0].count} GPUs)` : `${p.name} (${p.cpuCount} CPUs)`}
+                        {p.name} ({p.cpuCount} CPUs{p.gres[0] ? `, ${p.gres[0].count} GPUs` : ''})
                     </option>
                 ))}
             </Select>

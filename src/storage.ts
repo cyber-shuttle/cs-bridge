@@ -28,7 +28,7 @@ export async function openStorage(context: vscode.ExtensionContext, legacy: (fil
     const dirs = [...await initSessionStore(files, onError), await initRunStore(files, onError)];
     const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, '*/*.json'));
     const reload = (uri: vscode.Uri) => {
-        const [dir, name] = uri.path.split('/').slice(-2);
+        const [dir, name = ''] = uri.path.split('/').slice(-2);
         void dirs.find(d => d.dir === dir)?.reload(name.slice(0, -'.json'.length));
     };
     watcher.onDidCreate(reload);

@@ -77,7 +77,7 @@ export class CsBridgeMenu {
             items: [
                 { label: '$(add) Create New SSH Session', open: this.hosts },
                 { label: '$(server) Add SSH Host', open: this.addHost },
-                ...enabled('aws') && this.aws.regions ? [{ label: '$(cloud) Create Cloud VM', open: this.cloudVm }] : [],
+                ...enabled('aws') && this.aws.regions ? [{ label: '$(cloud) Create Cloud VM', open: this.cloudVm(this.aws.regions) }] : [],
                 ...cybershuttle ? [{ label: '$(arrow-swap) Default Transport', description: this.of(this.current()).label, open: this.transport }] : [],
                 { label: 'Accounts', kind: vscode.QuickPickItemKind.Separator },
                 ...cybershuttle ? [email === null
@@ -125,17 +125,17 @@ export class CsBridgeMenu {
                 title: 'Edit SSH Host: Destination', value: [host.user, host.hostname].filter(Boolean).join('@'),
                 placeholder: '[user@]hostname',
                 submit: (destination) => {
-                    const [HostName, User] = destination.split('@').reverse();
+                    const [HostName = '', User] = destination.split('@').reverse();
                     this.sshHosts.saveSshHost({ Host: newAlias, HostName, ...User && { User } }, alias);
                 },
             }),
         };
     };
 
-    private readonly cloudVm: Build = () => ({
+    private readonly cloudVm = (regions: string[]): Build => () => ({
         title: 'Create Cloud VM: Region',
         placeholder: 'Select the AWS region to launch in',
-        items: this.aws.regions!.map(region => ({ label: region, open: () => ({
+        items: regions.map(region => ({ label: region, open: () => ({
             title: 'Create Cloud VM: Instance Type',
             placeholder: 'Select the instance type',
             items: EC2_TYPES.map(type => ({ label: type, open: () => ({

@@ -20,43 +20,43 @@ test('csHostAlias is <alias>-<last 6 chars of the session name>', () => {
 
 test('parseHostsFromConfigText reads Host/HostName/User and skips wildcards', () => {
     const text = 'Host work\n  HostName work.example.com\n  User alice\n\nHost *\n  ServerAliveInterval 60\n';
-    assert.deepEqual(parseHostsFromConfigText(text), [{ alias: 'work', hostname: 'work.example.com', user: 'alice' }]);
+    assert.deepEqual(parseHostsFromConfigText(text, 'user'), [{ alias: 'work', source: 'user', hostname: 'work.example.com', user: 'alice' }]);
 });
 
 test('parseHostsFromConfigText captures extra directives', () => {
     const text = 'Host gpu\n  HostName gpu.example.com\n  User bob\n  Port 2222\n  ForwardAgent yes\n';
-    assert.deepEqual(parseHostsFromConfigText(text), [
-        { alias: 'gpu', hostname: 'gpu.example.com', user: 'bob', extraDirectives: ['Port 2222', 'ForwardAgent yes'] },
+    assert.deepEqual(parseHostsFromConfigText(text, 'user'), [
+        { alias: 'gpu', source: 'user', hostname: 'gpu.example.com', user: 'bob', extraDirectives: ['Port 2222', 'ForwardAgent yes'] },
     ]);
 });
 
 test('parseHostsFromConfigText flattens multi-token directives instead of emitting [object Object]', () => {
     const text = 'Host bastioned\n  HostName internal.example.com\n  User carol\n  ProxyCommand ssh -W %h:%p bastion\n  SendEnv LANG LC_*\n';
-    assert.deepEqual(parseHostsFromConfigText(text), [
-        { alias: 'bastioned', hostname: 'internal.example.com', user: 'carol', extraDirectives: ['ProxyCommand ssh -W %h:%p bastion', 'SendEnv LANG LC_*'] },
+    assert.deepEqual(parseHostsFromConfigText(text, 'user'), [
+        { alias: 'bastioned', source: 'user', hostname: 'internal.example.com', user: 'carol', extraDirectives: ['ProxyCommand ssh -W %h:%p bastion', 'SendEnv LANG LC_*'] },
     ]);
 });
 
 test('addHostToConfigText adds an entry that round-trips', () => {
     const text = addHostToConfigText('', { Host: 'h', HostName: 'h', User: 'a' });
-    assert.deepEqual(parseHostsFromConfigText(text), [{ alias: 'h', hostname: 'h', user: 'a' }]);
+    assert.deepEqual(parseHostsFromConfigText(text, 'user'), [{ alias: 'h', source: 'user', hostname: 'h', user: 'a' }]);
 });
 
 test('addHostToConfigText replaces an existing alias instead of duplicating', () => {
     const t1 = addHostToConfigText('', { Host: 'h', HostName: 'h1', User: 'a' });
     const t2 = addHostToConfigText(t1, { Host: 'h', HostName: 'h2', User: 'b' });
-    assert.deepEqual(parseHostsFromConfigText(t2), [{ alias: 'h', hostname: 'h2', user: 'b' }]);
+    assert.deepEqual(parseHostsFromConfigText(t2, 'user'), [{ alias: 'h', source: 'user', hostname: 'h2', user: 'b' }]);
 });
 
 test('addHostToConfigText prepends newest above existing', () => {
     const base = addHostToConfigText('', { Host: 'first', HostName: 'f' });
     const both = addHostToConfigText(base, { Host: 'second', HostName: 's' });
-    assert.deepEqual(parseHostsFromConfigText(both).map(h => h.alias), ['second', 'first']);
+    assert.deepEqual(parseHostsFromConfigText(both, 'user').map(h => h.alias), ['second', 'first']);
 });
 
 test('deleteHostFromConfigText deletes the named entry', () => {
     const text = addHostToConfigText('', { Host: 'h', HostName: 'h' });
-    assert.deepEqual(parseHostsFromConfigText(deleteHostFromConfigText(text, 'h')), []);
+    assert.deepEqual(parseHostsFromConfigText(deleteHostFromConfigText(text, 'h'), 'user'), []);
 });
 
 test('editHostInConfigText rewrites alias, hostname and user in place, keeping the rest of the block', () => {

@@ -1,12 +1,12 @@
 import { createContext } from 'preact';
 import { useContext } from 'preact/hooks';
 import type { CSSProperties, VNode } from 'preact';
-import { SAMPLE_HISTORY_LEN, type ViewSession } from '@/models';
+import { SAMPLE_HISTORY_LEN, type SessionsMessage, type ViewSession } from '@/models';
 import { cardModel, type SessionAction } from '@/ui/logic/session';
 import { isReachable } from '@/modules/sessionMachine';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button, Spinner, Chip } from '@/ui/components/base';
 import { Sparkline } from '@/ui/components/Sparkline';
-import { usageGraphs, graphTitle } from '@/ui/components/UsageGraphs';
+import { usageGraphs, graphTitle, drawable } from '@/ui/components/UsageGraphs';
 import { post } from '@/ui/platform/vscode';
 
 interface Props {
@@ -17,7 +17,7 @@ interface Props {
 // 1s clock owned by the Sessions root, fed through this context so the status text re-renders each tick.
 export const NowContext = createContext(Date.now());
 
-const COMMAND_FOR: Record<SessionAction['kind'], string | null> = {
+const COMMAND_FOR: Record<SessionAction['kind'], Extract<SessionsMessage, { sessionId: string }>['command'] | null> = {
     start: 'prepareLaunchSession',
     stop: 'stopSessionExecution',
     switch: 'connectTunnel',
@@ -50,7 +50,7 @@ function ResourceStats({ session }: { session: ViewSession }) {
         <Divided items={graphs.map(g => (
             <Stack key={g.label} gap={1} style={{ minWidth: '44px', alignItems: 'flex-start' }}>
                 <Text size={11}>{g.text}</Text>
-                {g.lines[0].values.length >= 2
+                {drawable(g)
                     ? <Sparkline lines={g.lines} slots={SAMPLE_HISTORY_LEN} title={graphTitle(g)} />
                     : <div style={{ height: '14px' }} />}
             </Stack>

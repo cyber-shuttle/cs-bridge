@@ -5,10 +5,14 @@ import { WebviewMessage } from './models';
 
 type ViewKind = 'sessions' | 'hosts' | 'stats' | 'summary';
 
+// One handler per command the view can post, so a message the view adds is a compile error here until handled.
+export type Handlers<M extends WebviewMessage> = { [K in Exclude<M['command'], 'ready'>]: (message: Extract<M, { command: K }>) => void };
+
 // Base for the sidebar webview views: renders the view's bundle and routes messages to/from the webview.
 // Subclasses set viewKind and override the hooks below.
-export abstract class WebviewProvider implements vscode.WebviewViewProvider {
+export abstract class WebviewProvider<M extends WebviewMessage = { command: 'ready' }> implements vscode.WebviewViewProvider {
     protected abstract readonly viewKind: ViewKind;
+    protected abstract readonly handlers: Handlers<M>;
     protected readonly logger = Logger.getInstance();
     protected view?: vscode.WebviewView;
 
@@ -18,7 +22,7 @@ export abstract class WebviewProvider implements vscode.WebviewViewProvider {
         const webview = webviewView.webview;
         webview.options = { enableScripts: true };
         this.view = webviewView;
-        const msgSub = webview.onDidReceiveMessage(data => this.handleMessage(data));
+        const msgSub = webview.onDidReceiveMessage((data: M) => this.handleMessage(data));
         const visSub = webviewView.onDidChangeVisibility(() => { if (webviewView.visible) { void this.pushState(); } });
         webviewView.onDidDispose(() => {
             // Ignore a replaced webview's late dispose so it can't clear the current view.
@@ -30,8 +34,13 @@ export abstract class WebviewProvider implements vscode.WebviewViewProvider {
         webview.html = renderHtml(webview, this.extensionUri, this.viewKind);
     }
 
+    private handleMessage(data: M): void {
+        this.logger.info('Received message from webview:', data);
+        if (data.command === 'ready') { void this.pushState(); return; }
+        (this.handlers[data.command as keyof Handlers<M>] as (message: M) => void)(data);
+    }
+
     // Override hooks (default no-op):
-    protected handleMessage(_data: WebviewMessage): void { }
     protected pushState(): void | Promise<void> { }
     protected onResolved(): void { }
 

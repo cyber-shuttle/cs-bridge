@@ -1,5 +1,4 @@
-import { render } from 'preact';
-import { useWebviewState } from '@/ui/platform/vscode';
+import { useWebviewState, mount } from '@/ui/platform/vscode';
 import { Stack, Row, Text, Card, Icon, Spinner } from '@/ui/components/base';
 import { fmtTime, wallMs, elapsedRunMs } from '@/ui/logic/session';
 import { StatsView, MetricRow as Field } from '@/ui/components/StatsView';
@@ -73,4 +72,4 @@ function Root() {
     );
 }
 
-render(<Root />, document.getElementById('root')!);
+mount(Root);

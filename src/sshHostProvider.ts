@@ -1,26 +1,21 @@
 import * as vscode from 'vscode';
-import { HostsState, WebviewMessage } from './models';
-import { WebviewProvider } from './webviewProvider';
+import { HostsState, HostsMessage } from './models';
+import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { SshManager } from './modules/sshSupport';
 import { SshConfigEntry, assertValidHost } from './modules/sshCommandParser';
 import { USER_SSH_CONFIG_PATH, addHostToConfigFile, deleteHostFromConfigFile, editHostInConfigFile } from './modules/sshHostsStore';
 
 // Webview provider for the SSH Hosts view: reads user + read-only system SSH config, writes user SSH hosts to ~/.ssh/config.
-export class SshHostProvider extends WebviewProvider {
+export class SshHostProvider extends WebviewProvider<HostsMessage> {
     public static readonly viewType = 'csbridge.hostsView';
     protected readonly viewKind = 'hosts' as const;
+    protected readonly handlers: Handlers<HostsMessage> = {
+        deleteSshHost: ({ alias }) => void this.deleteSshHost(alias),
+        openTerminal: ({ alias }) => SshManager.getInstance().openTerminal(alias),
+        editSshHost: ({ alias }) => void vscode.commands.executeCommand('csbridge.editHost', alias),
+    };
 
-    protected handleMessage(data: WebviewMessage): void {
-        switch (data.command) {
-            case 'ready': this.pushState(); break;
-            case 'deleteSshHost': void this.deleteSshHost(data.alias ?? ''); break;
-            case 'openTerminal': SshManager.getInstance().openTerminal(data.alias ?? ''); break;
-            case 'editSshHost': void vscode.commands.executeCommand('csbridge.editHost', data.alias); break;
-            default: this.logger.warn('Unknown command from hosts webview:', data);
-        }
-    }
-
-    protected pushState(): void {
+    protected override pushState(): void {
         if (!this.view) { return; }
         const state: HostsState = { sshHosts: SshManager.getInstance().getMergedHosts() };
         this.view.webview.postMessage({ command: 'state', state });
@@ -41,12 +36,7 @@ export class SshHostProvider extends WebviewProvider {
 
     private async deleteSshHost(alias: string): Promise<void> {
         // Delete controls render only on user-config rows (system is read-only), so the target is always ~/.ssh/config.
-        const choice = await vscode.window.showWarningMessage(
-            `Delete SSH host '${alias}'?`,
-            { modal: true, detail: 'This deletes it from ~/.ssh/config.' },
-            'Delete',
-        );
-        if (choice !== 'Delete') { return; }
+        if (!await confirmModal(`Delete SSH host '${alias}'?`, 'Delete', 'This deletes it from ~/.ssh/config.')) { return; }
         try {
             deleteHostFromConfigFile(USER_SSH_CONFIG_PATH, alias);
         }

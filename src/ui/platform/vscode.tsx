@@ -1,4 +1,6 @@
+import { render, type ComponentType } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
+import type { WebviewMessage } from '@/models';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: unknown): void;
@@ -8,7 +10,10 @@ declare function acquireVsCodeApi(): {
 
 const vscode = acquireVsCodeApi();
 
-export const post = (msg: unknown) => vscode.postMessage(msg);
+export const post = (msg: WebviewMessage) => vscode.postMessage(msg);
+
+// The CSP shell renderHtml serves has exactly one #root.
+export const mount = (Root: ComponentType) => render(<Root />, document.getElementById('root')!);
 
 // Posts `ready` once on mount, then re-renders on each `state` message the extension pushes.
 export function useWebviewState<T>(): T | null {

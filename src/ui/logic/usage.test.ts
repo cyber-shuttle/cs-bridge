@@ -46,6 +46,6 @@ test('groupRunsBySession buckets by session, preserving newest-first order acros
     ] as unknown as Parameters<typeof groupRunsBySession>[0];
     const groups = groupRunsBySession(runs);
     assert.deepEqual(groups.map(g => g[0].sessionId), ['A', 'B']); // group order = each session's newest run
-    assert.deepEqual(groups[0].map(r => r.jobId), ['3', '1']); // within-group newest-first preserved
-    assert.equal(groups[1].length, 1);
+    assert.deepEqual(groups[0]?.map(r => r.jobId), ['3', '1']); // within-group newest-first preserved
+    assert.equal(groups[1]?.length, 1);
 });

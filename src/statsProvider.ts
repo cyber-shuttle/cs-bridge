@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import { WebviewProvider, confirmModal } from './webviewProvider';
-import { StatsState, WebviewMessage } from './models';
+import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
+import { StatsState, StatsMessage } from './models';
 import { readAllRuns, clearAllRuns, onRunsChange } from './modules/runStore';
 import { getSession } from './extensionStore';
 import { openSummaryPanel } from './summaryPanel';
 
-export class StatsProvider extends WebviewProvider {
+export class StatsProvider extends WebviewProvider<StatsMessage> {
     public static readonly viewType = 'csbridge.statsView';
     protected readonly viewKind = 'stats' as const;
 
@@ -22,15 +22,14 @@ export class StatsProvider extends WebviewProvider {
         });
     }
 
-    protected handleMessage(data: WebviewMessage): void {
-        if (data.command === 'ready') { void this.pushState(); return; }
-        if (data.command === 'openRunSummary' && data.sessionId) {
-            const session = getSession(data.sessionId);
-            const run = readAllRuns().find(r => r.sessionId === data.sessionId && r.jobId === data.jobId);
+    protected readonly handlers: Handlers<StatsMessage> = {
+        openRunSummary: ({ sessionId, jobId }) => {
+            const session = getSession(sessionId);
+            const run = readAllRuns().find(r => r.sessionId === sessionId && r.jobId === jobId);
             // Show the run's own recorded snapshot, not the live session's, which may have been started again.
             if (session) { openSummaryPanel(this.extensionUri, session, { stats: run?.stats, samples: run?.samples }); }
-        }
-    }
+        },
+    };
 
     public async clearHistory(): Promise<void> {
         if (await confirmModal('Clear all recorded run history?', 'Clear')) { clearAllRuns(); }
@@ -38,7 +37,7 @@ export class StatsProvider extends WebviewProvider {
 
     public refresh(): void { void this.pushState(); }
 
-    protected pushState(): void {
+    protected override pushState(): void {
         const state: StatsState = { runs: readAllRuns() };
         this.view?.webview.postMessage({ command: 'state', state });
     }

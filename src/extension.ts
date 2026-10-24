@@ -23,9 +23,10 @@ export async function activate(context: vscode.ExtensionContext) {
     catch (err) { void vscode.window.showErrorMessage(`CS Bridge: ${errMsg(err)}`); throw err; }
     logger.info(`Storage is ${context.globalStorageUri.toString()}`);
 
-    const id = currentWindowSessionId();
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
+    const id = folder && remoteSessionId(folder);
     if (id) { logger.info(`Window is connected to CS Bridge session ${id}`); }
-    startBeat(id ? { sessionId: id, folder: vscode.workspace.workspaceFolders![0].uri.toString() } : undefined);
+    startBeat(id && folder ? { sessionId: id, folder: folder.toString() } : undefined);
 
     const isRemoteWindow = !!id;
     void vscode.commands.executeCommand('setContext', 'csbridge.remote', isRemoteWindow);
@@ -76,11 +77,10 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.info('CS Bridge extension activated');
 }
 
-function currentWindowSessionId(): string | undefined {
-    const auth = vscode.workspace.workspaceFolders?.[0]?.uri.authority ?? '';
+function remoteSessionId(folder: vscode.Uri): string | undefined {
     const prefix = 'ssh-remote+';
-    if (!auth.startsWith(prefix)) { return undefined; }
-    const alias = auth.slice(prefix.length);
+    if (!folder.authority.startsWith(prefix)) { return undefined; }
+    const alias = folder.authority.slice(prefix.length);
     // The alias carries no id, so reconstruct each session's and match. Safe here: extensionKind:ui runs this window's
     // extension host locally, so it can read the local session store (already initialized above).
     return getAllSessions().find(s => csHostAlias(s) === alias)?.id;

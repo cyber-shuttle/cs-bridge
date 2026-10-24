@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as vscode from 'vscode';
-import { execFileSync, spawn, spawnSync, ChildProcess } from 'child_process';
+import { execFileSync, spawn, spawnSync, ChildProcessWithoutNullStreams } from 'child_process';
 import * as crypto from 'crypto';
 import { Logger, errMsg } from '../logger';
 import { lockedUpdateTextFile } from './fsSupport';
@@ -41,7 +41,7 @@ type Pending = { rid: string; outBuf: string; errBuf: string; settled: boolean; 
 // One persistent `ssh … bash -l` per SSH host. `ready` resolves once the connect noise is drained; on Win32 (no
 // ControlMaster) this in-process channel is the only multiplexing, so authentication happens once here.
 type HostShell = {
-    proc: ChildProcess;
+    proc: ChildProcessWithoutNullStreams;
     askpassDir: string;
     ready: Promise<void>;
     alive: boolean;
@@ -91,7 +91,7 @@ export class SshManager {
         try {
             if (!fs.existsSync(filePath)) { return []; }
             const text = fs.readFileSync(filePath, 'utf-8');
-            return parseHostsFromConfigText(text).map(h => ({ ...h, source }));
+            return parseHostsFromConfigText(text, source);
         }
         catch (err) {
             logger.error(`Error reading SSH config ${filePath}:`, err);
@@ -169,7 +169,7 @@ export class SshManager {
         return new Promise<CommandResult>((resolve) => {
             const rid = crypto.randomBytes(8).toString('hex');
             shell.current = { rid, outBuf: '', errBuf: '', settled: false, resolve };
-            shell.proc.stdin!.write(buildShellCommand(rid, command));
+            shell.proc.stdin.write(buildShellCommand(rid, command));
         });
     }
 
@@ -224,7 +224,7 @@ export class SshManager {
         };
 
         let readyBuf = '';
-        proc.stdout!.on('data', (d: Buffer) => {
+        proc.stdout.on('data', (d: Buffer) => {
             const s = d.toString();
             if (shell.connecting) {
                 readyBuf += s; // drain profile/MOTD noise until the shell echoes its readiness marker
@@ -233,12 +233,12 @@ export class SshManager {
             }
             if (shell.current) { shell.current.outBuf += s; settle(shell.current); }
         });
-        proc.stderr!.on('data', (d: Buffer) => {
+        proc.stderr.on('data', (d: Buffer) => {
             if (!shell.connecting && shell.current) { shell.current.errBuf += d.toString(); settle(shell.current); }
         });
-        proc.stdin!.on('error', () => { /* write races a dropped connection; the close handler settles the command */ });
+        proc.stdin.on('error', () => { /* write races a dropped connection; the close handler settles the command */ });
 
-        proc.stdin!.write(`printf '\\n${READY_MARKER}\\n'\n`);
+        proc.stdin.write(`printf '\\n${READY_MARKER}\\n'\n`);
 
         const poll = batch ? undefined : this.pollAskpass(shell, alias);
         const stopPoll = (): void => { if (poll) { clearInterval(poll); } };

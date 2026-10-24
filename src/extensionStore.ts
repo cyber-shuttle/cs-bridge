@@ -50,12 +50,12 @@ export function updateSession(session: SlurmSession) {
 // A live-set change notifies onSessionsChange like a record write, so no caller has to re-render by hand.
 const liveListeners = new Set<() => void>();
 class LiveSet extends Set<string> {
-    add(id: string): this {
+    override add(id: string): this {
         if (!this.has(id)) { super.add(id); liveListeners.forEach(l => l()); }
         return this;
     }
 
-    delete(id: string): boolean {
+    override delete(id: string): boolean {
         const had = super.delete(id);
         if (had) { liveListeners.forEach(l => l()); }
         return had;

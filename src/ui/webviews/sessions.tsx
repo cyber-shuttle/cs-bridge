@@ -1,7 +1,6 @@
-import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import type { SessionsState, HostRuntime } from '@/models';
-import { post, useWebviewState } from '@/ui/platform/vscode';
+import { post, useWebviewState, mount } from '@/ui/platform/vscode';
 import { SessionCard, NowContext } from '@/ui/components/SessionCard';
 import { HostForm } from '@/ui/components/HostForm';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button } from '@/ui/components/base';
@@ -90,4 +89,4 @@ function Root() {
         : null;
 }
 
-render(<Root />, document.getElementById('root')!);
+mount(Root);

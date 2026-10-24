@@ -1,6 +1,5 @@
-import { render } from 'preact';
 import { useState } from 'preact/hooks';
-import { useWebviewState, post } from '@/ui/platform/vscode';
+import { useWebviewState, post, mount } from '@/ui/platform/vscode';
 import { Stack, Row, Text, Icon, Chip } from '@/ui/components/base';
 import { EfficiencyChip } from '@/ui/components/StatsView';
 import { groupRunsBySession } from '@/ui/logic/usage';
@@ -28,7 +27,7 @@ function RunItem({ run }: { run: Run }) {
     );
 }
 
-function SessionGroup({ runs }: { runs: Run[] }) {
+function SessionGroup({ runs }: { runs: [Run, ...Run[]] }) {
     const [open, setOpen] = useState(true);
     const { alias, account, partition } = runs[0];
     const runLabel = `${runs.length} run${runs.length === 1 ? '' : 's'}`;
@@ -60,4 +59,4 @@ function Root() {
     );
 }
 
-render(<Root />, document.getElementById('root')!);
+mount(Root);
