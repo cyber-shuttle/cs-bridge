@@ -298,7 +298,7 @@ export class SshManager {
 // every window runs it on every change. Remote-SSH reads the setting at connect, so a caller about to open a window awaits it.
 export async function syncSshConfig(): Promise<void> {
     const sessions = getAllSessions();
-    const text = renderSshConfig(sessions, sshKeyPath);
+    const text = renderSshConfig(sessions, sshKeyPath, vscode.env.machineId);
     lockedUpdateTextFile(CS_SSH_CONFIG_PATH, cur => (cur === text ? null : text), 0o600);
     try {
         const cfg = vscode.workspace.getConfiguration('remote.SSH');

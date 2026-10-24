@@ -17,13 +17,6 @@ import { isTerminal, isDeletable, isStoppable } from './modules/sessionMachine';
 import { AwsClient } from './modules/aws';
 import { Ec2Backend, ec2Session } from './modules/ec2Session';
 
-function openSessionWindow(session: SlurmSession, forceNew: boolean): void {
-    const { windowFolder } = windowState(session);
-    if (!forceNew && windowFolder) { void vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(windowFolder), { forceNewWindow: false }); return; }
-    // The per-session SSH host's alias VS Code runs `ssh` against and shows as the "[SSH: …]" label.
-    void openSshWindow(csHostAlias(session), session.rootFolder, forceNew);
-}
-
 export class SessionProvider extends WebviewProvider<SessionsMessage> implements vscode.Disposable {
     public static readonly viewType = 'csbridge.sessionsView';
     protected readonly viewKind = 'sessions' as const;
@@ -235,10 +228,12 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     // 'opening' holds the session's spinner until the new window's heartbeat appears (60s fallback).
     private openOrFocusWindow(session: SlurmSession): void {
-        if (windowState(session).windowAlive) { return openSessionWindow(session, false); }
+        const { windowFolder } = windowState(session);
+        if (windowFolder) { void vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(windowFolder), { forceNewWindow: false }); return; }
         this.opening.add(session.id);
         setTimeout(() => { if (this.opening.delete(session.id)) { void this.pushState(); } }, 60_000);
-        openSessionWindow(session, true);
+        // The per-session SSH host's alias VS Code runs `ssh` against and shows as the "[SSH: …]" label.
+        void openSshWindow(csHostAlias(session), session.rootFolder, true);
     }
 
     private async connectSession(sessionId: string) {

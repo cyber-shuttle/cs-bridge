@@ -34,10 +34,10 @@ export const csHostAlias = ({ alias, name }: Pick<SlurmSession, 'alias' | 'name'
 export const sessionKeyName = (sessionId: string): string => `id_cshost-${sessionId}`;
 
 // The whole file from the records, so no window edits it in place and nothing is left behind.
-export function renderSshConfig(sessions: SlurmSession[], keyPath: (name: string) => string): string {
+export function renderSshConfig(sessions: SlurmSession[], keyPath: (name: string) => string, machine: string): string {
     return sessions.flatMap((s) => {
         const ci = s.connectionInfo;
-        if (isEc2(s)) { return ci?.sshPort && s.ec2.ip ? [buildSshConfigBlock(s.id, csHostAlias(s), s.ec2.ip, ci.sshPort, s.ec2.user, keyPath(keyName(s.ec2.region)))] : []; }
+        if (isEc2(s)) { return ci?.sshPort && s.ec2.ip ? [buildSshConfigBlock(s.id, csHostAlias(s), s.ec2.ip, ci.sshPort, s.ec2.user, keyPath(keyName(s.ec2.region, machine)))] : []; }
         // The custom SSH server ignores the user.
         return ci?.localPort ? [buildSshConfigBlock(s.id, csHostAlias(s), '127.0.0.1', ci.localPort, 'cs-ssh-user', keyPath(sessionKeyName(s.id)))] : [];
     }).map(block => `${block}\n`).join('');
