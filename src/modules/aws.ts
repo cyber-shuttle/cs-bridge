@@ -34,7 +34,8 @@ export class AwsClient implements vscode.Disposable {
     get account(): string | null { return this.session?.accessKeyId ?? null; }
     get ec2(): Ec2 | undefined { return this.session?.ec2; }
 
-    require(): { ec2: Ec2; regions: string[] } {
+    async ready(): Promise<{ ec2: Ec2; regions: string[] }> {
+        await this.restored;
         if (!this.session) { throw new Error('Sign in to AWS first.'); }
         return this.session;
     }
@@ -42,6 +43,7 @@ export class AwsClient implements vscode.Disposable {
     dispose(): void { this.signedIn.dispose(); }
 
     async signIn(): Promise<void> {
+        await this.restored;
         const ask = (title: string, password = false) => vscode.window.showInputBox({ title, password, ignoreFocusOut: true }).then(v => v?.trim());
         const accessKeyId = await ask('AWS Access Key ID');
         const secretAccessKey = accessKeyId && await ask('AWS Secret Access Key', true);

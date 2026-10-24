@@ -56,6 +56,15 @@ test('JsonDir.patch lands its fields on another window\'s newer record and tells
     dir.patch('a', { m: 8 });
     await dir.reload('a');
     assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 8, k: 9 });
+
+    await files.write('recs/a.json', JSON.stringify({ n: 2, m: 99, k: 9 })); // another window's newer m
+    await dir.patch('a', { k: 10 });
+    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 99, k: 10 }, 'a field written earlier is not put back');
+
+    await files.remove('recs/a.json'); // another window deleted it
+    await dir.patch('a', { k: 11 });
+    assert.equal(files.texts.get('recs/a.json'), undefined);
+    assert.equal(dir.get('a'), undefined);
 });
 
 test('replaceFields drops a field the other window cleared', () => {
