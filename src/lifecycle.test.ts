@@ -5,9 +5,12 @@ import { memoryFiles } from './modules/memoryFiles';
 import type { JsonDir } from './modules/store';
 import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, patch, observe, onSessionsChange } from './extensionStore';
 import { initRunStore, appendRun } from './modules/runStore';
-import { newSession, isEc2, Run, SlurmJobStatus, SummaryState } from './models';
+import { newSession, isEc2, Run, SlurmJobStatus, SummaryState, SessionsMessage, SessionsState } from './models';
 import { Backend, Backends, SessionMonitor, prepareLaunch } from './modules/sessionSupport';
 import { Ec2Backend } from './modules/ec2Session';
+import { SessionProvider } from './sessionProvider';
+import { AwsClient } from './modules/aws';
+import type { Transport } from './modules/transport';
 import { Ec2 } from './modules/ec2';
 import { fakeClient } from './modules/fakeEc2Client';
 import { openSummaryPanel } from './summaryPanel';
@@ -158,4 +161,46 @@ test('a teardown that the record write re-enters runs once, and a prepare leaves
     const draft = await prepareLaunch(s, { prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }) });
     assert.deepEqual(s.connectionInfo, before, 'the record keeps the old run until submit');
     assert.ok(draft.connectionInfo.controlPort >= 20000);
+});
+
+test('a relaunch preview outlives a heartbeat, and dropping it releases the attach it made', async () => {
+    const s = running();
+    await patch(s, { jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() }, connectionInfo: { sshPort: 40, controlPort: 21000, localPort: 5 } });
+    assert.equal(statusOf(s), 'stopped');
+    const released: string[] = [];
+    const transport: Transport = {
+        label: 'fake', description: '', management: () => ({ getTunnel: async () => null }),
+        relayClient: () => ({ connect: async () => { }, waitForForwardedPort: async () => { }, dispose: async () => { } }),
+        tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); }, deleteTunnel: async () => { },
+        signedIn: async () => true, prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }), release: async (session) => { released.push(session.id); },
+    };
+    const aws = new AwsClient({ get: async () => undefined, store: async () => { }, delete: async () => { }, onDidChange: () => ({ dispose() { } }) } as never);
+    const provider = new SessionProvider({ fsPath: '/ext' } as never, { transportFor: () => transport, remove: async () => { } }, aws);
+    const posted: { command: string; state: SessionsState }[] = [];
+    let receive: (m: SessionsMessage) => void = () => { };
+    provider.resolveWebviewView({
+        webview: { options: {}, html: '', cspSource: 'x', asWebviewUri: (u: unknown) => u, postMessage: async (m: { command: string; state: SessionsState }) => { posted.push(m); return true; }, onDidReceiveMessage: (l: (m: SessionsMessage) => void) => { receive = l; return { dispose() { } }; } },
+        visible: true, onDidChangeVisibility: () => ({ dispose() { } }), onDidDispose: () => ({ dispose() { } }),
+    } as never);
+    const state = () => posted.at(-1)?.state;
+
+    receive({ command: 'prepareLaunchSession', sessionId: s.id });
+    await sleep(20);
+    assert.deepEqual(released, [s.id], 'the old run is torn down before the next is prepared');
+    assert.equal(s.connectionInfo, undefined);
+    assert.equal(state()?.preview?.sessionId, s.id, 'the preview is up');
+    assert.equal(owns(s), true, 'the preview holds the claim');
+
+    await files.write('windows/other.json', JSON.stringify({ at: Date.now() }));
+    await windows.reload('other'); // a heartbeat lands while the preview waits
+    await sleep(20);
+    assert.deepEqual(released, [s.id], 'no second teardown');
+    assert.equal(state()?.preview?.sessionId, s.id);
+
+    receive({ command: 'dismissPreview' });
+    await sleep(20);
+    assert.deepEqual(released, [s.id, s.id], 'the prepared attach is released');
+    assert.equal(state()?.preview, null);
+    assert.equal(owns(s), false, 'the claim is given back');
+    provider.dispose();
 });
