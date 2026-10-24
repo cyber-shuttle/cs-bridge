@@ -13,11 +13,11 @@ const finalStateLabel = (s: ViewSession): string => STATUS_LABEL[s.status] ?? 'E
 
 function Root() {
     const state = useWebviewState<SummaryState>();
-    const s = state?.session;
-    if (!s) { return <Stack pad="12px"><Text muted>Loading summary…</Text></Stack>; }
+    if (!state) { return <Stack pad="12px"><Text muted>Loading summary…</Text></Stack>; }
+    const s = state.session;
     const loadingMsg = s.status === 'stopping' ? 'Stopping session and preparing summary…'
-        : !state?.stats ? 'Fetching Slurm accounting…'
-                : null;
+        : state.pending ? 'Fetching Slurm accounting…'
+            : null;
     if (loadingMsg) {
         return <Stack gap={12} pad="48px" style={{ alignItems: 'center' }}><Spinner size={28} /><Text muted>{loadingMsg}</Text></Stack>;
     }
@@ -66,7 +66,7 @@ function Root() {
                     <Icon name="graph" />
                     <Text weight={600}>Slurm accounting</Text>
                 </Row>
-                <StatsView stats={state?.stats} />
+                <StatsView stats={state.stats} />
             </Card>
         </Stack>
     );

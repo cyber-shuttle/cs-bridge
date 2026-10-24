@@ -39,16 +39,9 @@ const WITH_ARG: Record<string, (c: Config, arg: string) => void> = {
     i: (c, a) => { c.IdentityFile = a; },
     J: (c, a) => { c.ProxyJump = a; },
     L: (c, a) => {
-        const localForwardMatch = a.match(/^((.*):?\d+)?:(.+?)?$/);
-        if (localForwardMatch) {
-            const listener = localForwardMatch[1];
-            const dest = localForwardMatch[3];
-            if (listener && dest) { c.LocalForward = `${listener} ${dest}`; return; }
-            throw new CommandParseError(`LocalForward needs a listener and a destination separated by a colon. ${a} does not match.`);
-        }
-        const idx = a.indexOf(':');
-        if (idx === -1) { throw new CommandParseError(`LocalForward needs a listener and a destination separated by a colon. ${a} does not match.`); }
-        c.LocalForward = `${a.substring(0, idx)} ${a.substring(idx + 1)}`;
+        const m = a.match(/^((.*):?\d+)?:(.+?)?$/);
+        if (!m?.[1] || !m[3]) { throw new CommandParseError(`LocalForward needs a listener and a destination separated by a colon. ${a} does not match.`); }
+        c.LocalForward = `${m[1]} ${m[3]}`;
     },
     l: (c, a) => { c.User = a; },
     m: (c, a) => { c.MACs = a; },

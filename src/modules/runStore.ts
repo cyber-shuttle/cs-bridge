@@ -24,7 +24,6 @@ const mutate = (id: string, fn: (cur: RunsFile) => RunsFile | null): void => {
     if (next) { runsDir.set(id, next); }
 };
 
-// live samples — append one, capped to the rolling window
 export function appendSample(id: string, sample: UsageSample): void {
     mutate(id, cur => ({ ...cur, samples: [...cur.samples, sample].slice(-SAMPLE_HISTORY_LEN) }));
 }
@@ -33,7 +32,6 @@ export const readRecentSamples = (id: string): UsageSample[] => read(id).samples
 export const writeSessionStats = (id: string, stats: RunStats): void => mutate(id, cur => ({ ...cur, stats }));
 export const readSessionStats = (id: string): RunStats | undefined => read(id).stats;
 
-// reset the live block for a fresh run, keeping the run history
 export const resetLive = (id: string): void => mutate(id, cur => ({ runs: cur.runs, samples: [] }));
 
 export function readSessionRuns(id: string): Run[] {

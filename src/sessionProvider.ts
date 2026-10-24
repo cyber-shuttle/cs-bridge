@@ -86,7 +86,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             const status = statusOf(s);
             // A stop still wanted is an unfinished Stop: a reload interrupted it, or a remote window handed it off.
             if (status === 'stopping') { if (claim(s)) { this.runStop(s); } continue; }
-            if (!s.jobId || isTerminal(status) || owns(s)) { continue; }
+            if (isTerminal(status) || owns(s)) { continue; }
             this.monitor.startMonitoring(s);
             // A session just taken over gets its connection back; startup never forces a sign-in.
             if (owns(s) && s.connectionInfo?.sshPort && (isEc2(s) || await this.transports.transportFor(s).signedIn())) { void this.backends.use(s, (b, s) => b.connect(s)); }
@@ -321,7 +321,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
         try {
             await this.release(session); // the previous run's, before a transport switch hides it
-            session.transport = enabled('cybershuttle') ? vscode.workspace.getConfiguration('csbridge').get('transport', 'devtunnel') : 'devtunnel';
+            patch(session, { transport: enabled('cybershuttle') ? vscode.workspace.getConfiguration('csbridge').get('transport', 'devtunnel') : 'devtunnel' });
             const draft = await prepareLaunch(session, this.transports.transportFor(session));
             if (this.draft?.sessionId !== sessionId) { this.dropDraft(); }
             this.draft = { sessionId, ...draft };

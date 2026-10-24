@@ -40,8 +40,7 @@ export abstract class WebviewProvider<M extends WebviewMessage = { command: 'rea
         (this.handlers[data.command as keyof Handlers<M>] as (message: M) => void)(data);
     }
 
-    // Override hooks (default no-op):
-    protected pushState(): void | Promise<void> { }
+    protected pushState(): void { }
     protected onResolved(): void { }
 
     protected showError(message: string, error: unknown): void {

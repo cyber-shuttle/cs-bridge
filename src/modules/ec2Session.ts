@@ -9,6 +9,7 @@ import { AwsClient } from './aws';
 import { isTerminal, observedEc2 } from './sessionMachine';
 import { Backend, SessionMonitor } from './sessionSupport';
 import { csHostAlias } from './sshHostsStore';
+import { sleep } from './util';
 
 const logger = Logger.getInstance();
 const SSH_PORT = 22;
@@ -20,8 +21,8 @@ const portOpen = (host: string, port: number): Promise<boolean> => new Promise((
 });
 
 // An EC2 record: the Slurm-only fields are blank, and no walltime means no deadline.
-export const ec2Session = (ec2: Ec2Spec, fields: Partial<SlurmSession> = {}): SlurmSession =>
-    newSession({ alias: `aws-${ec2.region}`, account: '', partition: '', rootFolder: `/home/${ec2.user}`, resources: { cores: 0, memoryMb: 0, wallMinutes: 0 }, ec2, ...fields });
+export const ec2Session = (ec2: Ec2Spec, fields: Partial<SlurmSession> = {}): Ec2Session =>
+    ({ ...newSession({ alias: `aws-${ec2.region}`, account: '', partition: '', rootFolder: `/home/${ec2.user}`, resources: { cores: 0, memoryMb: 0, wallMinutes: 0 }, ...fields }), ec2 });
 
 export class Ec2Backend implements Backend<Ec2Session> {
     readonly label = 'AWS';
@@ -63,7 +64,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
     async stop(session: Ec2Session): Promise<void> {
         const { ec2 } = this.aws.require();
         const { region } = session.ec2;
-        while ((await ec2.describe(region, session.jobId))?.state === 'pending') { await new Promise(res => setTimeout(res, 5_000)); }
+        while ((await ec2.describe(region, session.jobId))?.state === 'pending') { await sleep(5_000); }
         await ec2.act('stop', region, session.jobId);
         this.monitor().startMonitoring(session);
     }

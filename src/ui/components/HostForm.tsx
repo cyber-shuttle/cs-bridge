@@ -8,7 +8,7 @@ import { NO_ACCOUNT, gpuTypeOf } from '@/modules/slurmParse';
 interface Props {
     alias: string;
     runtime: HostRuntime | undefined;
-    validating?: boolean;
+    validating: boolean;
 }
 
 const WALL_MINUTES: NonEmpty<number> = [30, 60, 120, 240, 480, 720, 1440];
@@ -27,7 +27,7 @@ function Choice<T>({ label, value, options, onChange, show = String, id = String
     );
 }
 
-function HostFormFields({ alias, info, validating }: { alias: string; info: SlurmDiscovery; validating?: boolean }) {
+function HostFormFields({ alias, info, validating }: { alias: string; info: SlurmDiscovery; validating: boolean }) {
     const groups = tabGroups(info);
     const accounts: NonEmpty<string> = [NO_ACCOUNT, ...info.accounts];
     const [partName, setPartName] = useState(info.partitions[0].name);

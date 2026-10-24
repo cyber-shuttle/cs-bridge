@@ -27,7 +27,6 @@ interface TunnelManagement {
 }
 
 export interface TunnelRelayClient {
-    readonly connectionStatus: string;
     readonly forwardedPorts?: { find(predicate: (port: { remotePort: number | null }) => boolean): { localPort: number | null } | undefined };
     readonly connectionStatusChanged?: TunnelRelayTunnelClient['connectionStatusChanged'];
     readonly keepAliveFailed?: TunnelRelayTunnelClient['keepAliveFailed'];
@@ -41,7 +40,7 @@ export interface Tunnels {
     management(): TunnelManagement;
     relayClient(management: TunnelManagement, ci: ConnectionInfo): TunnelRelayClient;
     tunnelRef(session: SlurmSession): TunnelRef | undefined; // the run's tunnel, once prepared
-    ensureTunnel(session: SlurmSession, ci: ConnectionInfo): Promise<unknown>;
+    ensureTunnel(session: SlurmSession, ci: ConnectionInfo): Promise<void>;
     withLinkspan<T>(session: SlurmSession, call: (baseUrl: string, headers: Record<string, string>) => Promise<T>): Promise<T>;
     deleteTunnel(session: SlurmSession): Promise<void>;
 }
@@ -98,7 +97,7 @@ class Link implements Transport {
     async prepare(session: SlurmSession, ci: ConnectionInfo) {
         try {
             const { tunnelId, port, link } = await this.management().attachTunnel(session);
-            session.planeId = tunnelId;
+            patch(session, { planeId: tunnelId });
             ci.controlPort = port;
             return linkLaunch(link.url, link.token);
         }

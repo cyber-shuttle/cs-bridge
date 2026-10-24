@@ -5,6 +5,7 @@
 import type * as vscode from 'vscode';
 import { SlurmSession } from './models';
 import { parseJson } from './modules/json';
+import { sleep } from './modules/util';
 
 export const PLANE_URL = 'https://jupyterapi.cybershuttle.org/api/v1';
 export const CREDENTIAL_KEY = 'csbridge.plane.credential';
@@ -28,7 +29,7 @@ export class Plane {
 
     async awaitSignIn(code: DeviceCode, cancelled: () => boolean) {
         for (let wait = code.intervalSeconds; !cancelled();) {
-            await new Promise(resolve => setTimeout(resolve, wait * 1000));
+            await sleep(wait * 1000);
             if (cancelled()) { break; }
             const poll = await this.request<DevicePoll>('oauth/device/poll', 'POST', { deviceCode: code.deviceCode });
             if (poll.status === 'complete') { await this.store(poll); return true; }

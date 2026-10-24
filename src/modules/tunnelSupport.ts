@@ -51,10 +51,7 @@ class DevTunnelRelayClient extends ForwardRelayClient {
     get connectionStatusChanged() { return this.sdk.connectionStatusChanged; }
     get keepAliveFailed() { return this.sdk.keepAliveFailed; }
 
-    constructor(private readonly sdk: TunnelRelayTunnelClient, private readonly controlPort: number) {
-        super();
-        sdk.connectionStatusChanged((e) => { this.connectionStatus = e.status; });
-    }
+    constructor(private readonly sdk: TunnelRelayTunnelClient, private readonly controlPort: number) { super(); }
 
     async connect(tunnel: Tunnel, options?: TunnelConnectionOptions) {
         await this.sdk.connect(tunnel, options);
@@ -72,7 +69,7 @@ export const devTunnels = {
     management: buildTunnelManagementClient,
     relayClient: (management: TunnelManagementHttpClient, ci: ConnectionInfo) => new DevTunnelRelayClient(new TunnelRelayTunnelClient(management), ci.controlPort),
     tunnelRef: devTunnelRef,
-    ensureTunnel: ensureDevTunnel,
+    ensureTunnel: async (session, ci) => { await ensureDevTunnel(session, ci); },
     withLinkspan: ({ id, devtunnel, connectionInfo: ci }, call) => {
         if (!devtunnel || !ci) { throw new Error('The session has no Dev Tunnel to reach Linkspan through.'); }
         return call(`https://${devtunnel.id}-${ci.controlPort}.${devtunnel.cluster}.devtunnels.ms/api/v1`, { 'X-Tunnel-Authorization': `tunnel ${live.connectTokens.get(id)}` });

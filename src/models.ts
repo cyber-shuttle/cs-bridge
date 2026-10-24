@@ -158,7 +158,8 @@ export interface StatsState {
 
 export interface SummaryState {
     session: ViewSession; // its samples are the live history, or a past run's
-    stats?: RunStats; // sacct accounting; absent → the webview shows a "fetching…" spinner
+    stats?: RunStats; // sacct accounting, absent when the run recorded none
+    pending: boolean; // the run is still being recorded
 }
 
 // An SSH host's runtime-details fetch is in exactly one phase; the draft form renders straight off it.

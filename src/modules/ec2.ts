@@ -8,6 +8,7 @@ import {
     _InstanceType, Instance, InstanceStateName,
 } from '@aws-sdk/client-ec2';
 import { EC2_DEFAULTS, EC2_IMAGES } from '../models';
+import { getOrSet } from './util';
 
 // Marks CS Bridge instances, so every listed one has a login user.
 const USER_TAG = 'CS-Bridge-User';
@@ -64,15 +65,9 @@ export class Ec2 {
 
     // Once per region, so concurrent first launches share one key pair; a failure is retried on the next launch.
     private prepare(region: string): Promise<string> {
-        let prepared = this.prepared.get(region);
-        if (!prepared) {
-            prepared = this.ensureDefaultVpc(region).then(() => Promise.all([this.ensureSecurityGroup(region), this.ensureKeyPair(region)])).then(([group]) => group).catch((err) => {
-                this.prepared.delete(region);
-                throw err;
-            });
-            this.prepared.set(region, prepared);
-        }
-        return prepared;
+        return getOrSet(this.prepared, region, () => this.ensureDefaultVpc(region)
+            .then(() => Promise.all([this.ensureSecurityGroup(region), this.ensureKeyPair(region)])).then(([group]) => group)
+            .catch((err) => { this.prepared.delete(region); throw err; }));
     }
 
     private async ensureKeyPair(region: string): Promise<void> {
@@ -101,8 +96,8 @@ export class Ec2 {
         return GroupId;
     }
 
-    act(action: InstanceAction, region: string, id: string): Promise<unknown> {
-        return ACTIONS[action](this.client(region), { InstanceIds: [id] });
+    async act(action: InstanceAction, region: string, id: string): Promise<void> {
+        await ACTIONS[action](this.client(region), { InstanceIds: [id] });
     }
 
     // A terminated instance drops out of DescribeInstances within the hour.
