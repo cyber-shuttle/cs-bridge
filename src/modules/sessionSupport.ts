@@ -333,7 +333,7 @@ export class SlurmBackend implements Backend {
     }
 }
 
-export async function prepareLaunch(session: SlurmSession, transport: Transport): Promise<LaunchDraft> {
+export async function prepareLaunch(session: SlurmSession, transport: Pick<Transport, 'prepare'>): Promise<LaunchDraft> {
     // Fresh connection info with a control port picked before transport.prepare, which puts it on the Dev Tunnel for the
     // job's host to find, or replaces it with cs-plane's for link.
     // Trade-off: random high port; ~1/12000 collision on a shared compute node (Linkspan log.Fatals if taken, session then fails) — probe a free port on the node if it ever bites.
