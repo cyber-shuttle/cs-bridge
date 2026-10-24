@@ -134,5 +134,3 @@ export function onSessionsChange(listener: () => void): { dispose(): void } {
     liveListeners.add(listener);
     return { dispose: () => { subs.forEach(s => s.dispose()); liveListeners.delete(listener); } };
 }
-
-export const onWindowsChange = (listener: () => void) => windows.onDidChange(listener);

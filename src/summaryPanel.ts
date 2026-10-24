@@ -30,12 +30,14 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
         vscode.ViewColumn.One, { enableScripts: true },
     );
     // Re-read the session each post: it may still be 'stopping' at open and flip to 'stopped' while the tab is up.
+    // Pinned to the run the panel opened on, which the session may leave behind.
+    const job = { alias: session.alias, jobId: session.jobId };
     const post = () => {
         const live = getSession(session.id) ?? session;
-        const recorded = past ?? readSessionRuns(live.id).find(r => isSameRun(r, live));
+        const recorded = past ?? readSessionRuns(live.id).find(r => isSameRun(r, job));
         const state: SummaryState = {
-            session: past
-                ? { ...live, alias: past.alias, account: past.account, partition: past.partition, jobId: past.jobId, startedAt: past.startedAt, status: past.finalState, samples: past.samples }
+            session: recorded
+                ? { ...live, alias: recorded.alias, account: recorded.account, partition: recorded.partition, jobId: recorded.jobId, startedAt: recorded.startedAt, status: recorded.finalState, samples: recorded.samples }
                 : { ...live, status: statusOf(live), samples: readRecentSamples(live.id) },
             stats: recorded ? recorded.stats : readSessionStats(live.id), // the live copy sacct refreshes in-run
             at: recorded ? recorded.endedAt : Date.now(),

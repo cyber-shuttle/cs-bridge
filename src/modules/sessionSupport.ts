@@ -246,11 +246,9 @@ export class SlurmBackend implements Backend {
         observe(session, slurmStatus);
     }
 
-    // A failed stop may leave the job alive, so it frees only the local port and keeps the refs for reattach; the run is
-    // released either way, killing its tokens.
     async end(session: SlurmSession): Promise<void> {
         const transport = this.transports.transportFor(session);
-        await (statusOf(session) === 'stopped' ? disconnectSessionFromTunnel(transport, session) : disposeTunnelClient(session.id))
+        await disconnectSessionFromTunnel(transport, session)
             .catch(err => logger.error(`Session ${session.name}: Failed to disconnect from its ${transport.label}:`, err));
         await transport.release(session);
         void recordSessionRun(session);

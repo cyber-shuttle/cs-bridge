@@ -6,7 +6,7 @@ import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSessionPrivateKey, SshManager, openSshWindow } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
-import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, onWindowsChange, windowState, statusOf, fail, live, claim, owns, disown } from './extensionStore';
+import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, windowState, statusOf, fail, live, claim, owns, disown } from './extensionStore';
 import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { Backends, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
@@ -73,11 +73,10 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             if (mine !== undefined && mine === lastMine) { return; }
             lastMine = mine;
             void this.pushState();
-            void this.reattachLiveSessions(); // a remote window's Stop hands its session to the owner through the record
+            void this.reattachLiveSessions(); // a Stop from any window reaches the owner through the record; a beat, too
         }));
         // Live samples land in the per-session files (bypassing updateSession); pushState reads them at render time.
         this.shared.push(onRunsChange(() => void this.pushState()));
-        this.shared.push(onWindowsChange(() => void this.reattachLiveSessions()));
     }
 
     // Sidebar only: drive every live session no beating window owns, rebuilding its tunnel connection (gone after a restart).
@@ -85,7 +84,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         if (this.remoteSessionId) { return; }
         for (const s of getAllSessions()) {
             const status = statusOf(s);
-            // A stop still wanted is an unfinished Stop: a reload interrupted it, or a remote window handed it off.
+            // The owner carries out a Stop asked anywhere; without a beating owner, this window takes it.
             if (status === 'stopping') { if (claim(s)) { this.runStop(s); } continue; }
             if (isTerminal(status) || owns(s)) { continue; }
             this.monitor.startMonitoring(s);
@@ -259,7 +258,9 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             this.openOrFocusWindow(session);
             return;
         }
-        this.monitor.startMonitoring(session); // claims the session when its owner has gone
+        // The record holds one local port, the owner's, so only the owner connects.
+        this.monitor.startMonitoring(session);
+        if (!owns(session)) { vscode.window.showInformationMessage('Another window is driving this session; connect from there.'); return; }
         if (await this.backends.use(session, (b, s) => b.connect(s))) { this.openOrFocusWindow(session); }
         this.settle(session);
     }
@@ -282,11 +283,9 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
         if (!await confirmModal('Stop session?', 'Stop', 'This stops the running job.')) { return; }
 
-        patch(session, { desired: 'stopped', errorMessage: '' });
-        this.runStop(session);
+        patch(session, { desired: 'stopped', errorMessage: '' }); // the record change runs the stop in the owner window
     }
 
-    // The real stop, shared by the sidebar Stop and activation resuming an unfinished one.
     private runStop(session: SlurmSession): void {
         this.runSessionTask(session, 'stop', () => this.backends.use(session, (b, s) => b.stop(s)),
             isEc2(session) ? 'Please check the AWS console to ensure the instance has stopped.' : 'Please check the cluster to ensure the job has stopped and clean up any resources if necessary.');
