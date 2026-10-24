@@ -158,7 +158,7 @@ export class SlurmBackend implements Backend {
         const stopCommand = `scancel ${session.jobId}`;
         this.log(session, `sending stop command: ${stopCommand}`);
         try {
-            await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand, { batch: true }); // the owner's shell is up; no auth prompt in a window that did not ask
+            await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand); // a Stop is the user's, so the owner window may authenticate for it
             observe(session, SlurmJobStatus.CANCELLED);
             this.log(session, `stop command sent successfully`);
         }
