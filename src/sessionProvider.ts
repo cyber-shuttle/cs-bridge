@@ -25,7 +25,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private draftAlias: string | null = null;
     private draft: (LaunchDraft & { sessionId: string }) | null = null;
     private readonly shared: vscode.Disposable[] = [];
-    private readonly opening = new Set<string>();
+    private readonly opening = new Map<string, ReturnType<typeof setTimeout>>(); // each open's own fallback timer
     private readonly monitor: SessionMonitor;
     private readonly slurm: SlurmBackend;
     private readonly ec2: Ec2Backend;
@@ -209,7 +209,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
                 sessions: this.scopedSessions()
                     .map((s) => {
                         const live = windowState(s);
-                        if (live.windowAlive) { this.opening.delete(s.id); }
+                        if (live.windowAlive) { clearTimeout(this.opening.get(s.id)); this.opening.delete(s.id); }
                         return { ...s, status: statusOf(s), ...live, opening: this.opening.has(s.id), samples: readRecentSamples(s.id) };
                     })
                     .sort((a, b) => b.id.localeCompare(a.id)), // newest first
@@ -231,9 +231,9 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         const { windowFolder } = windowState(session);
         if (windowFolder) { void vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(windowFolder), { forceNewWindow: false }); return; }
         if (this.opening.has(session.id)) { return; } // the window is on its way
-        this.opening.add(session.id);
+        const timer = setTimeout(() => { if (this.opening.get(session.id) === timer) { this.opening.delete(session.id); void this.pushState(); } }, 60_000);
+        this.opening.set(session.id, timer);
         void this.pushState();
-        setTimeout(() => { if (this.opening.delete(session.id)) { void this.pushState(); } }, 60_000);
         // The per-session SSH host's alias VS Code runs `ssh` against and shows as the "[SSH: …]" label.
         void openSshWindow(csHostAlias(session), session.rootFolder);
     }

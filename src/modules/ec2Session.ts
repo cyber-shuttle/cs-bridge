@@ -36,10 +36,10 @@ export class Ec2Backend implements Backend<Ec2Session> {
     // Every tagged instance without a record becomes one, so a VM launched from another machine is never lost.
     async adopt(): Promise<void> {
         const { ec2, regions } = await this.aws.ready();
-        // A launch in flight elsewhere has tagged its instance with the record's alias before it records the id.
-        const known = new Set(getAllSessions().flatMap(s => [s.jobId, csHostAlias(s)]));
         for (const region of regions) {
             const found = await ec2.list(region).catch((err) => { logger.error(`EC2 list of ${region} failed:`, err); return []; });
+            // Read after the list: a launch in flight here or elsewhere tags its instance with the record's alias before it records the id.
+            const known = new Set(getAllSessions().flatMap(s => [s.jobId, csHostAlias(s)]));
             for (const i of found.filter(i => !known.has(i.id) && !(i.name && known.has(i.name)))) {
                 // Named by the instance id, so its last six characters alias the SSH host.
                 const session = ec2Session({ region, type: i.type, image: '', user: i.user, ip: i.ip },
