@@ -136,7 +136,7 @@ export class SshManager {
 
     private async ensureShell(alias: string, batch: boolean): Promise<HostShell> {
         let shell = this.shells.get(alias);
-        if (!shell || !shell.alive) {
+        if (!shell) {
             shell = this.spawnShell(alias, batch);
             this.shells.set(alias, shell);
         }

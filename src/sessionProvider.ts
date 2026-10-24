@@ -283,8 +283,9 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private launchDraft() {
         const draft = this.draft;
         this.draft = null;
-        const session = draft && getSession(draft.sessionId);
-        if (session && draft) { this.submit(session, () => this.slurm.start(session, draft)); }
+        if (!draft) { return; }
+        const session = getSession(draft.sessionId);
+        if (session) { this.submit(session, () => this.slurm.start(session, draft)); }
     }
 
     // A fresh run: the walltime re-anchors when the new job starts, and a Slurm job id is the run's while an EC2 instance outlives it.
@@ -329,7 +330,8 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     }
 
     private preview(): SessionsState['preview'] {
-        const session = this.draft && getSession(this.draft.sessionId);
-        return session && this.draft ? { sessionId: session.id, alias: session.alias, script: this.draft.script } : null;
+        const draft = this.draft;
+        const session = draft && getSession(draft.sessionId);
+        return draft && session ? { sessionId: session.id, alias: session.alias, script: draft.script } : null;
     }
 }

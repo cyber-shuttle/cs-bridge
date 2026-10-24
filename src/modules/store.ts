@@ -38,6 +38,7 @@ export class JsonDir<T extends object> {
     set(id: string, value: T): void {
         const text = JSON.stringify(value, null, 2);
         this.records.set(id, { value, text });
+        this.pending.delete(id); // a whole-record write supersedes queued patches
         this.save(id, () => this.files.write(this.path(id), text));
         this.emit();
     }
@@ -56,7 +57,6 @@ export class JsonDir<T extends object> {
             this.pending.delete(id);
             const record = this.records.get(id);
             if (!queued || !record) { return; }
-            Object.assign(record.value, queued);
             const text = await this.files.read(this.path(id));
             if (text === undefined) {
                 this.records.delete(id);

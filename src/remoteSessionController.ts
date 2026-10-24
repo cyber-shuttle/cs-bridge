@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { getSession, statusOf, requestStop, onSessionsChange } from './extensionStore';
-import { deadline, isTerminal } from './modules/sessionMachine';
+import { isTerminal } from './modules/sessionMachine';
 import { isEc2 } from './models';
 import { remainingMs, fmtTime, wallMs } from './ui/logic/session';
 import { enqueuePendingSummary } from './summaryPanel';
@@ -48,7 +48,7 @@ export class RemoteSessionController implements vscode.Disposable {
             return;
         }
         const now = Date.now(), left = remainingMs(s, now);
-        const endsAt = new Date(deadline(s) ?? now + left).toLocaleTimeString();
+        const endsAt = new Date(now + left).toLocaleTimeString();
         this.item.text = `$(clock) ${fmtTime(left)} left`;
         this.item.tooltip = `${s.name} · ${s.alias} · ends ${endsAt}`;
         this.item.backgroundColor = left <= WARN_THRESHOLD_MS

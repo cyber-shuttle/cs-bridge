@@ -1,4 +1,4 @@
-export const px = (v?: number | string) => (typeof v === 'number' ? `${v}px` : v);
+export const px = (v?: number) => (v === undefined ? undefined : `${v}px`);
 
 export { Row } from './Row';
 export { Stack } from './Stack';

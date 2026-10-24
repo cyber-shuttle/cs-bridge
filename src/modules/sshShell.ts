@@ -60,7 +60,7 @@ export function extractCommandResult(
     const m = marker(rid);
     const out = outBuf.match(new RegExp(`\\n${m} (?<code>\\d+)\\n`));
     const err = errBuf.match(new RegExp(`\\n${m}\\n`));
+    if (!out || !err) { return null; }
     const g = groups(out, 'code');
-    if (!out || !g || !err) { return null; }
-    return { stdout: outBuf.slice(0, out.index), stderr: errBuf.slice(0, err.index), code: Number(g.code) };
+    return g ? { stdout: outBuf.slice(0, out.index), stderr: errBuf.slice(0, err.index), code: Number(g.code) } : null;
 }
