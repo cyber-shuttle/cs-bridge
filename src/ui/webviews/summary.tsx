@@ -51,13 +51,13 @@ function Root() {
                 <Field label="Limit" value={limitMs > 0 ? fmtTime(limitMs) : 'No limit'} />
             </Card>
 
-            {state?.samples?.length ? (
+            {s.samples.length ? (
                 <Card>
                     <Row gap={6} style={{ marginBottom: '4px' }}>
                         <Icon name="pulse" />
                         <Text weight={600}>Live resource history</Text>
                     </Row>
-                    <UsageGraphs history={state.samples} gpuCount={gpuCount} />
+                    <UsageGraphs history={s.samples} gpuCount={gpuCount} />
                 </Card>
             ) : null}
 

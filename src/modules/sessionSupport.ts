@@ -122,7 +122,7 @@ export class SlurmBackend implements Backend {
     private log(session: SlurmSession, msg: string): void { logger.info(sessionLine(session.name, msg)); }
     private warn(session: SlurmSession, msg: string): void { logger.warn(sessionLine(session.name, msg)); }
 
-    private probeFails(id: string): number { return this.probeFailedCounts.get(id) ?? 0; }
+    private probeFails(id: string): number { return this.probeFailedCounts.get(id) ?? 0; } // no entry: no failure yet
     private bumpProbeFails(id: string): number { const n = this.probeFails(id) + 1; this.probeFailedCounts.set(id, n); return n; }
 
     forget(sessionId: string): void {
@@ -302,8 +302,8 @@ export class SlurmBackend implements Backend {
 
     // Throttled sacct refresh, fire-and-forget from the health path (sacctStats swallows its own errors).
     private async refreshStats(session: SlurmSession): Promise<void> {
-        const now = Date.now();
-        if (now - (this.lastSacctAt.get(session.id) ?? 0) < SACCT_REFRESH_MS) { return; }
+        const now = Date.now(), last = this.lastSacctAt.get(session.id);
+        if (last !== undefined && now - last < SACCT_REFRESH_MS) { return; }
         this.lastSacctAt.set(session.id, now);
         const m = await sacctStats(session);
         if (m) { writeSessionStats(session.id, m); }

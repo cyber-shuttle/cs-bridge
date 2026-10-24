@@ -14,9 +14,10 @@ import { getMicrosoftAccountLabel, switchDevTunnelAccount } from './modules/tunn
 import { enabled } from './features';
 import { sshCommandToConfig } from './modules/sshCommandParser';
 
-type Page = { title: string; placeholder?: string; items?: Item[]; input?: { value: string; submit: (value: string) => Build | void } };
+type Page = { title: string; placeholder?: string; items: Item[]; input?: { value: string; submit: (value: string) => Build | void } };
 type Build = () => Page;
 type Item = vscode.QuickPickItem & { run?: () => unknown; open?: Build };
+const ask = (title: string, placeholder: string, value: string, submit: (value: string) => Build | void): Page => ({ title, placeholder, items: [], input: { value, submit } });
 
 const fail = (err: unknown) => void vscode.window.showErrorMessage(`CS Bridge: ${errMsg(err)}`);
 const nested = (value: boolean) => void vscode.commands.executeCommand('setContext', 'csbridge.menuNested', value);
@@ -37,7 +38,7 @@ export class CsBridgeMenu {
         const render = (build: Build) => {
             page = build();
             Object.assign(pick, {
-                title: page.title, placeholder: page.placeholder, items: page.items ?? [], ignoreFocusOut: !!page.input,
+                title: page.title, placeholder: page.placeholder, items: page.items, ignoreFocusOut: !!page.input,
                 buttons: stack.length > 1 ? [vscode.QuickInputButtons.Back] : [],
             });
             nested(stack.length > 1);
@@ -105,31 +106,19 @@ export class CsBridgeMenu {
         };
     };
 
-    readonly addHost: Build = () => ({
-        title: 'Add SSH Host',
-        placeholder: 'SSH connection command, e.g. ssh hello@microsoft.com -A',
-        input: { value: '', submit: (command) => {
-            const entry = sshCommandToConfig(command);
-            return () => ({
-                title: 'Add SSH Host: Alias', placeholder: 'Press Enter to use this alias, or type your own',
-                input: { value: entry.Host, submit: alias => this.sshHosts.saveSshHost({ ...entry, Host: alias }) },
-            });
-        } },
+    readonly addHost: Build = () => ask('Add SSH Host', 'SSH connection command, e.g. ssh hello@microsoft.com -A', '', (command) => {
+        const entry = sshCommandToConfig(command);
+        return () => ask('Add SSH Host: Alias', 'Press Enter to use this alias, or type your own', entry.Host, alias => this.sshHosts.saveSshHost({ ...entry, Host: alias }));
     });
 
     readonly editHost = (alias: string): Build => () => {
         const host = SshManager.getInstance().getMergedHosts().find(h => h.alias === alias);
         if (!host) { throw new Error(`SSH host ${alias} is no longer configured.`); }
-        return {
-            title: 'Edit SSH Host: Alias', placeholder: 'Press Enter to keep this alias, or type a new one',
-            input: { value: alias, submit: newAlias => () => ({
-                title: 'Edit SSH Host: Destination', placeholder: '[user@]hostname',
-                input: { value: [host.user, host.hostname].filter(Boolean).join('@'), submit: (destination) => {
-                    const [HostName = '', User] = destination.split('@').reverse();
-                    this.sshHosts.saveSshHost({ Host: newAlias, HostName, ...User && { User } }, alias);
-                } },
-            }) },
-        };
+        return ask('Edit SSH Host: Alias', 'Press Enter to keep this alias, or type a new one', alias, newAlias => () =>
+            ask('Edit SSH Host: Destination', '[user@]hostname', [host.user, host.hostname].filter(Boolean).join('@'), (destination) => {
+                const [HostName = '', User] = destination.split('@').reverse();
+                this.sshHosts.saveSshHost({ Host: newAlias, HostName, ...User && { User } }, alias);
+            }));
     };
 
     private readonly cloudVm = (regions: string[]): Build => () => ({

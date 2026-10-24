@@ -4,7 +4,7 @@ import type { Run } from '../models';
 import { mergeRun } from './runStore';
 
 const run = (jobId: string, endedAt: number, over: Partial<Run> = {}): Run =>
-    ({ sessionId: 's', alias: 'delta', jobId, account: '', partition: '', endedAt, finalState: 'stopped', ...over });
+    ({ sessionId: 's', alias: 'delta', jobId, account: '', partition: '', endedAt, finalState: 'stopped', samples: [], ...over });
 
 test('mergeRun skips a run already recorded (same alias+jobId)', () => {
     assert.equal(mergeRun([run('1', 100)], run('1', 100)), null);

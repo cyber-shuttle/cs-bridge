@@ -14,7 +14,7 @@ type Graph = { label: string; text: string; lines: (SparkLine & { fmt: (v: numbe
 // CPU / memory / per-GPU series from a rolling live-sample window, in MEM, CPU, GPU order.
 export function usageGraphs(history: UsageSample[], gpuCount?: number, allocated?: Resources): Graph[] {
     function at<T>(f: (s: UsageSample) => T | undefined): T[] { return history.map(f).filter((v): v is T => v !== undefined); }
-    const gpuN = Math.max(gpuCount ? 1 : 0, ...history.map(s => s.gpus?.length ?? 0));
+    const gpuN = Math.max(gpuCount ? 1 : 0, ...at(s => s.gpus?.length));
     return [
         { label: 'MEM', text: allocated ? `MEM: ${allocated.memoryMb / 1024}G` : 'MEM', lines: [{ values: at(s => s.memBytes), color: CHART.mem, fmt: v => humanKib(v / 1024) }] },
         { label: 'CPU', text: allocated ? `CPU: ${allocated.cores}` : 'CPU', lines: [{ values: cpuCoreSeries(history), color: CHART.cpu, fmt: v => `${v.toFixed(1)} cores` }] },
