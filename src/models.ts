@@ -38,7 +38,6 @@ export interface SlurmSession {
     devtunnel?: { id: string; cluster: string };
     planeId?: string; // the cs-plane session each link run attaches
     connectionInfo?: ConnectionInfo;
-    jobScript?: string; // the previewed run's, cleared once submitted
     ec2?: Ec2Spec; // an EC2 session: alias is aws-<region>, jobId the instance id, resources zero, transport unused
 }
 
@@ -160,7 +159,7 @@ export interface SessionsState {
     sessions: ViewSession[];
     draftAlias: string | null;
     hostRuntime: Record<string, HostRuntime>;
-    previewSession: SlurmSession | null;
+    preview: { sessionId: string; alias: string; script: string } | null;
     validating: boolean;
     alert: { title: string; message: string } | null;
 }

@@ -45,7 +45,7 @@ Local VS Code                              Remote HPC cluster
    (`linkspan_Linux_x86_64.tar.gz`, `linkspan_Linux_arm64.tar.gz`); anything else is refused by name.
 5. **Submit.** The script is base64-piped into `sbatch`, and the host token rides `LINKSPAN_TUNNEL_HOST_TOKEN=… sbatch
    --export=ALL`, so it never lands on the cluster filesystem. The parsed job id is kept on the session record and the
-   in-memory script is dropped (`slurmLaunch.ts`).
+   provider's draft of the script is dropped (`slurmLaunch.ts`).
 6. **Poll.** `SessionMonitor` runs one `setInterval` per active session — no central loop. Before the job runs it
    polls `sacct` and applies `computeStatusTransition`; once it runs it pings Linkspan over the Dev Tunnel and
    falls back to a `sacct` cross-check only after repeated health failures (`sessionSupport.ts`, `sessionMachine.ts`).

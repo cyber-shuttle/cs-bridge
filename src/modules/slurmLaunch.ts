@@ -15,6 +15,8 @@ interface LogSink {
 
 // Each step throws on failure and mutates only the in-memory session; the caller reports progress and persists.
 
+export interface LaunchDraft { script: string; sbatchEnv: Record<string, string> }
+
 export async function checkSlurmAvailability(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
     await run.runRemoteCommand(session.alias, 'sinfo');
     log.info(`Slurm is available on SSH host ${session.alias}`);
@@ -99,11 +101,9 @@ export async function validateSlurmConfig(session: SlurmSession, run: RemoteRunn
 }
 
 // sbatchEnv reaches the job as assignments on sbatch over the shell's stdin, never an argv, the job script or a file.
-export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner, log: LogSink, sbatchEnv: Record<string, string> = {}): Promise<void> {
-    if (!session.jobScript) { throw new Error(`Session ${session.name}: missing job script`); }
-
-    const scriptB64 = Buffer.from(session.jobScript).toString('base64');
-    const env = envAssignments(sbatchEnv);
+export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner, log: LogSink, draft: LaunchDraft): Promise<void> {
+    const scriptB64 = Buffer.from(draft.script).toString('base64');
+    const env = envAssignments(draft.sbatchEnv);
     const submitCommand = `echo '${scriptB64}' | base64 -d | ${env}sbatch${env && ' --export=ALL'}`;
     log.info(`Submitting job to Slurm for session ${session.name}`);
 
@@ -111,7 +111,6 @@ export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner,
     const jobIdMatch = output.match(/Submitted batch job (\d+)/);
     if (!jobIdMatch) { throw new Error(`Failed to parse job ID from sbatch output: ${output}`); }
 
-    session.jobScript = undefined;
     session.jobId = jobIdMatch[1];
     session.submittedAt = Date.now();
     log.info(`Job submitted successfully with Job ID: ${session.jobId}`);

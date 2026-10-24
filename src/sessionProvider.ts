@@ -12,7 +12,7 @@ import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { stopSession, SessionMonitor, launchSession, prepareLaunch } from './modules/sessionSupport';
 import { Transports, connectSessionToTunnel, disposeAllTunnelClients, disposeTunnelClient, ensureRemoteSession, hasTunnelClient } from './modules/transport';
-import { validateSlurmConfig } from './modules/slurmLaunch';
+import { validateSlurmConfig, LaunchDraft } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
 import { isTerminal, isDeletable, isStoppable, isReachable } from './modules/sessionMachine';
 import { AwsClient } from './modules/aws';
@@ -20,7 +20,7 @@ import { Ec2Backend } from './modules/ec2Session';
 
 // A session's user-driven steps, by backend: the Slurm job (this module and sessionSupport) or an EC2 instance.
 interface Lifecycle {
-    start(session: SlurmSession, sbatchEnv: Record<string, string>): Promise<void>;
+    start(session: SlurmSession, draft: LaunchDraft | undefined): Promise<void>;
     stop(session: SlurmSession): Promise<void>;
     connect(session: SlurmSession): Promise<boolean>;
     remove(session: SlurmSession): Promise<void>;
@@ -39,15 +39,14 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
 
     private readonly hostRuntime = new Map<string, HostRuntime>();
     private draftAlias: string | null = null;
-    private previewSession: SlurmSession | null = null;
-    private previewSbatchEnv: Record<string, string> = {}; // a previewed run's secrets
+    private draft: (LaunchDraft & { sessionId: string }) | null = null;
     private readonly shared: vscode.Disposable[] = [];
     private readonly opening = new Set<string>();
     private readonly monitor: SessionMonitor;
     private readonly ec2: Ec2Backend;
     private sharedReady = false;
     private readonly slurm: Lifecycle = {
-        start: (s, sbatchEnv) => launchSession(s, this.monitor, sbatchEnv),
+        start: (s, draft) => launchSession(s, this.monitor, draft),
         stop: s => stopSession(s, this.monitor),
         connect: s => this.connectTransport(s),
         remove: s => this.transports.remove(s),
@@ -63,7 +62,12 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
 
     private lifecycle(session: SlurmSession): Lifecycle { return session.ec2 ? this.ec2 : this.slurm; }
 
-    private release(session: SlurmSession | null) { return session && this.transports.transportFor(session).release(session); }
+    private release(session: SlurmSession | undefined) { return session && this.transports.transportFor(session).release(session); }
+
+    private dropDraft() {
+        if (this.draft) { void this.release(getSession(this.draft.sessionId)); }
+        this.draft = null;
+    }
 
     protected onResolved(): void {
         this.initSharedSubscriptions();
@@ -109,7 +113,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
 
     private readonly dismissals: Record<string, () => void> = {
         dismissDraftSession: () => { this.draftAlias = null; },
-        dismissPreview: () => { void this.release(this.previewSession); this.previewSession = null; this.previewSbatchEnv = {}; },
+        dismissPreview: () => this.dropDraft(),
         dismissAlert: () => { this.alert = null; },
     };
 
@@ -274,7 +278,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
                     .sort((a, b) => b.id.localeCompare(a.id)),
                 draftAlias: this.draftAlias,
                 hostRuntime: Object.fromEntries(this.hostRuntime),
-                previewSession: this.previewSession,
+                preview: this.preview(),
                 validating: this.validating,
                 alert: this.alert,
             };
@@ -375,14 +379,13 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
     private submitSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'launch');
         if (!session) { return; }
-        const sbatchEnv = this.previewSession?.id === sessionId ? this.previewSbatchEnv : {};
-        this.previewSession = null;
-        this.previewSbatchEnv = {};
+        const draft = this.draft?.sessionId === sessionId ? this.draft : undefined;
+        this.draft = null;
         session.startedAt = undefined; // fresh launch: re-anchor the walltime countdown when the new job starts running
         Object.assign(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '' });
         updateSession(session);
         live.launching.add(session.id);
-        this.runSessionTask(session, 'launch', () => this.lifecycle(session).start(session, sbatchEnv).finally(() => live.launching.delete(session.id)),
+        this.runSessionTask(session, 'launch', () => this.lifecycle(session).start(session, draft).finally(() => live.launching.delete(session.id)),
             session.ec2 ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.');
     }
 
@@ -403,17 +406,21 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         try {
             await this.release(session); // the previous run's, before a transport switch hides it
             session.transport = enabled('cybershuttle') ? vscode.workspace.getConfiguration('csbridge').get('transport', 'devtunnel') : 'devtunnel';
-            this.previewSbatchEnv = await prepareLaunch(session, this.transports.transportFor(session));
+            const draft = await prepareLaunch(session, this.transports.transportFor(session));
+            if (this.draft?.sessionId !== sessionId) { this.dropDraft(); }
+            this.draft = { sessionId, ...draft };
         }
         catch (err) {
             vscode.window.showErrorMessage(errMsg(err));
             session.errorMessage = errMsg(err);
             updateSession(session);
             this.logger.error('Failed to prepare session launch:', err);
-            return void this.pushState();
         }
-        if (this.previewSession?.id !== sessionId) { void this.release(this.previewSession); }
-        this.previewSession = session;
         void this.pushState();
+    }
+
+    private preview(): SessionsState['preview'] {
+        const session = this.draft && getSession(this.draft.sessionId);
+        return session && this.draft ? { sessionId: session.id, alias: session.alias, script: this.draft.script } : null;
     }
 }
