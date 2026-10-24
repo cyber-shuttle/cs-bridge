@@ -55,8 +55,7 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('csbridge.clearRunHistory', () => statsProvider.clearHistory()),
     );
 
-    void sessionProvider.reattachLiveSessions();
-    void aws.restore();
+    void aws.restore().finally(() => void sessionProvider.reattachLiveSessions()); // a resumed EC2 stop needs the client
 
     if (id) {
         context.subscriptions.push(new RemoteSessionController(context, id));

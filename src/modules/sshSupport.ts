@@ -32,10 +32,6 @@ const sessionKeyPath = (sessionId: string): string => sshKeyPath(sessionKeyName(
 
 type CommandResult = { stdout: string; stderr: string; code: number };
 
-export class RemoteCommandError extends Error {
-    constructor(readonly code: number, readonly stderr: string, command: string) { super(`exit ${code}: ${stderr.trim() || command}`); }
-}
-
 // The single command in flight on a shell; its streams accumulate until both sentinels arrive (see sshShell).
 type Pending = { rid: string; outBuf: string; errBuf: string; settled: boolean; resolve: (r: CommandResult) => void };
 
@@ -118,7 +114,7 @@ export class SshManager {
     // existing shell or fails fast (caller retries). A user-driven call authenticates interactively.
     public async runRemoteCommand(alias: string, command: string, opts?: { batch?: boolean }): Promise<string> {
         const { stdout, stderr, code } = await this.enqueue(alias, async () => this.runOnShell(await this.ensureShell(alias, !!opts?.batch), command));
-        if (code !== 0) { throw new RemoteCommandError(code, stderr, command); }
+        if (code !== 0) { throw new Error(`exit ${code}: ${stderr.trim() || command}`); }
         return stdout;
     }
 

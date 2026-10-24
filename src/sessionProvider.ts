@@ -6,7 +6,7 @@ import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSessionPrivateKey, SshManager, openSshWindow } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
-import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, windowState, statusOf, fail, live, claim, owns, disown } from './extensionStore';
+import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, windowState, statusOf, fail, live, claim, owns, disown, requestStop } from './extensionStore';
 import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { Backends, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
@@ -37,32 +37,14 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private readonly slurm: SlurmBackend;
     private readonly ec2: Ec2Backend;
     private readonly backends: Backends;
-    private sharedReady = false;
-
-    // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
+    // Set in a remote window (session-scoped, observe-only); undefined in the sidebar, which alone drives sessions.
     constructor(extensionUri: vscode.Uri, private readonly transports: Transports, aws: AwsClient, private readonly remoteSessionId?: string) {
         super(extensionUri);
         this.slurm = new SlurmBackend(transports, () => this.monitor);
         this.ec2 = new Ec2Backend(aws, () => this.monitor);
         this.backends = new Backends(this.slurm, this.ec2);
         this.monitor = new SessionMonitor(this.backends);
-        this.shared.push(aws.onDidSignIn(() => this.ec2.adopt().catch(err => this.logger.error('Adopting EC2 instances failed:', err))));
-    }
-
-    private release(session: SlurmSession | undefined) { return session && this.transports.transportFor(session).release(session); }
-
-    private dropDraft() {
-        if (this.draft) { void this.release(getSession(this.draft.sessionId)); }
-        this.draft = null;
-    }
-
-    protected override onResolved(): void {
-        this.initSharedSubscriptions();
-    }
-
-    private initSharedSubscriptions(): void {
-        if (this.sharedReady) { return; }
-        this.sharedReady = true;
+        if (!remoteSessionId) { this.shared.push(aws.onDidSignIn(() => this.ec2.adopt().catch(err => this.logger.error('Adopting EC2 instances failed:', err)))); }
         this.shared.push(vscode.authentication.onDidChangeSessions((e) => {
             if (e.provider.id === 'microsoft') { void this.pushState(); }
         }));
@@ -77,6 +59,13 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         }));
         // Live samples land in the per-session files (bypassing updateSession); pushState reads them at render time.
         this.shared.push(onRunsChange(() => void this.pushState()));
+    }
+
+    private release(session: SlurmSession | undefined) { return session && this.transports.transportFor(session).release(session); }
+
+    private dropDraft() {
+        if (this.draft) { void this.release(getSession(this.draft.sessionId)); }
+        this.draft = null;
     }
 
     // Sidebar only: drive every live session no beating window owns, rebuilding its tunnel connection (gone after a restart).
@@ -283,12 +272,12 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
         if (!await confirmModal('Stop session?', 'Stop', 'This stops the running job.')) { return; }
 
-        patch(session, { desired: 'stopped', errorMessage: '' }); // the record change runs the stop in the owner window
+        requestStop(session); // the record change runs the stop in the owner window
     }
 
+    // A stop the backend could not send leaves the session as it was.
     private runStop(session: SlurmSession): void {
-        this.runSessionTask(session, 'stop', () => this.backends.use(session, (b, s) => b.stop(s)),
-            isEc2(session) ? 'Please check the AWS console to ensure the instance has stopped.' : 'Please check the cluster to ensure the job has stopped and clean up any resources if necessary.');
+        this.runSessionTask(session, 'stop', () => this.backends.use(session, (b, s) => b.stop(s)), 'The session is still running.', setError);
     }
 
     private launchDraft() {
@@ -304,18 +293,18 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         claim(session);
         live.launching.add(session.id);
         this.runSessionTask(session, 'launch', () => start().finally(() => live.launching.delete(session.id)),
-            isEc2(session) ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.');
+            isEc2(session) ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.',
+            (s, detail) => { fail(s, detail); void this.release(s); });
     }
 
-    private runSessionTask(session: SlurmSession, verb: string, run: () => Promise<void>, cleanupHint: string): void {
+    private runSessionTask(session: SlurmSession, verb: string, run: () => Promise<void>, hint: string, mark: (session: SlurmSession, detail: string) => void): void {
         if (live.busy.has(session.id)) { return; }
         live.busy.add(session.id);
         run().catch((error) => {
             const detail = `Failed to ${verb} session: ${errMsg(error)}`;
             this.logger.error(`${detail} (id ${session.id})`, error);
-            vscode.window.showErrorMessage(`${detail}. ${cleanupHint}`);
-            fail(session, detail);
-            void this.release(session);
+            vscode.window.showErrorMessage(`${detail}. ${hint}`);
+            mark(session, detail);
         }).finally(() => { live.busy.delete(session.id); this.settle(session); });
     }
 

@@ -77,12 +77,12 @@ export const live = {
 };
 
 // A remote window beating for the session is a connection too, whichever window holds the tunnel.
-export function statusOf(session: SlurmSession, now = Date.now()): SessionStatus {
+export function statusOf(session: SlurmSession): SessionStatus {
     const { id } = session;
     return deriveStatus(session, {
         launching: live.launching.has(id), connecting: live.connecting.has(id),
         connected: live.connected.has(id) || windowState(session).windowAlive, unreachable: live.unreachable.has(id),
-    }, now);
+    }, Date.now());
 }
 
 // Writing only on change keeps the 5 s polls from churning the store.
@@ -91,6 +91,8 @@ export function observe(session: SlurmSession, state: SlurmJobStatus): void {
 }
 
 export const fail = (session: SlurmSession, message: string): void => patch(session, { failure: message, errorMessage: message });
+// The owner window carries the stop out when the record reaches it.
+export const requestStop = (session: SlurmSession): void => patch(session, { desired: 'stopped', errorMessage: '' });
 
 export function deleteSession(sessionId: string) {
     sessions.delete(sessionId);
