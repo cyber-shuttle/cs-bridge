@@ -1,8 +1,7 @@
-import { render } from 'preact';
 import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { HostsState, SshHost } from '@/models';
-import { post, useWebviewState } from '@/ui/platform/vscode';
+import { post, useWebviewState, mount } from '@/ui/platform/vscode';
 import { Row, Stack, Text, Icon, Button } from '@/ui/components/base';
 
 const SOURCE_ICON: Record<SshHost['source'], string> = { user: 'account', system: 'settings-gear' };
@@ -58,4 +57,4 @@ function Root() {
     return state ? <Stack pad="4px 8px"><HostList state={state} /></Stack> : null;
 }
 
-render(<Root />, document.getElementById('root')!);
+mount(Root);

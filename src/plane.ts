@@ -23,13 +23,13 @@ export class Plane {
 
     constructor(private readonly secrets: Pick<vscode.SecretStorage, 'get' | 'store' | 'delete'>, private readonly fetchImpl = fetch) { }
 
-    startSignIn() { return this.request('oauth/device', 'POST') as Promise<DeviceCode>; }
+    startSignIn() { return this.request<DeviceCode>('oauth/device', 'POST'); }
 
     async awaitSignIn(code: DeviceCode, cancelled: () => boolean) {
         for (let wait = code.intervalSeconds; !cancelled();) {
             await new Promise(resolve => setTimeout(resolve, wait * 1000));
             if (cancelled()) { break; }
-            const poll = await this.request('oauth/device/poll', 'POST', { deviceCode: code.deviceCode }) as DevicePoll;
+            const poll = await this.request<DevicePoll>('oauth/device/poll', 'POST', { deviceCode: code.deviceCode });
             if (poll.status === 'complete') { await this.store(poll); return true; }
             wait = Math.max(poll.intervalSeconds, code.intervalSeconds);
         }
@@ -43,20 +43,20 @@ export class Plane {
         return credential && JSON.parse(Buffer.from(credential.idToken.split('.')[1] ?? '', 'base64url').toString()).email as string | undefined;
     }
 
-    createSession(session: SlurmSession) { return this.api('sessions', 'POST', toSpec(session)) as Promise<{ id: string }>; }
-    attachLink(id: string) { return this.api(`sessions/${id}/attach`, 'POST', { tunnelModes: ['link'] }) as Promise<{ port: number; link: { url: string; token: string } }>; }
+    createSession(session: SlurmSession) { return this.api<{ id: string }>('sessions', 'POST', toSpec(session)); }
+    attachLink(id: string) { return this.api<{ port: number; link: { url: string; token: string } }>(`sessions/${id}/attach`, 'POST', { tunnelModes: ['link'] }); }
     stopSession(id: string) { return this.api(`sessions/${id}/stop`, 'POST'); }
     deleteSession(id: string) { return this.api(`sessions/${id}`, 'DELETE'); }
-    sessionAccess(id: string) { return this.api(`sessions/${id}/access`) as Promise<{ jupyter: { token: string } }>; }
+    sessionAccess(id: string) { return this.api<{ jupyter: { token: string } }>(`sessions/${id}/access`); }
 
-    private async api(path: string, method = 'GET', body?: unknown) {
+    private async api<T = unknown>(path: string, method = 'GET', body?: unknown): Promise<T> {
         const credential = await this.load();
         if (credential && Date.now() > credential.expiresAt - 60_000) {
             this.refreshing ??= this.refresh(credential).finally(() => { this.refreshing = undefined; });
             await this.refreshing;
         }
         if (!this.credential) { throw new PlaneError(401, 'Sign in to CyberShuttle first (CS Bridge: Open Menu).'); }
-        try { return await this.request(path, method, body, this.credential.idToken); }
+        try { return await this.request<T>(path, method, body, this.credential.idToken); }
         catch (err) {
             if (err instanceof PlaneError && err.status === 401) { await this.signOut(); }
             throw err;
@@ -65,7 +65,7 @@ export class Plane {
 
     private async refresh(credential: Credential) {
         try {
-            const tokens = await this.request('oauth/refresh', 'POST', { refreshToken: credential.refreshToken }) as Tokens;
+            const tokens = await this.request<Tokens>('oauth/refresh', 'POST', { refreshToken: credential.refreshToken });
             await this.store({ ...tokens, refreshToken: tokens.refreshToken ?? credential.refreshToken });
         }
         catch (err) {
@@ -83,12 +83,13 @@ export class Plane {
 
     private async load() { return this.credential ??= JSON.parse(await this.secrets.get(CREDENTIAL_KEY) ?? 'null') as Credential | null; }
 
-    private async request(path: string, method: string, body?: unknown, token?: string): Promise<unknown> {
+    // T is cs-plane's documented response shape; the body is trusted as such, as every wire client here does.
+    private async request<T>(path: string, method: string, body?: unknown, token?: string): Promise<T> {
         const headers = { 'Content-Type': 'application/json', ...token && { Authorization: `Bearer ${token}` } };
         const response = await this.fetchImpl(`${PLANE_URL}/${path}`, { method, headers, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
-        const value = await response.json().catch(() => { }) as { error?: { code?: string; message?: string } } | undefined;
+        const value = await response.json().catch(() => { }) as (T & { error?: { code?: string; message?: string } }) | undefined;
         if (!response.ok) { throw new PlaneError(response.status, value?.error?.message ?? `cs-plane returned ${response.status}.`, value?.error?.code); }
-        return value;
+        return value as T;
     }
 }
 

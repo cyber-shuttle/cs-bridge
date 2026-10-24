@@ -136,7 +136,7 @@ Four layers, and nothing reaches past its neighbour.
   (`sessionSupport`), the on-disk stores and their migrations (`schema`). Modules that do not import `vscode`
   unit-test directly; the ones that do cannot be imported under the test runner at all.
 - **`src/ui/`** — Preact webviews, one esbuild bundle per view. `logic/` is pure and tested, `components/` renders,
-  `platform/vscode.ts` is the only thing that talks to the webview host (`post()` out, `useWebviewState()` in).
+  `platform/vscode.tsx` is the only thing that talks to the webview host (`post()` out, `useWebviewState()` in).
 - **`resources/`, `scripts/`** — the activity-bar icons, and the `SSH_ASKPASS` helpers (`askpass.js`, `askpass.sh`).
 
 The testability seam is extraction, not injection: to make `vscode`-coupled logic testable, move the pure or
