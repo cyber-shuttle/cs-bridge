@@ -73,6 +73,9 @@ export function buildSshConfigBlock(
     ].join('\n');
 }
 
+// ssh_config keywords are case-insensitive.
+const isKeyword = (param: string, keyword: string): boolean => param.toLowerCase() === keyword.toLowerCase();
+
 // ssh-config models a directive value as a plain string or, for multi-token directives, an array of tokens.
 const directiveText = (value: Directive['value']): string =>
     Array.isArray(value) ? value.map(t => t.val).join(' ') : value;
@@ -95,17 +98,16 @@ export function parseHostsFromConfigText(text: string, source: SshHost['source']
     const hosts: SshHost[] = [];
     for (const section of config) {
         // Keep Host sections only: they carry a `config` array, Match sections also carry `criteria`.
-        if (!('config' in section) || 'criteria' in section || section.param !== 'Host') { continue; }
-        const raw = Array.isArray(section.value) ? section.value[0] : section.value;
-        const alias = typeof raw === 'string' ? raw.trim().split(/\s+/)[0] : '';
+        if (!('config' in section) || 'criteria' in section || !isKeyword(section.param, 'Host')) { continue; }
+        const [alias = ''] = directiveText(section.value).trim().split(/\s+/);
         if (!alias || alias.includes('*') || alias.includes('?')) { continue; }
         const host: SshHost = { alias, source };
         const extraDirectives: string[] = [];
         for (const child of section.config) {
             if (child.type !== LineType.DIRECTIVE) { continue; }
             const value = directiveText(child.value);
-            if (child.param === 'HostName') { host.hostname = value; }
-            else if (child.param === 'User') { host.user = value; }
+            if (isKeyword(child.param, 'HostName')) { host.hostname = value; }
+            else if (isKeyword(child.param, 'User')) { host.user = value; }
             else { extraDirectives.push(`${child.param} ${value}`); }
         }
         if (extraDirectives.length) { host.extraDirectives = extraDirectives; }
@@ -135,7 +137,7 @@ export function editHostInConfigText(text: string, alias: string, edit: SshConfi
     if (edit.Host !== alias && config.find({ Host: edit.Host })) { throw new Error(`SSH host ${edit.Host} already exists.`); }
     section.value = edit.Host;
     for (const [param, value] of [['User', edit.User], ['HostName', edit.HostName]] as const) {
-        const i = section.config.findIndex(line => 'param' in line && line.param === param);
+        const i = section.config.findIndex(line => 'param' in line && isKeyword(line.param, param));
         const existing = section.config[i];
         const line: Directive = existing && 'param' in existing ? existing : { type: LineType.DIRECTIVE, before: section.config[0]?.before ?? '    ', after: '\n', separator: ' ', param, value: '' };
         if (i >= 0) { section.config.splice(i, 1); }

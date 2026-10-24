@@ -91,7 +91,8 @@ export function sshCommandToConfig(command: string): SshConfigEntry {
     for (let i = 0; i < tokens.length; i++) {
         i += consumeFlags(tokens.slice(i), config);
         const token = tokens[i];
-        if (token !== undefined && !config.Host) {
+        if (token !== undefined && config.Host) { break; } // the remote command starts here
+        if (token !== undefined) {
             const { hostname, port, username } = parseHostToken(token);
             config.Host = hostname;
             config.HostName = hostname;

@@ -110,3 +110,9 @@ test('renderSshConfig lists a Slurm session with a forward and an EC2 instance w
     assert.deepEqual(renderServerInstallPaths([{ ...base, id: 'a', alias: 'delta', jobId: '1', connectionInfo: { sshPort: 40, controlPort: 1, localPort: 5 } }], { 'delta-000000': '/tmp/cs-vscode/old', 'mine': '/srv/code' }),
         { 'mine': '/srv/code', 'delta-493119': '/tmp/cs-vscode/a' });
 });
+
+test('parseHostsFromConfigText reads keywords in any case and a Host with several patterns', () => {
+    const hosts = parseHostsFromConfigText('host lab\n    Hostname login.example.org\n    user carol\n\nHost foo foo.example.com\n    HostName foo.example.com\n', 'user');
+    assert.deepEqual(hosts, [{ alias: 'lab', hostname: 'login.example.org', user: 'carol', source: 'user' }, { alias: 'foo', hostname: 'foo.example.com', source: 'user' }]);
+    assert.equal(editHostInConfigText('Host lab\n    Hostname old\n', 'lab', { Host: 'lab', HostName: 'new' }), 'Host lab\n    Hostname new\n');
+});
