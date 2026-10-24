@@ -14,10 +14,14 @@ import { initRunStore } from '../modules/runStore';
 import { openSummaryPanel } from '../summaryPanel';
 
 const EXTENSION_ID = 'cybershuttle.csbridge';
-const storage = path.join(process.env.CSBRIDGE_USER_DATA ?? '', 'User', 'globalStorage', EXTENSION_ID);
+const userData = process.env.CSBRIDGE_USER_DATA;
+if (!userData) { throw new Error('CSBRIDGE_USER_DATA names the test profile'); }
+const storage = path.join(userData, 'User', 'globalStorage', EXTENSION_ID);
 const file = (dir: string, id: string) => path.join(storage, dir, `${id}.json`);
 const write = (dir: string, id: string, value: object) => { fs.mkdirSync(path.join(storage, dir), { recursive: true }); fs.writeFileSync(file(dir, id), JSON.stringify(value)); };
 const read = <T>(dir: string, id: string): T | undefined => (fs.existsSync(file(dir, id)) ? parseJson<T>(fs.readFileSync(file(dir, id), 'utf8')) : undefined);
+const record = (id: string) => read<SlurmSession>('sessions', id);
+const runs = (id: string): Run[] => read<RunsFile>('runs', id)?.runs || [];
 
 async function until(what: string, check: () => boolean, ms = 90_000): Promise<void> {
     const end = Date.now() + ms;
@@ -57,11 +61,9 @@ export function register(): void {
 
         it('tears down a run that ended while no window drove it', async () => {
             write('sessions', ended.id, ended);
-            await until('the run record', () => read<RunsFile>('runs', ended.id)?.runs.length === 1);
-            const run = read<RunsFile>('runs', ended.id)?.runs[0] as Run;
-            assert.equal(run.jobId, '101');
-            assert.equal(run.finalState, 'stopped');
-            await until('the claim release', () => read<SlurmSession>('sessions', ended.id)?.owner === undefined);
+            await until('the run record', () => runs(ended.id).length === 1);
+            assert.deepEqual(runs(ended.id).map(r => [r.jobId, r.finalState]), [['101', 'stopped']]);
+            await until('the claim release', () => record(ended.id)?.owner === undefined);
         });
 
         it('leaves a Stop to the beating owner and takes it once that window is gone', async () => {
@@ -70,12 +72,12 @@ export function register(): void {
             await sleep(1500);
             write('sessions', running.id, { ...running, desired: 'stopped' });
             await sleep(3000);
-            assert.deepEqual([read<SlurmSession>('sessions', running.id)?.desired, read<SlurmSession>('sessions', running.id)?.owner], ['stopped', 'otherwindow']);
+            assert.deepEqual([record(running.id)?.desired, record(running.id)?.owner], ['stopped', 'otherwindow']);
             fs.rmSync(file('windows', 'otherwindow'));
-            await until('the failed stop to revert', () => read<SlurmSession>('sessions', running.id)?.desired === 'running');
-            const s = read<SlurmSession>('sessions', running.id);
+            await until('the failed stop to revert', () => record(running.id)?.desired === 'running');
+            const s = record(running.id);
             assert.notEqual(s?.owner, 'otherwindow');
-            assert.match(s?.errorMessage ?? '', /stop/);
+            assert.match(String(s?.errorMessage), /stop/);
         });
 
         it('opens a summary panel whose webview reports ready', async () => {
