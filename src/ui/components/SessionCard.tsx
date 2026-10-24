@@ -1,9 +1,9 @@
 import { createContext } from 'preact';
 import { useContext } from 'preact/hooks';
 import type { CSSProperties, VNode } from 'preact';
-import { SAMPLE_HISTORY_LEN, ec2ImageLabel, type ViewSession } from '@/models';
-import { dotColor, sessionActions, remainingMs, fmtTime, wallMs, elapsedLabel, type SessionAction } from '@/ui/logic/session';
-import { isReachable, isDeletable } from '@/modules/sessionMachine';
+import { SAMPLE_HISTORY_LEN, type ViewSession } from '@/models';
+import { cardModel, type SessionAction } from '@/ui/logic/session';
+import { isReachable } from '@/modules/sessionMachine';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button, Spinner, Chip } from '@/ui/components/base';
 import { Sparkline } from '@/ui/components/Sparkline';
 import { usageGraphs, graphTitle } from '@/ui/components/UsageGraphs';
@@ -14,9 +14,8 @@ interface Props {
     remote?: boolean;
 }
 
-// 1s clock owned by the Sessions root, fed through this context so StatusText re-renders each tick.
+// 1s clock owned by the Sessions root, fed through this context so the status text re-renders each tick.
 export const NowContext = createContext(Date.now());
-const useNow = () => useContext(NowContext);
 
 const COMMAND_FOR: Record<SessionAction['kind'], string | null> = {
     start: 'prepareLaunchSession',
@@ -25,23 +24,6 @@ const COMMAND_FOR: Record<SessionAction['kind'], string | null> = {
     connect: 'connectTunnel',
     current: null,
     opening: null,
-};
-
-const STATUS_ICON: Record<ViewSession['status'], { name: string; spin?: boolean }> = {
-    // Bare-minimum glyph vocabulary — a dot at rest, a spinner in progress, a square for trouble;
-    // dotColor() carries the state distinction (grey idle · green live · orange error).
-    // A hollow circle is idle-but-not-live (not_started, ready_to_connect); a filled circle is live (connected).
-    not_started: { name: 'circle-outline' },
-    submitting: { name: 'loading', spin: true },
-    queued: { name: 'loading', spin: true },
-    preparing: { name: 'loading', spin: true },
-    ready_to_connect: { name: 'circle-outline' },
-    connecting: { name: 'loading', spin: true },
-    connected: { name: 'circle-filled' },
-    unreachable: { name: 'primitive-square' },
-    failed: { name: 'primitive-square' },
-    stopped: { name: 'primitive-square' },
-    stopping: { name: 'loading', spin: true },
 };
 
 const statusStyle: CSSProperties = { color: 'var(--vscode-descriptionForeground)', fontSize: '12px', flexWrap: 'wrap', minWidth: 0 };
@@ -60,9 +42,6 @@ export function Divided({ items }: { items: VNode[] }) {
 // Raw resource text (e.g. "MEM: 2G", "CPU: 1", "GPU: 1") above each live sparkline when reachable; a plain row
 // otherwise. Columns bracketed by vertical separators.
 function ResourceStats({ session }: { session: ViewSession }) {
-    if (session.ec2) {
-        return <Divided items={[session.ec2.region, session.jobId, session.ec2.ip].filter(Boolean).map(t => <Text key={t} size={11}>{t}</Text>)} />;
-    }
     const graphs = usageGraphs(session.samples ?? [], session.resources.gpuCount ?? 0, session.resources);
     if (!isReachable(session.status)) {
         return <Divided items={graphs.map(g => <Text key={g.label} size={11}>{g.text}</Text>)} />;
@@ -80,51 +59,26 @@ function ResourceStats({ session }: { session: ViewSession }) {
     );
 }
 
-function StatusText({ session }: { session: ViewSession }) {
-    const now = useNow();
-    const s = session.status;
-    switch (s) {
-        case 'not_started': return <Row style={statusStyle}>Not started</Row>;
-        case 'ready_to_connect':
-        case 'connected': return <Row style={statusStyle}>{session.ec2 ? 'Running' : `${fmtTime(remainingMs(session, now))} left`}</Row>;
-        case 'preparing': return <Row style={statusStyle}>{session.ec2 ? 'Booting…' : 'Starting Linkspan…'}</Row>;
-        case 'unreachable': return <Row style={statusStyle}><Text title={session.errorMessage || undefined}>{session.errorMessage ? `Unreachable: ${session.errorMessage}` : 'SSH host unreachable — retrying…'}</Text></Row>;
-        case 'connecting': return <Row style={statusStyle}>Connecting…</Row>;
-        case 'submitting': return <Row style={statusStyle}>Submitting…</Row>;
-        case 'queued':
-            return <Row style={statusStyle}>Queued{session.submittedAt ? ` (${elapsedLabel(session.submittedAt, now)})` : ''}</Row>;
-        case 'stopping': return <Row style={statusStyle}>Stopping…</Row>;
-        case 'stopped': return <Row style={statusStyle}>{session.errorMessage ? `Stop failed: ${session.errorMessage}` : 'Stopped'}</Row>;
-        case 'failed': return <Row style={statusStyle}><Text title={session.errorMessage || undefined}>{session.errorMessage ? `Failed: ${session.errorMessage}` : 'Failed'}</Text></Row>;
-        default: return null;
-    }
-}
-
 export function SessionCard({ session, remote }: Props) {
-    const statusColor = dotColor(session.status);
-    const canDelete = isDeletable(session.status);
-    const actions = sessionActions(session);
-    const status = STATUS_ICON[session.status];
+    const m = cardModel(session, useContext(NowContext), remote);
 
     const act = (a: SessionAction) => {
-        const command = COMMAND_FOR[a.kind];
+        const command = remote ? 'stopRemoteSession' : COMMAND_FOR[a.kind];
         if (command) { post({ command, sessionId: session.id }); }
     };
 
     // The theme's validation colors hold in light and dark alike; softened, since the dark info blue overpowers at full strength.
-    const kind = session.ec2 ? 'warning' : 'info';
-    const edge = `color-mix(in srgb, var(--vscode-inputValidation-${kind}Border) 25%, var(--vscode-panel-border))`;
-    const tint = `color-mix(in srgb, var(--vscode-inputValidation-${kind}Background) 70%, var(--vscode-sideBar-background))`;
+    const edge = `color-mix(in srgb, var(--vscode-inputValidation-${m.theme}Border) 25%, var(--vscode-panel-border))`;
+    const tint = `color-mix(in srgb, var(--vscode-inputValidation-${m.theme}Background) 70%, var(--vscode-sideBar-background))`;
     return (
         <Card border={edge}>
             {/* Fixed height keeps the gap to the detail row constant whether or not the delete button shows. Negative
                 margins run the header tint out to the card's edge. */}
             <Row gap={5} style={{ minHeight: '20px', margin: '-5px -8px 0', padding: '1px 8px', letterSpacing: '-0.2px', borderRadius: '5px 5px 0 0', background: tint, borderBottom: `1px solid ${edge}` }}>
-                <Icon name={status.name} spin={status.spin} style={{ color: statusColor, flexShrink: 0, marginRight: '-3px' }} />
+                <Icon name={m.icon.name} spin={m.icon.spin} style={{ color: m.color, flexShrink: 0, marginRight: '-3px' }} />
                 <Text weight={600}>{session.alias}</Text>
-                <Chip label={session.ec2 ? session.ec2.type : session.account} />
-                <Chip label={session.ec2 ? ec2ImageLabel(session.ec2) : session.partition} />
-                {!remote && canDelete
+                {m.chips.map(c => <Chip key={c} label={c} />)}
+                {m.canDelete
                     ? (
                             <Row gap={4} style={{ marginLeft: 'auto' }}>
                                 <ActionIcon name="close" ariaLabel="Delete session" size={14} onClick={() => post({ command: 'deleteSession', sessionId: session.id })} />
@@ -133,20 +87,16 @@ export function SessionCard({ session, remote }: Props) {
                     : null}
             </Row>
             <Stack gap={6}>
-                <ResourceStats session={session} />
+                {m.details ? <Divided items={m.details.map(t => <Text key={t} size={11}>{t}</Text>)} /> : <ResourceStats session={session} />}
                 <Row gap={6}>
-                    <Chip label={session.ec2 ? 'AWS' : 'HPC'} background={tint} />
-                    {session.ec2 ? null : <Chip label={fmtTime(wallMs(session))} />}
-                    <StatusText session={session} />
-                    {!remote && actions.length ? (
+                    <Chip label={m.kind} background={tint} />
+                    {m.walltime ? <Chip label={m.walltime} /> : null}
+                    <Row style={statusStyle}><Text title={m.status.title}>{m.status.text}</Text></Row>
+                    {m.actions.length ? (
                         <Row gap={6} style={{ marginLeft: 'auto', flexShrink: 0, zoom: 0.85 }}>
-                            {actions.map(a => a.kind === 'opening'
+                            {m.actions.map(a => a.kind === 'opening'
                                 ? <Button key={a.kind} disabled><Row gap={4}><Spinner size={11} /> {a.label}</Row></Button>
                                 : <Button key={a.kind} icon={a.icon} disabled={a.kind === 'current' || undefined} onClick={() => act(a)}>{a.label}</Button>)}
-                        </Row>
-                    ) : remote && actions.some(a => a.kind === 'stop') ? (
-                        <Row gap={6} style={{ marginLeft: 'auto', flexShrink: 0, zoom: 0.85 }}>
-                            <Button icon="debug-stop" onClick={() => post({ command: 'stopRemoteSession', sessionId: session.id })}>Stop</Button>
                         </Row>
                     ) : null}
                 </Row>
