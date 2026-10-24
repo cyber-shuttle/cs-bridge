@@ -57,13 +57,12 @@ export class SshManager {
         fs.mkdirSync(CS_SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
     }
 
-    public static initInstance(extensionUri: vscode.Uri, storageDir: string): SshManager {
+    public static initInstance(extensionUri: vscode.Uri, storageDir: string): void {
         CS_SSH_CONFIG_PATH = path.join(storageDir, 'ssh_config');
         CS_SSH_KEYS_DIR = path.join(storageDir, 'ssh_keys');
         SshManager.instance ??= new SshManager(extensionUri);
         // Include'd above the user's global entries so a per-session SSH host wins via SSH first-match.
         SshManager.instance.ensureSshInclude(CS_SSH_CONFIG_PATH);
-        return SshManager.instance;
     }
 
     public static getInstance(): SshManager {

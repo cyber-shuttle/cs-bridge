@@ -93,8 +93,9 @@ export class Ec2Backend implements Backend<Ec2Session> {
     }
 
     async remove(session: Ec2Session): Promise<void> {
+        if (!session.jobId) { return; }
         const { ec2 } = await this.aws.ready();
-        if (session.jobId && await ec2.describe(session.ec2.region, session.jobId)) { await ec2.act('terminate', session.ec2.region, session.jobId); }
+        if (await ec2.describe(session.ec2.region, session.jobId)) { await ec2.act('terminate', session.ec2.region, session.jobId); }
     }
 
     async tick(session: Ec2Session, alive: () => boolean): Promise<void> {

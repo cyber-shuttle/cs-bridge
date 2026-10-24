@@ -141,13 +141,14 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             : 'This deletes the session record and cleans up its SSH config entry and key file.');
         if (!confirmed || live.busy.has(sessionId)) { return; } // a task in flight holds the run this delete would tear down
 
-        await disposeTunnelClient(sessionId);
-        try { await this.backends.use(session, (b, s) => b.remove(s)); }
-        catch (err) {
-            vscode.window.showErrorMessage(`Failed to delete session: ${errMsg(err)}`);
-            return;
+        live.busy.add(sessionId);
+        try {
+            await disposeTunnelClient(sessionId);
+            await this.backends.use(session, (b, s) => b.remove(s));
+            deleteSession(sessionId);
         }
-        deleteSession(sessionId);
+        catch (err) { vscode.window.showErrorMessage(`Failed to delete session: ${errMsg(err)}`); }
+        finally { live.busy.delete(sessionId); }
     }
 
     public createCloudVm(ec2: Ec2Spec): void {
