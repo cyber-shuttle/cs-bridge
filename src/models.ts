@@ -25,6 +25,7 @@ export interface SlurmSession {
     desired: 'running' | 'stopped';
     observed?: { state: SlurmJobStatus; at: number }; // the backend's last reading; EC2 states map onto the Slurm vocabulary
     failure?: string;
+    owner?: string; // the window driving the live session, for as long as that window beats
     alias: string; // the SSH host the job is submitted from
     account: string; // '' submits without --account
     partition: string;

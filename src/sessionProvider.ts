@@ -7,11 +7,11 @@ import { WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSshConfigEntry, addSshConfigEntry, hasSessionKey, SshManager, openSshWindow } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
-import { addSession, deleteSession, getSession, getAllSessions, updateSession, onSessionsChange, windowState, statusOf, fail, live } from './extensionStore';
+import { addSession, deleteSession, getSession, getAllSessions, updateSession, onSessionsChange, onWindowsChange, windowState, statusOf, fail, live, claim, owns } from './extensionStore';
 import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { stopSession, SessionMonitor, launchSession, prepareLaunch } from './modules/sessionSupport';
-import { Transports, connectSessionToTunnel, disposeAllTunnelClients, disposeTunnelClient, ensureRemoteSession, hasTunnelClient } from './modules/transport';
+import { Transports, connectSessionToTunnel, disposeAllTunnelClients, disposeTunnelClient, ensureRemoteSession } from './modules/transport';
 import { validateSlurmConfig, LaunchDraft } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
 import { isTerminal, isDeletable, isStoppable, isReachable } from './modules/sessionMachine';
@@ -89,19 +89,20 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         }));
         // Live samples land in the per-session files (bypassing updateSession); pushState reads them at render time.
         this.shared.push(onRunsChange(() => void this.pushState()));
+        this.shared.push(onWindowsChange(() => void this.reattachLiveSessions()));
     }
 
-    // At activation (sidebar only): resume monitoring and rebuild the tunnel connection (gone after restart) for every live-backend session.
+    // Sidebar only: drive every live session no beating window owns, rebuilding its tunnel connection (gone after a restart).
     public async reattachLiveSessions(): Promise<void> {
         if (this.remoteSessionId) { return; }
         for (const s of getAllSessions()) {
             const status = statusOf(s);
             // A stop still wanted is an unfinished Stop: a reload interrupted it, or a remote window handed it off.
-            if (status === 'stopping') { this.runStop(s); continue; }
-            if (!s.jobId || isTerminal(status)) { continue; }
+            if (status === 'stopping') { if (claim(s)) { this.runStop(s); } continue; }
+            if (!s.jobId || isTerminal(status) || owns(s)) { continue; }
             this.monitor.startMonitoring(s);
-            // Startup never forces a sign-in.
-            if (s.connectionInfo?.sshPort && !hasTunnelClient(s.id) && (s.ec2 || await this.transports.transportFor(s).signedIn())) { void this.lifecycle(s).connect(s); }
+            // A session just taken over gets its connection back; startup never forces a sign-in.
+            if (owns(s) && s.connectionInfo?.sshPort && (s.ec2 || await this.transports.transportFor(s).signedIn())) { void this.lifecycle(s).connect(s); }
         }
     }
 
@@ -348,6 +349,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             this.openOrFocusWindow(session);
             return;
         }
+        claim(session);
         if (await this.lifecycle(session).connect(session)) { this.openOrFocusWindow(session); }
     }
 
@@ -383,21 +385,24 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         this.draft = null;
         session.startedAt = undefined; // fresh launch: re-anchor the walltime countdown when the new job starts running
         Object.assign(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '' });
+        claim(session);
         updateSession(session);
         live.launching.add(session.id);
         this.runSessionTask(session, 'launch', () => this.lifecycle(session).start(session, draft).finally(() => live.launching.delete(session.id)),
             session.ec2 ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.');
     }
 
-    // A failure marks the session failed and shows a dialog.
+    // One task per session at a time; a failure marks the session failed and shows a dialog.
     private runSessionTask(session: SlurmSession, verb: string, run: () => Promise<void>, cleanupHint: string): void {
+        if (live.busy.has(session.id)) { return; }
+        live.busy.add(session.id);
         run().catch((error) => {
             const detail = `Failed to ${verb} session: ${errMsg(error)}`;
             this.logger.error(`${detail} (id ${session.id})`, error);
             vscode.window.showErrorMessage(`${detail}. ${cleanupHint}`);
             fail(session, detail);
             void this.release(session);
-        });
+        }).finally(() => live.busy.delete(session.id));
     }
 
     private async prepareLaunchSession(sessionId: string) {

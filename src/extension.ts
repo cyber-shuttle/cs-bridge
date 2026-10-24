@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Logger, errMsg } from './logger';
 import { legacySteps } from './modules/schema';
 import { openStorage } from './storage';
-import { attachWindow, detachWindow, getAllSessions } from './extensionStore';
+import { startBeat, detachWindow, getAllSessions } from './extensionStore';
 import { csHostAlias } from './modules/sshHostsStore';
 import { Plane } from './plane';
 import { SessionProvider } from './sessionProvider';
@@ -24,10 +24,8 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.info(`Storage is ${context.globalStorageUri.toString()}`);
 
     const id = currentWindowSessionId();
-    if (id) {
-        logger.info(`Window is connected to CS Bridge session ${id}`);
-        attachWindow(id, vscode.workspace.workspaceFolders![0].uri.toString());
-    }
+    if (id) { logger.info(`Window is connected to CS Bridge session ${id}`); }
+    startBeat(id ? { sessionId: id, folder: vscode.workspace.workspaceFolders![0].uri.toString() } : undefined);
 
     const isRemoteWindow = !!id;
     void vscode.commands.executeCommand('setContext', 'csbridge.remote', isRemoteWindow);
