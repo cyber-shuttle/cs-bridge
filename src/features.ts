@@ -7,7 +7,7 @@ type Feature = 'cybershuttle' | 'aws';
 const FEATURES: Record<Feature, 'experimental' | 'stable'> = { cybershuttle: 'experimental', aws: 'experimental' };
 
 export const enabled = (feature: Feature): boolean => FEATURES[feature] === 'stable'
-    || (FEATURES[feature] === 'experimental' && vscode.workspace.getConfiguration('csbridge').get('experimentalFeatures', false));
+    || vscode.workspace.getConfiguration('csbridge').get('experimentalFeatures', false);
 
 // The transport a new run takes; only CyberShuttle offers a choice.
 export const configuredTransport = (): SlurmSession['transport'] =>
