@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { panels } from '../scripts/vscodeMock.js';
 import { memoryFiles } from './modules/memoryFiles';
 import type { JsonDir } from './modules/store';
-import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, patch } from './extensionStore';
+import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, patch, observe } from './extensionStore';
 import { initRunStore, appendRun } from './modules/runStore';
 import { newSession, isEc2, Run, SlurmJobStatus, SummaryState } from './models';
 import { Backend, Backends, SessionMonitor } from './modules/sessionSupport';
@@ -117,4 +117,22 @@ test('an EC2 instance is adopted once, then started, stopped and removed through
     await backend.remove(s);
     assert.deepEqual(calls, ['start', 'stop', 'terminate']);
     monitor.dispose();
+});
+
+test('a run that ends on its own is torn down once', async () => {
+    const s = running();
+    const ended: string[] = [];
+    const backend: Backend = {
+        label: 'fake',
+        async tick(session) { observe(session, SlurmJobStatus.COMPLETED); },
+        async end(session) { await sleep(10); ended.push(session.id); },
+        async stop() { }, async connect() { return true; }, async remove() { }, forget() { },
+    };
+    const monitor = new SessionMonitor(new Backends(backend, backend));
+    monitor.startMonitoring(s);
+    await sleep(5);
+    void monitor.endSession(s); // a sweep arriving while the tick's own teardown runs
+    await monitor.quiesce(s);
+    assert.deepEqual(ended, [s.id]);
+    assert.equal(statusOf(s), 'stopped');
 });

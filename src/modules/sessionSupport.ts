@@ -51,8 +51,10 @@ export class SessionMonitor {
 
     constructor(private readonly backends: Backends) { }
 
-    // Teardown for a Stop and for a backend that ended on its own.
+    // Teardown for a Stop and for a backend that ended on its own; one in flight is the teardown, not restarted.
     endSession(session: SlurmSession): Promise<void> {
+        const inFlight = this.ending.get(session.id);
+        if (inFlight) { return inFlight; }
         this.stopMonitoring(session.id);
         const end = this.backends.use(session, (b, s) => b.end(s)).finally(() => { if (this.ending.get(session.id) === end) { this.ending.delete(session.id); } });
         this.ending.set(session.id, end);
