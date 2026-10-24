@@ -282,8 +282,7 @@ export class SshManager {
     }
 
     private ensureSshInclude(targetPath: string): void {
-        const sshDir = path.join(os.homedir(), '.ssh');
-        const sshConfigPath = path.join(sshDir, 'config');
+        const sshConfigPath = USER_SSH_CONFIG_PATH, sshDir = path.dirname(sshConfigPath);
         const includeLine = `Include "${targetPath}"`;
 
         try {

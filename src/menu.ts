@@ -21,7 +21,8 @@ const ask = (title: string, placeholder: string, value: string, submit: (value: 
 
 const fail = (err: unknown) => void vscode.window.showErrorMessage(`CS Bridge: ${errMsg(err)}`);
 const nested = (value: boolean) => void vscode.commands.executeCommand('setContext', 'csbridge.menuNested', value);
-const destination = ({ user, hostname }: SshHost): string => [user, hostname].filter(Boolean).join('@');
+// HostName defaults to the alias in ssh_config.
+const destination = ({ alias, user, hostname = alias }: SshHost): string => (user ? `${user}@${hostname}` : hostname);
 
 export class CsBridgeMenu {
     private email: string | null = null;

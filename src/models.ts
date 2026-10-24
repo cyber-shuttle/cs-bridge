@@ -186,10 +186,10 @@ export interface HostsState {
 
 // What each webview posts to its provider; `ready` is every view's first message.
 export type SessionsMessage =
-    | { command: 'ready' | 'dismissDraftSession' | 'dismissPreview' | 'dismissAlert' | 'launchSession' }
+    | { command: 'ready' | 'dismissDraftSession' | 'dismissPreview' | 'dismissAlert' | 'launchSession' | 'stopRemoteSession' }
     | { command: 'addSession'; alias: string; partition: string; account: string; rootFolder: string; resources: Resources }
     | { command: 'refreshSlurmDiscovery'; alias: string }
-    | { command: 'prepareLaunchSession' | 'stopSessionExecution' | 'stopRemoteSession' | 'connectTunnel' | 'deleteSession'; sessionId: string };
+    | { command: 'prepareLaunchSession' | 'stopSessionExecution' | 'connectTunnel' | 'deleteSession'; sessionId: string };
 export type HostsMessage = { command: 'ready' } | { command: 'deleteSshHost' | 'openTerminal' | 'editSshHost'; alias: string };
 export type StatsMessage = { command: 'ready' } | { command: 'openRunSummary'; sessionId: string; jobId: string };
 export type WebviewMessage = SessionsMessage | HostsMessage | StatsMessage;
