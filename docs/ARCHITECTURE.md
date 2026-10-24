@@ -176,9 +176,10 @@ Code's extension storage: a folder on desktop, IndexedDB in the browser. A `Json
 in memory, so reads are synchronous; writes, and reloads of other windows' writes from a file watcher (`storage.ts`),
 run in order on that directory's queue, and the last write to a record wins. Every window rewrites its heartbeat until it
 closes; a remote window's names its session and the folder URI it has open, which Switch focuses. A live session has one
-owner window (`owner`), claimed while no beating window holds it: the owner alone monitors it and holds its relay, and a
-window that loses the claim stops on its next tick. A record holds only what every window shares; this window's connect
-token and connection are `extensionStore.live`.
+owner window (`owner`), claimed while no beating window holds it and released when its loop ends: the owner alone
+monitors it, holds its relay, connects it and carries out a Stop asked from any window, and a window that loses the claim
+stops on its next tick. A record holds only what every window shares; this window's connect token and connection are
+`extensionStore.live`.
 
 Field names match cs-plane's wire types: a session is `alias`, `account`, `partition`, `rootFolder` and `resources`
 (`cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`); a run is `Run` with `RunStats` and `samples`.

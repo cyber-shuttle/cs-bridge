@@ -14,7 +14,7 @@ interface LogSink {
     error(message: string, ...args: unknown[]): void;
 }
 
-// Each step throws on failure and mutates only the in-memory session; the caller reports progress and persists.
+// Each step throws on failure; the caller persists what a step returns.
 
 export interface LaunchDraft { script: string; sbatchEnv: Record<string, string> }
 
