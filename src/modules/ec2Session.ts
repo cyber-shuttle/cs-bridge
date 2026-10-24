@@ -53,8 +53,11 @@ export class Ec2Backend implements Backend<Ec2Session> {
     async start(session: Ec2Session): Promise<void> {
         const { ec2 } = this.aws.require();
         const spec = session.ec2;
-        const jobId = session.jobId || await ec2.launch(spec.image, spec.type, spec.region, csHostAlias(session));
-        if (session.jobId) { await ec2.act('start', spec.region, jobId); }
+        // An instance AWS no longer has, or is terminating, is replaced by a fresh launch.
+        const existing = session.jobId ? await ec2.describe(spec.region, session.jobId) : undefined;
+        const reusable = existing && existing.state !== 'terminated' && existing.state !== 'shutting-down';
+        const jobId = reusable ? session.jobId : await ec2.launch(spec.image, spec.type, spec.region, csHostAlias(session));
+        if (reusable) { await ec2.act('start', spec.region, jobId); }
         patch(session, { jobId, ec2: { ...spec, ip: undefined }, connectionInfo: undefined });
         observe(session, SlurmJobStatus.RUNNING);
         this.monitor().startMonitoring(session);
@@ -75,7 +78,8 @@ export class Ec2Backend implements Backend<Ec2Session> {
     }
 
     async remove(session: Ec2Session): Promise<void> {
-        if (session.jobId) { await this.aws.require().ec2.act('terminate', session.ec2.region, session.jobId); }
+        const { ec2 } = this.aws.require();
+        if (session.jobId && await ec2.describe(session.ec2.region, session.jobId)) { await ec2.act('terminate', session.ec2.region, session.jobId); }
     }
 
     async tick(session: Ec2Session): Promise<void> {

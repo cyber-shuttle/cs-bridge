@@ -41,7 +41,7 @@ export interface Tunnels {
     relayClient(management: TunnelManagement, ci: ConnectionInfo): TunnelRelayClient;
     tunnelRef(session: SlurmSession): TunnelRef | undefined; // the run's tunnel, once prepared
     ensureTunnel(session: SlurmSession, ci: ConnectionInfo): Promise<void>;
-    withLinkspan<T>(session: SlurmSession, call: (baseUrl: string, headers: Record<string, string>) => Promise<T>): Promise<T>;
+    withLinkspan<T>(session: SlurmSession, ci: ConnectionInfo, call: (baseUrl: string, headers: Record<string, string>) => Promise<T>): Promise<T>;
     deleteTunnel(session: SlurmSession): Promise<void>;
 }
 
@@ -81,13 +81,13 @@ class Link implements Transport {
     // cs-plane forwards any port a Linkspan task serves, so there is nothing to declare.
     async ensureTunnel() { }
 
-    withLinkspan: Tunnels['withLinkspan'] = async (session, call) => {
+    withLinkspan: Tunnels['withLinkspan'] = async (session, ci, call) => {
         const client = this.relayClient();
         try {
             const ref = this.tunnelRef(session);
-            if (!ref || !session.connectionInfo) { throw new Error(`Session ${session.id} has no cs-plane session to reach Linkspan through.`); }
+            if (!ref) { throw new Error(`Session ${session.id} has no cs-plane session to reach Linkspan through.`); }
             await client.connect(await this.management().getTunnel(ref));
-            return await call(`http://127.0.0.1:${await forwardedLocalPort(client, session.connectionInfo.controlPort)}/api/v1`, {});
+            return await call(`http://127.0.0.1:${await forwardedLocalPort(client, ci.controlPort)}/api/v1`, {});
         }
         finally { await client.dispose(); }
     };
@@ -138,7 +138,7 @@ export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Pr
     await t.ensureTunnel(session, ci); // refreshes the tunnel and its connect token
 
     // Best-effort: if Linkspan stalls (a flaky tunnel) once its sshd is known, proceed with that port.
-    try { ci.sshPort = (await t.withLinkspan(session, (baseUrl, headers) => ensureSshServer(baseUrl, headers, sessionPublicKey(session.id)))).bind_port; }
+    try { ci.sshPort = (await t.withLinkspan(session, ci, (baseUrl, headers) => ensureSshServer(baseUrl, headers, sessionPublicKey(session.id)))).bind_port; }
     catch (err) {
         if (ci.sshPort) { return ci; }
         throw err;
@@ -212,7 +212,7 @@ export async function disposeTunnelClient(sessionId: string): Promise<void> {
     catch (err) {
         logger.error(`Error disposing tunnel client for session ${sessionId}:`, err);
     }
-    activeTunnelClients.delete(sessionId);
+    if (activeTunnelClients.get(sessionId) === client) { activeTunnelClients.delete(sessionId); } // a connect may have registered a new one meanwhile
 }
 
 export async function disposeAllTunnelClients(): Promise<void> {

@@ -1,5 +1,5 @@
 import { ec2ImageLabel, isEc2, type Ec2Session, type SlurmSession, type ViewSession } from '@/models';
-import { isDeletable, isReachable, isStoppable, wallMs } from '@/modules/sessionMachine';
+import { deadline, isDeletable, isReachable, isStoppable, wallMs } from '@/modules/sessionMachine';
 
 export { wallMs }; // shared with the monitor via the vscode-free sessionMachine
 
@@ -28,8 +28,8 @@ export function elapsedLabel(since: number, now: number): string {
 
 /** Milliseconds left until the wall-clock deadline; the full walltime if not yet started. */
 export function remainingMs(session: Pick<SlurmSession, 'resources' | 'startedAt'>, now: number): number {
-    const total = wallMs(session);
-    return session.startedAt ? session.startedAt + total - now : total;
+    const end = deadline(session);
+    return end === undefined ? wallMs(session) : end - now;
 }
 
 /** Wall-clock run-time used: elapsed since start, capped at the walltime limit (uncapped when the limit is 0/unlimited); 0 before the job starts. */

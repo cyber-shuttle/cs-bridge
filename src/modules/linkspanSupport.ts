@@ -7,6 +7,7 @@ import { parseJson } from './json';
 // the caller.
 
 const TIMEOUT_MS = POLLING_INTERVAL_MS - 500;
+const POST_TIMEOUT_MS = 30_000; // starting the sshd can take a while, and a stall must not hold the session's tick forever
 
 interface SshServerInfo { bind_port: number; id: string }
 
@@ -26,7 +27,7 @@ async function get<T>(baseUrl: string, headers: Record<string, string>, path: st
 const isRecord = (j: unknown): j is Record<string, unknown> => typeof j === 'object' && j !== null && !Array.isArray(j);
 
 async function post(baseUrl: string, headers: Record<string, string>, path: string, body: unknown): Promise<Response> {
-    const resp = await fetch(baseUrl + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+    const resp = await fetch(baseUrl + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(POST_TIMEOUT_MS) });
     if (!resp.ok) { throw new Error(`Linkspan ${path} failed (status=${resp.status} ${resp.statusText}): ${(await resp.text()).slice(0, 200)}`); }
     return resp;
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { JsonDir } from './store';
+import { JsonDir, replaceFields } from './store';
 import { memoryFiles } from './memoryFiles';
 
 interface Rec { n: number; m?: number }
@@ -24,7 +24,7 @@ test('JsonDir skips its own writes and merges another window\'s in place', async
     await files.write('recs/a.json', JSON.stringify({ n: 2 })); // another window
     await dir.reload('a');
     assert.equal(dir.get('a'), a); // same object, as the monitor holds it
-    assert.deepEqual(a, { n: 2, m: 7 });
+    assert.deepEqual(a, { n: 2, m: 7 }); // Object.assign here; extensionStore's merge drops cleared fields
     assert.equal(changes, 2);
 
     await files.write('recs/a.json', '{"n": 3'); // read mid-write
@@ -35,6 +35,12 @@ test('JsonDir skips its own writes and merges another window\'s in place', async
     await dir.reload('a');
     assert.equal(dir.get('a'), undefined);
     assert.equal(changes, 3);
+});
+
+test('replaceFields drops a field the other window cleared', () => {
+    const cur: Rec = { n: 1, m: 7 };
+    assert.equal(replaceFields(cur, { n: 2 }), cur);
+    assert.deepEqual(cur, { n: 2 });
 });
 
 test('JsonDir keeps another window\'s write that lands just after its own', async () => {

@@ -1,7 +1,7 @@
 import { Logger } from './logger';
 import { SessionStatus, SlurmJobStatus, SlurmSession } from './models';
 import { deriveStatus } from './modules/sessionMachine';
-import { Files, JsonDir } from './modules/store';
+import { Files, JsonDir, replaceFields } from './modules/store';
 import { deleteRunsFile } from './modules/runStore';
 
 const logger = Logger.getInstance();
@@ -19,8 +19,8 @@ let beat: ReturnType<typeof setInterval> | undefined;
 const windowId = Math.random().toString(36).slice(2);
 
 export async function initSessionStore(files: Files, onError: (err: unknown) => void) {
-    // Keeps the object the monitor and an in-flight step hold.
-    sessions = new JsonDir<SlurmSession>(files, 'sessions', onError, (cur, next) => (cur ? Object.assign(cur, next) : next));
+    // Keeps the object the monitor and an in-flight step hold. A field another window cleared is absent from its JSON.
+    sessions = new JsonDir<SlurmSession>(files, 'sessions', onError, (cur, next) => (cur ? replaceFields(cur, next) : next));
     windows = new JsonDir<WindowBeat>(files, 'windows', onError);
     await Promise.all([sessions.load(), windows.load()]);
     // A window that died without detaching leaves a beat that lapses with no write to watch.

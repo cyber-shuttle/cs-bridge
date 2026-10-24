@@ -1,6 +1,6 @@
 // Pure protocol for driving one persistent remote login shell: frame each command with a per-call random
-import { groups } from './util';
 // marker so its stdout, stderr, and exit code can be demuxed from the shell's continuous output streams.
+import { groups } from './util';
 
 // Printed once at connect to skip profile/MOTD noise before the first command. A fixed token; remote profile
 // output colliding with it is effectively impossible. Trade-off: bump to a random per-shell token if it ever does.

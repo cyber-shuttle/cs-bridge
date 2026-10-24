@@ -3,11 +3,17 @@ import { SessionStatus as Status, SlurmJobStatus, SlurmSession } from '../models
 
 export const wallMs = (session: Pick<SlurmSession, 'resources'>): number => session.resources.wallMinutes * 60_000;
 
-/** Slurm kills the job at --time, so a passed deadline is authoritative even when the SSH host is unreachable
- *  for `sacct`. Assumes death within KillWait of --time; OverTimeLimit clusters may run past it. */
+// When Slurm kills the job; none before it starts or without a --time.
+export function deadline({ resources, startedAt }: Pick<SlurmSession, 'resources' | 'startedAt'>): number | undefined {
+    const total = wallMs({ resources });
+    return startedAt !== undefined && total > 0 ? startedAt + total : undefined;
+}
+
+/** A passed deadline is authoritative even when the SSH host is unreachable for `sacct`. Assumes death within
+ *  KillWait of --time; OverTimeLimit clusters may run past it. */
 export function isWallTimeExpired(session: Pick<SlurmSession, 'resources' | 'startedAt'>, now: number): boolean {
-    const total = wallMs(session);
-    return session.startedAt !== undefined && total > 0 && now >= session.startedAt + total;
+    const end = deadline(session);
+    return end !== undefined && now >= end;
 }
 
 // Session-status categories — the single source of truth shared by the provider, monitor, and webview UI.
