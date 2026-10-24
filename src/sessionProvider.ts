@@ -239,10 +239,10 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     }
 
     private async connectSession(sessionId: string) {
-        const session = this.requireSession(sessionId, 'connect Dev Tunnel');
+        const session = this.requireSession(sessionId, 'connect');
         if (!session) { return; }
         // Already connected with a live remote window — this window's own, or another sidebar's (windowAlive reads the
-        // shared window heartbeats). Just focus it; a second connection to the same Dev Tunnel is redundant and fights the first.
+        // shared window heartbeats). Just focus it; a second connection to the same tunnel is redundant and fights the first.
         if (statusOf(session) === 'connected') {
             this.openOrFocusWindow(session);
             return;

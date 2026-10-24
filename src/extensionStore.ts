@@ -69,7 +69,7 @@ class LiveSet extends Set<string> {
 
 export const live = {
     launching: new LiveSet(), connecting: new LiveSet(), connected: new LiveSet(), unreachable: new LiveSet(),
-    busy: new Set<string>(), connectTokens: new Map<string, string>(),
+    busy: new Set<string>(),
 };
 
 // A remote window beating for the session is a connection too, whichever window holds the tunnel.

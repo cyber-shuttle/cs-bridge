@@ -12,7 +12,7 @@ export interface Resources {
 }
 
 // Lifecycle: not_started → submitting → queued → preparing (job + Step-1 sshd) →
-// ready_to_connect → connecting → connected; unreachable on a dropped connection or cluster outage; stopping → stopped/failed.
+// ready_to_connect → connecting → connected; unreachable when a poll fails before the sshd is up; stopping → stopped/failed.
 // Job end (completed or walltime killed) → stopped (can be started again). Derived, never stored: sessionMachine.deriveStatus.
 export type SessionStatus =
     | 'not_started' | 'submitting' | 'queued' | 'preparing'
