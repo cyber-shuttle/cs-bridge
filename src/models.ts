@@ -51,6 +51,8 @@ export interface Ec2Spec {
     user: string;
     ip?: string;
 }
+export type Ec2Session = SlurmSession & { ec2: Ec2Spec };
+export const isEc2 = (s: SlurmSession): s is Ec2Session => s.ec2 !== undefined;
 
 // A record not yet started. The id is a uuidv7, so sorting by id is creation order; the name is the creation time,
 // whose last six digits alias the SSH host (csHostAlias).
@@ -74,10 +76,13 @@ export interface SshHost {
     source: 'user' | 'system'; // user is editable, system is read-only
 }
 
+export type NonEmpty<T> = readonly [T, ...T[]];
+export const nonEmpty = <T>(xs: readonly T[]): xs is NonEmpty<T> => xs.length > 0;
+
 export interface SlurmDiscovery {
     alias: string;
     accounts: string[];
-    partitions: SlurmPartitionInfo[]; // never empty: a host without partitions fails discovery
+    partitions: NonEmpty<SlurmPartitionInfo>; // a host without partitions fails discovery
     homeDir: string;
 }
 
@@ -145,7 +150,8 @@ export interface Run {
     samples?: UsageSample[];
 }
 
-export interface RunsFile { runs?: Run[]; samples?: UsageSample[]; stats?: RunStats }
+// On disk any field may be absent; runStore reads a file as this shape.
+export interface RunsFile { runs: Run[]; samples: UsageSample[]; stats?: RunStats }
 
 export interface StatsState {
     runs: Run[];
@@ -179,10 +185,10 @@ export interface HostsState {
 
 // What each webview posts to its provider; `ready` is every view's first message.
 export type SessionsMessage =
-    | { command: 'ready' | 'dismissDraftSession' | 'dismissPreview' | 'dismissAlert' }
+    | { command: 'ready' | 'dismissDraftSession' | 'dismissPreview' | 'dismissAlert' | 'launchSession' }
     | { command: 'addSession'; alias: string; partition: string; account: string; rootFolder: string; resources: Resources }
     | { command: 'refreshSlurmDiscovery'; alias: string }
-    | { command: 'prepareLaunchSession' | 'launchSession' | 'stopSessionExecution' | 'stopRemoteSession' | 'connectTunnel' | 'deleteSession'; sessionId: string };
+    | { command: 'prepareLaunchSession' | 'stopSessionExecution' | 'stopRemoteSession' | 'connectTunnel' | 'deleteSession'; sessionId: string };
 export type HostsMessage = { command: 'ready' } | { command: 'deleteSshHost' | 'openTerminal' | 'editSshHost'; alias: string };
 export type StatsMessage = { command: 'ready' } | { command: 'openRunSummary'; sessionId: string; jobId: string };
 export type WebviewMessage = SessionsMessage | HostsMessage | StatsMessage;

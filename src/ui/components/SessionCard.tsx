@@ -42,7 +42,7 @@ function Divided({ items }: { items: VNode[] }) {
 // Raw resource text (e.g. "MEM: 2G", "CPU: 1", "GPU: 1") above each live sparkline when reachable; a plain row
 // otherwise. Columns bracketed by vertical separators.
 function ResourceStats({ session }: { session: ViewSession }) {
-    const graphs = usageGraphs(session.samples ?? [], session.resources.gpuCount ?? 0, session.resources);
+    const graphs = usageGraphs(session.samples ?? [], session.resources.gpuCount, session.resources);
     if (!isReachable(session.status)) {
         return <Divided items={graphs.map(g => <Text key={g.label} size={11}>{g.text}</Text>)} />;
     }

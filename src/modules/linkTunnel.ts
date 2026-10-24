@@ -61,7 +61,9 @@ export class ForwardRelayClient {
         const server = net.createServer(socket => this.bridge(socket, remotePort));
         const bind = (port: number) => new Promise<void>((resolve, reject) => server.once('error', reject).listen(port, '127.0.0.1', resolve));
         await bind(remotePort).catch(() => bind(0));
-        this.forwardedPorts.push({ remotePort, localPort: (server.address() as net.AddressInfo).port });
+        const address = server.address();
+        if (!address || typeof address === 'string') { throw new Error(`The forward for port ${remotePort} is not listening on TCP.`); }
+        this.forwardedPorts.push({ remotePort, localPort: address.port });
         return server;
     }
 

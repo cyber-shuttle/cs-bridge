@@ -25,9 +25,8 @@ const devTunnelRef = ({ devtunnel }: SlurmSession): TunnelRef | undefined => dev
 
 // Makes the Dev Tunnel carry the control port, the only port it needs, and returns its ref with the host token: we keep
 // the Entra bearer local and register the port ourselves, so the node only ever holds a token scoped to hosting this Dev Tunnel.
-export async function ensureDevTunnel(session: SlurmSession): Promise<{ devtunnel: { id: string; cluster: string }; hostToken: string }> {
+export async function ensureDevTunnel(session: SlurmSession, ci: ConnectionInfo): Promise<{ devtunnel: { id: string; cluster: string }; hostToken: string }> {
     const mgmt = buildTunnelManagementClient();
-    const ci = session.connectionInfo ??= { sshPort: 0, controlPort: 0 };
     const opts = { includePorts: true, tokenScopes: [TunnelAccessScopes.Host, TunnelAccessScopes.Connect] };
     const ref = devTunnelRef(session);
     const tunnel = (ref && await mgmt.getTunnel(ref, opts)) ?? await mgmt.createTunnel(ref ?? {}, opts);
@@ -100,10 +99,7 @@ function getMicrosoftSession(options: vscode.AuthenticationGetSessionOptions) {
 }
 
 async function getDevTunnelAuthToken(): Promise<string> {
-    try {
-        const session = await getMicrosoftSession({ createIfNone: true });
-        return session?.accessToken || '';
-    }
+    try { return (await getMicrosoftSession({ createIfNone: true })).accessToken; }
     catch (err) {
         logger.error('Failed to get Dev Tunnels auth token:', err);
         throw new Error('Dev Tunnels authentication is required. Please sign in to your Microsoft account.', { cause: err });

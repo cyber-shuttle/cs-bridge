@@ -41,7 +41,7 @@ export interface Tunnels {
     management(): TunnelManagement;
     relayClient(management: TunnelManagement, ci: ConnectionInfo): TunnelRelayClient;
     tunnelRef(session: SlurmSession): TunnelRef | undefined; // the run's tunnel, once prepared
-    ensureTunnel(session: SlurmSession): Promise<unknown>;
+    ensureTunnel(session: SlurmSession, ci: ConnectionInfo): Promise<unknown>;
     withLinkspan<T>(session: SlurmSession, call: (baseUrl: string, headers: Record<string, string>) => Promise<T>): Promise<T>;
     deleteTunnel(session: SlurmSession): Promise<void>;
 }
@@ -57,11 +57,11 @@ const devTunnel = {
     ...devTunnels,
     description: 'Stable, relayed by Microsoft\'s network',
     signedIn: async () => await getMicrosoftAccountLabel() !== null,
-    async prepare(session) {
+    async prepare(session, ci) {
         // Fresh launch: drop the prior run's Dev Tunnel so its ports don't accumulate toward Microsoft's PortsPerTunnel (10) cap.
         await deleteDevTunnel(session);
         try {
-            const { devtunnel, hostToken } = await ensureDevTunnel(session);
+            const { devtunnel, hostToken } = await ensureDevTunnel(session, ci);
             return devTunnelLaunch(devtunnel, hostToken);
         }
         catch (err) { throw new Error(`Failed to create Dev Tunnel: ${errMsg(err)}`, { cause: err }); }
@@ -134,8 +134,9 @@ const activeTunnelClients = new Map<string, TunnelRelayClient>();
 // Step 1: the session's sshd. Linkspan answers a repeat with the running one, so asking each time self-heals a port a
 // Linkspan restart changed.
 export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Promise<ConnectionInfo> {
-    await t.ensureTunnel(session); // refreshes the tunnel and its connect token
-    const ci = session.connectionInfo ??= { sshPort: 0, controlPort: 0 };
+    const ci = session.connectionInfo;
+    if (!ci) { throw new Error(`Session ${session.id} has no run to reach.`); }
+    await t.ensureTunnel(session, ci); // refreshes the tunnel and its connect token
 
     // Best-effort: if Linkspan stalls (a flaky tunnel) once its sshd is known, proceed with that port.
     try { ci.sshPort = (await t.withLinkspan(session, (baseUrl, headers) => ensureSshServer(baseUrl, headers, sessionPublicKey(session.id)))).bind_port; }

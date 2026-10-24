@@ -12,9 +12,9 @@ const gpuMemPct = (g?: GpuSample) => (g && g.memTotalMiB ? (g.memUsedMiB / g.mem
 type Graph = { label: string; text: string; lines: (SparkLine & { fmt: (v: number) => string })[] };
 
 // CPU / memory / per-GPU series from a rolling live-sample window, in MEM, CPU, GPU order.
-export function usageGraphs(history: UsageSample[], gpuCount: number, allocated?: Resources): Graph[] {
+export function usageGraphs(history: UsageSample[], gpuCount?: number, allocated?: Resources): Graph[] {
     function at<T>(f: (s: UsageSample) => T | undefined): T[] { return history.map(f).filter((v): v is T => v !== undefined); }
-    const gpuN = Math.max(gpuCount > 0 ? 1 : 0, ...history.map(s => s.gpus?.length ?? 0));
+    const gpuN = Math.max(gpuCount ? 1 : 0, ...history.map(s => s.gpus?.length ?? 0));
     return [
         { label: 'MEM', text: allocated ? `MEM: ${allocated.memoryMb / 1024}G` : 'MEM', lines: [{ values: at(s => s.memBytes), color: CHART.mem, fmt: v => humanKib(v / 1024) }] },
         { label: 'CPU', text: allocated ? `CPU: ${allocated.cores}` : 'CPU', lines: [{ values: cpuCoreSeries(history), color: CHART.cpu, fmt: v => `${v.toFixed(1)} cores` }] },
@@ -30,7 +30,7 @@ export function usageGraphs(history: UsageSample[], gpuCount: number, allocated?
 }
 
 export const graphTitle = (g: Graph) => `${g.label} — ${g.lines.flatMap((l) => { const last = l.values.at(-1); return last === undefined ? [] : [l.fmt(last)]; }).join(', ')}`;
-export const drawable = (g: Graph) => (g.lines[0]?.values.length ?? 0) >= 2;
+export const drawable = (g: Graph) => g.lines.some(l => l.values.length >= 2);
 
 export function UsageGraphs({ history, gpuCount }: { history: UsageSample[]; gpuCount: number }) {
     const shown = usageGraphs(history, gpuCount).filter(drawable);

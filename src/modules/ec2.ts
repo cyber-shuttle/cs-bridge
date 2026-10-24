@@ -104,10 +104,9 @@ export class Ec2 {
         return ACTIONS[action](this.client(region), { InstanceIds: [id] });
     }
 
-    // A terminated instance drops out of DescribeInstances within the hour; absent reads as terminated.
-    async describe(region: string, id: string): Promise<Ec2Instance> {
-        const found = await this.list(region, [{ Name: 'instance-id', Values: [id] }]);
-        return found[0] ?? { id, state: 'terminated', type: '', user: '' };
+    // A terminated instance drops out of DescribeInstances within the hour.
+    async describe(region: string, id: string): Promise<Ec2Instance | undefined> {
+        return (await this.list(region, [{ Name: 'instance-id', Values: [id] }]))[0];
     }
 
     // An instance the API describes without an id, a state, a type or the login-user tag is not one CS Bridge can drive.

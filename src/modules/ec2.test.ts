@@ -46,7 +46,7 @@ test('concurrent first launches in a region share one key pair and create the mi
     assert.equal(vpcs, 1);
 });
 
-test('describe reads an instance gone from DescribeInstances as terminated', async () => {
+test('describe reads an instance gone from DescribeInstances as absent', async () => {
     const client = fakeClient({ DescribeInstancesCommand: () => ({ Reservations: [] }) });
-    assert.equal((await new Ec2(() => client, () => '').describe('r1', 'i-9')).state, 'terminated');
+    assert.equal(await new Ec2(() => client, () => '').describe('r1', 'i-9'), undefined);
 });

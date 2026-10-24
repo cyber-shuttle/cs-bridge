@@ -31,7 +31,7 @@ function ScriptPreviewOverlay({ state }: { state: SessionsState }) {
             <Text block style={{ flex: 1, overflow: 'auto', whiteSpace: 'pre', fontFamily: 'var(--vscode-editor-font-family)', fontSize: '12px', background: 'var(--vscode-textCodeBlock-background)', padding: '8px', borderRadius: '4px' }}>{s.script}</Text>
             <Row gap={8} justify="flex-end">
                 <Button secondary onClick={() => post({ command: 'dismissPreview' })}>Close</Button>
-                <Button onClick={() => post({ command: 'launchSession', sessionId: s.sessionId })}>Submit Job</Button>
+                <Button onClick={() => post({ command: 'launchSession' })}>Submit Job</Button>
             </Row>
         </Stack>
     );

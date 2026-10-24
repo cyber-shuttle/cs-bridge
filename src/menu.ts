@@ -34,17 +34,17 @@ export class CsBridgeMenu {
         const pick = vscode.window.createQuickPick<Item>();
         const stack: Build[] = [];
         let page: Page;
-        const render = () => {
-            page = stack.at(-1)!();
+        const render = (build: Build) => {
+            page = build();
             Object.assign(pick, {
                 title: page.title, placeholder: page.placeholder, items: page.items ?? [], ignoreFocusOut: !!page.input,
                 buttons: stack.length > 1 ? [vscode.QuickInputButtons.Back] : [],
             });
             nested(stack.length > 1);
         };
-        const show = () => { render(); pick.value = page.input ? page.input.value : ''; };
-        const go = (build: Build) => { stack.push(build); show(); };
-        pick.onDidTriggerButton(() => { stack.pop(); show(); });
+        const show = (build: Build) => { render(build); pick.value = page.input ? page.input.value : ''; };
+        const go = (build: Build) => { stack.push(build); show(build); };
+        pick.onDidTriggerButton(() => { stack.pop(); const top = stack.at(-1); if (top) { show(top); } });
         pick.onDidAccept(() => {
             if (page.input) {
                 const value = pick.value.trim();
@@ -61,7 +61,7 @@ export class CsBridgeMenu {
         pick.onDidHide(() => { stack.length = 0; nested(false); pick.dispose(); });
         go(start);
         pick.show();
-        void this.refreshAccounts().then(() => { if (stack.at(-1) === this.root) { render(); } });
+        void this.refreshAccounts().then(() => { if (stack.at(-1) === this.root) { render(this.root); } });
     }
 
     private async refreshAccounts() {

@@ -2,7 +2,7 @@
 // and remove, so an instance rides the Slurm session lifecycle. 'preparing' holds until the instance's port 22
 // accepts a connection; connect only writes the per-session SSH host, since the instance is reached over plain SSH.
 import * as net from 'net';
-import { Ec2Spec, SlurmJobStatus, SlurmSession, newSession } from '../models';
+import { Ec2Session, Ec2Spec, SlurmJobStatus, SlurmSession, newSession } from '../models';
 import { Logger } from '../logger';
 import { addSession, getAllSessions, live, observe, patch, statusOf } from '../extensionStore';
 import { AwsClient } from './aws';
@@ -23,7 +23,7 @@ const portOpen = (host: string, port: number): Promise<boolean> => new Promise((
 export const ec2Session = (ec2: Ec2Spec, fields: Partial<SlurmSession> = {}): SlurmSession =>
     newSession({ alias: `aws-${ec2.region}`, account: '', partition: '', rootFolder: `/home/${ec2.user}`, resources: { cores: 0, memoryMb: 0, wallMinutes: 0 }, ec2, ...fields });
 
-export class Ec2Backend implements Backend {
+export class Ec2Backend implements Backend<Ec2Session> {
     readonly label = 'AWS';
 
     // The monitor is built with this backend, so it arrives lazily.
@@ -49,9 +49,9 @@ export class Ec2Backend implements Backend {
         }
     }
 
-    async start(session: SlurmSession): Promise<void> {
+    async start(session: Ec2Session): Promise<void> {
         const ec2 = this.aws.requireEc2();
-        const spec = session.ec2!;
+        const spec = session.ec2;
         const jobId = session.jobId || await ec2.launch(spec.image, spec.type, spec.region, csHostAlias(session));
         if (session.jobId) { await ec2.act('start', spec.region, jobId); }
         patch(session, { jobId, ec2: { ...spec, ip: undefined }, connectionInfo: undefined });
@@ -60,28 +60,30 @@ export class Ec2Backend implements Backend {
     }
 
     // EC2 refuses to stop a pending instance. 'stopping' then holds until the poll sees the instance stopped.
-    async stop(session: SlurmSession): Promise<void> {
+    async stop(session: Ec2Session): Promise<void> {
         const ec2 = this.aws.requireEc2();
-        const { region } = session.ec2!;
-        while ((await ec2.describe(region, session.jobId)).state === 'pending') { await new Promise(res => setTimeout(res, 5_000)); }
+        const { region } = session.ec2;
+        while ((await ec2.describe(region, session.jobId))?.state === 'pending') { await new Promise(res => setTimeout(res, 5_000)); }
         await ec2.act('stop', region, session.jobId);
         this.monitor().startMonitoring(session);
     }
 
-    async connect(session: SlurmSession): Promise<boolean> {
+    async connect(session: Ec2Session): Promise<boolean> {
         live.connected.add(session.id);
         return true;
     }
 
-    async remove(session: SlurmSession): Promise<void> {
-        if (session.jobId) { await this.aws.requireEc2().act('terminate', session.ec2!.region, session.jobId); }
+    async remove(session: Ec2Session): Promise<void> {
+        if (session.jobId) { await this.aws.requireEc2().act('terminate', session.ec2.region, session.jobId); }
     }
 
-    async tick(session: SlurmSession): Promise<void> {
+    async tick(session: Ec2Session): Promise<void> {
         const ec2 = this.aws.ec2;
         if (!ec2) { return; } // signed out, or activation has not restored the key yet: hold
-        const spec = session.ec2!;
-        const { state, ip } = await ec2.describe(spec.region, session.jobId);
+        const spec = session.ec2;
+        const instance = await ec2.describe(spec.region, session.jobId);
+        if (!instance) { observe(session, observedEc2('terminated')); return; }
+        const { state, ip } = instance;
         observe(session, observedEc2(state));
         if (ip !== spec.ip) { patch(session, { ec2: { ...spec, ip } }); } // a stopped instance comes back with a new public IP
         if (state === 'running' && !session.connectionInfo && ip && await portOpen(ip, SSH_PORT)) {
@@ -89,7 +91,7 @@ export class Ec2Backend implements Backend {
         }
     }
 
-    async end(session: SlurmSession): Promise<void> {
+    async end(session: Ec2Session): Promise<void> {
         live.connected.delete(session.id);
         patch(session, { connectionInfo: undefined });
     }
