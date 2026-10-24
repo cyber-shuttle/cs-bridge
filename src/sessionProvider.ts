@@ -139,7 +139,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         const confirmed = await confirmModal('Delete session?', 'Delete', isEc2(session)
             ? 'This terminates the instance, deleting its disk, and removes the session record.'
             : 'This deletes the session record and cleans up its SSH config entry and key file.');
-        if (!confirmed) { return; }
+        if (!confirmed || live.busy.has(sessionId)) { return; } // a task in flight holds the run this delete would tear down
 
         await disposeTunnelClient(sessionId);
         try { await this.backends.use(session, (b, s) => b.remove(s)); }
