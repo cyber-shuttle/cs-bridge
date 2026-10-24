@@ -97,9 +97,10 @@ export function parseHostsFromConfigText(text: string, source: SshHost['source']
     const config = parse(text);
     const hosts: SshHost[] = [];
     for (const section of config) {
-        // Keep Host sections only: they carry a `config` array, Match sections also carry `criteria`.
-        if (!('config' in section) || 'criteria' in section || !isKeyword(section.param, 'Host')) { continue; }
-        const [alias = ''] = directiveText(section.value).trim().split(/\s+/);
+        // Host sections carry a `config` array. A Host with several patterns, an array value, is left to its file: Edit
+        // and Delete address one alias.
+        if (!('config' in section) || !isKeyword(section.param, 'Host') || Array.isArray(section.value)) { continue; }
+        const alias = section.value.trim();
         if (!alias || alias.includes('*') || alias.includes('?')) { continue; }
         const host: SshHost = { alias, source };
         const extraDirectives: string[] = [];

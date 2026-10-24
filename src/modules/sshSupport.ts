@@ -10,7 +10,7 @@ import { errnoCode, lockedUpdateTextFile } from './fsSupport';
 import { parseJson } from './json';
 import { getAllSessions } from '../extensionStore';
 import { buildShellCommand, extractCommandResult, READY_MARKER, renderAuthHtml } from './sshShell';
-import { USER_SSH_CONFIG_PATH, SYSTEM_SSH_CONFIG_PATH, mergeHostsByPriority, parseHostsFromConfigText, renderSshConfig, renderServerInstallPaths, sessionKeyName, includeIsEffective } from './sshHostsStore';
+import { USER_SSH_CONFIG_PATH, SYSTEM_SSH_CONFIG_PATH, SSH_RESILIENCE_OPTIONS, mergeHostsByPriority, parseHostsFromConfigText, renderSshConfig, renderServerInstallPaths, sessionKeyName, includeIsEffective } from './sshHostsStore';
 
 const logger = Logger.getInstance();
 // The config and keys live in extension storage, which VS Code removes on uninstall. Sockets there would pass the
@@ -42,6 +42,7 @@ type HostShell = {
     ready: Promise<void>;
     alive: boolean;
     connecting: boolean;
+    cancelAuth?: () => void; // closes an auth prompt the shell's exit has made moot
     current?: Pending;
 };
 
@@ -182,8 +183,7 @@ export class SshManager {
         const proc = spawn('ssh', [
             ...this.buildControlMasterArgs(alias),
             ...connectArgs,
-            '-o', 'ServerAliveInterval=15',
-            '-o', 'ServerAliveCountMax=3',
+            ...SSH_RESILIENCE_OPTIONS.filter(([key]) => key.startsWith('ServerAlive')).flatMap(([key, value]) => ['-o', `${key}=${value}`]),
             alias,
             'bash -l',
         ], { env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -220,6 +220,7 @@ export class SshManager {
         const drop = (onConnect: () => Error): void => {
             shell.alive = false;
             stopPoll();
+            shell.cancelAuth?.();
             if (askpassDir) {
                 try { fs.rmSync(askpassDir, { recursive: true, force: true }); }
                 catch { /* best-effort */ }
@@ -235,7 +236,7 @@ export class SshManager {
     }
 
     // SSH auth prompt in a monospace webview (renderAuthHtml); resolves to the response, or undefined on dismiss.
-    private promptAuth(alias: string, prompt: string): Promise<string | undefined> {
+    private promptAuth(shell: HostShell, alias: string, prompt: string): Promise<string | undefined> {
         const nonce = crypto.randomBytes(16).toString('hex');
         const panel = vscode.window.createWebviewPanel(
             'csbridge.sshAuth', `SSH Authentication — ${alias}`,
@@ -243,7 +244,8 @@ export class SshManager {
         );
         panel.webview.html = renderAuthHtml(prompt, nonce);
         return new Promise<string | undefined>((resolve) => {
-            const finish = (v?: string) => { resolve(v); panel.dispose(); }; // resolve latches, dispose is idempotent
+            const finish = (v?: string) => { resolve(v); panel.dispose(); shell.cancelAuth = undefined; }; // resolve latches, dispose is idempotent
+            shell.cancelAuth = finish;
             panel.webview.onDidReceiveMessage((m: { type: 'submit'; value: string } | { type: 'cancel' }) =>
                 finish(m.type === 'submit' ? m.value : undefined));
             panel.onDidDispose(() => finish(undefined));
@@ -263,7 +265,7 @@ export class SshManager {
                 handled.add(file);
                 try {
                     const { id, prompt } = parseJson<{ id: string; prompt: string }>(fs.readFileSync(path.join(askpassDir, file), 'utf-8'));
-                    const password = await this.promptAuth(alias, prompt);
+                    const password = await this.promptAuth(shell, alias, prompt);
                     if (password !== undefined) {
                         fs.writeFileSync(path.join(askpassDir, `response-${id}`), password, 'utf-8');
                     }

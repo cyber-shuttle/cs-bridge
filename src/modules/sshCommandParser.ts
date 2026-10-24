@@ -95,7 +95,7 @@ export function sshCommandToConfig(command: string): SshConfigEntry {
         if (token !== undefined) {
             const { hostname, port, username } = parseHostToken(token);
             config.Host = hostname;
-            config.HostName = hostname;
+            if (!config.HostName) { config.HostName = hostname; }
             if (!config.Port && port) { config.Port = port; }
             if (!config.User && username) { config.User = username; }
         }

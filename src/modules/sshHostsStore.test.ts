@@ -111,8 +111,8 @@ test('renderSshConfig lists a Slurm session with a forward and an EC2 instance w
         { 'mine': '/srv/code', 'delta-493119': '/tmp/cs-vscode/a' });
 });
 
-test('parseHostsFromConfigText reads keywords in any case and a Host with several patterns', () => {
+test('parseHostsFromConfigText reads keywords in any case and leaves a Host with several patterns to its file', () => {
     const hosts = parseHostsFromConfigText('host lab\n    Hostname login.example.org\n    user carol\n\nHost foo foo.example.com\n    HostName foo.example.com\n', 'user');
-    assert.deepEqual(hosts, [{ alias: 'lab', hostname: 'login.example.org', user: 'carol', source: 'user' }, { alias: 'foo', hostname: 'foo.example.com', source: 'user' }]);
+    assert.deepEqual(hosts, [{ alias: 'lab', hostname: 'login.example.org', user: 'carol', source: 'user' }]);
     assert.equal(editHostInConfigText('Host lab\n    Hostname old\n', 'lab', { Host: 'lab', HostName: 'new' }), 'Host lab\n    Hostname new\n');
 });
