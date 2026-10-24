@@ -14,7 +14,7 @@ test('mergeRun inserts newest-first and caps at 10', () => {
     const existing = Array.from({ length: 10 }, (_, i) => run(`old${i}`, i + 1));
     const merged = mergeRun(existing, run('new', 999))!;
     assert.equal(merged.length, 10);
-    assert.equal(merged[0].jobId, 'new');
+    assert.equal(merged[0]?.jobId, 'new');
     assert.ok(!merged.some(r => r.jobId === 'old0')); // oldest dropped
 });
 

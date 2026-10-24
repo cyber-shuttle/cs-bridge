@@ -35,10 +35,10 @@ export function memoryOptions(partition: SlurmPartitionInfo | undefined): string
 }
 
 export function gpuOptions(partition: SlurmPartitionInfo | undefined, tab: ResourceTab, type = ''): GpuOptions {
-    if (tab !== 'gpu' || !partition || !hasGres(partition)) { return { counts: [], types: [] }; }
-    const max = (partition.gres.find(g => g.name === type) ?? partition.gres[0]).count;
+    const gres = tab === 'gpu' ? partition?.gres.find(g => g.name === type) ?? partition?.gres[0] : undefined;
+    if (!partition || !gres) { return { counts: [], types: [] }; }
     return {
-        counts: Array.from({ length: max }, (_, i) => i + 1),
+        counts: Array.from({ length: gres.count }, (_, i) => i + 1),
         types: partition.gres.map(g => g.name),
     };
 }

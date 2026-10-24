@@ -54,7 +54,7 @@ test('sessionActions returns the right buttons per status', () => {
     assert.deepEqual(sessionActions(sess('preparing')).map(a => a.kind), ['stop']);
     assert.deepEqual(sessionActions(sess('ready_to_connect')).map(a => a.kind), ['stop', 'connect']);
     assert.deepEqual(sessionActions(sess('unreachable')).map(a => a.kind), ['stop', 'connect']);
-    assert.equal(sessionActions(sess('unreachable'))[1].label, 'Reconnect'); // Connect rebuilds the Dev Tunnel connection → off the SSH host
+    assert.equal(sessionActions(sess('unreachable'))[1]?.label, 'Reconnect'); // Connect rebuilds the Dev Tunnel connection → off the SSH host
     assert.deepEqual(sessionActions(sess('stopped')), [{ kind: 'start', label: 'Start', icon: 'play' }]);
     assert.deepEqual(sessionActions(sess('stopping')).map(a => a.kind), []); // stop in flight: spinner only, no Stop button
 });
@@ -62,13 +62,13 @@ test('sessionActions returns the right buttons per status', () => {
 test('connected session: Current when this window, else Switch/Connect by window liveness', () => {
     assert.deepEqual(sessionActions(sess('connected', { isCurrent: true })).map(a => a.kind), ['stop', 'current']);
     const switchBtn = sessionActions(sess('connected', { isCurrent: false, windowAlive: true }))[1];
-    assert.equal(switchBtn.label, 'Switch');
+    assert.equal(switchBtn?.label, 'Switch');
     const connectBtn = sessionActions(sess('connected', { isCurrent: false, windowAlive: false }))[1];
-    assert.equal(connectBtn.label, 'Connect');
+    assert.equal(connectBtn?.label, 'Connect');
     const openingBtn = sessionActions(sess('connected', { isCurrent: false, windowAlive: false, opening: true }))[1];
-    assert.deepEqual([openingBtn.kind, openingBtn.label], ['opening', 'Opening…']);
+    assert.deepEqual([openingBtn?.kind, openingBtn?.label], ['opening', 'Opening…']);
     const connectingBtn = sessionActions(sess('connecting'))[1];
-    assert.deepEqual([connectingBtn.kind, connectingBtn.label], ['opening', 'Connecting…']);
+    assert.deepEqual([connectingBtn?.kind, connectingBtn?.label], ['opening', 'Connecting…']);
 });
 
 test('cardModel: an HPC job and an EC2 instance differ only in chips, details, walltime and the running text', () => {

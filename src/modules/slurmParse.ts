@@ -9,7 +9,7 @@ export const slurmAccount = (raw: string | undefined): string => (raw ?? '').tri
 // row per (account, partition) association, so per-partition accounts repeat.
 export function parseAccounts(output: string): string[] {
     const names = output.trim().split(/\r?\n/)
-        .map(l => l.split('|')[0].trim())
+        .map(l => (l.split('|')[0] ?? '').trim())
         .filter(Boolean);
     return [...new Set(names)];
 }
@@ -91,7 +91,7 @@ export function parseSacctStatus(output: string): { status: SlurmJobStatus; elap
     RUNNING|0:0|None|345
     TIMEOUT|0:0|None|3600
     */
-    const [state, , , elapsedRaw] = fields;
+    const [state = '', , , elapsedRaw = ''] = fields;
     // ElapsedRaw is Slurm's authoritative run-time in whole seconds (no timezone/clock guessing).
     const elapsedSeconds = /^\d+$/.test(elapsedRaw.trim()) ? parseInt(elapsedRaw.trim(), 10) : 0;
 
@@ -149,7 +149,7 @@ function parseKib(s: string | undefined): number | undefined {
 function hmsSeconds(s: string | undefined): number | undefined {
     const t = s?.trim();
     if (!t) { return undefined; }
-    const [days, rest] = t.includes('-') ? t.split('-') : ['0', t];
+    const [days = '0', rest = ''] = t.includes('-') ? t.split('-') : ['0', t];
     const parts = rest.split(':').map(Number);
     if (parts.length < 2 || parts.some(n => !Number.isFinite(n))) { return undefined; }
     return Number(days) * 86400 + parts.reduce((sec, p) => sec * 60 + p, 0);
@@ -166,9 +166,9 @@ export function humanKib(kib: number): string {
 // poll steps would mask it with their near-zero values.
 export function parseSacctUtil(output: string): RunStats {
     const rows = output.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => l.split('|'));
-    if (rows.length === 0) { return {}; }
-    const alloc = rows.find(r => !r[0].includes('.')) ?? rows[0];
-    const usage = rows.find(r => r[0].endsWith('.batch')) ?? alloc;
+    const alloc = rows.find(r => !r[0]?.includes('.')) ?? rows[0];
+    if (!alloc) { return {}; }
+    const usage = rows.find(r => r[0]?.endsWith('.batch')) ?? alloc;
 
     const m: RunStats = {};
     const cores = Number(alloc[1]);
@@ -198,7 +198,7 @@ export function parsePartitionLine(line: string): SlurmPartitionInfo {
         throw new Error(`Invalid sinfo line: ${line}`);
     }
 
-    const [rawName, rawCpuCount, rawMemory, rawGres] = parts;
+    const [rawName = '', rawCpuCount = '', rawMemory = '', rawGres = ''] = parts;
 
     return {
         name: rawName.replace(/\*$/, ''), // trailing "*" marks the default partition
@@ -224,7 +224,7 @@ function parseGres(rawGres: string): GresInfo[] {
     // GPUs only, as cs-plane's hasGPU: gpu:v100:2(S:0-1) and gpu:8, not tmpdisk:100G.
     return splitCommaOutsideParens(rawGres).flatMap((entry) => {
         const match = entry.match(/^(gpu(?::.+)?):(\d+)(?:\([^)]*\))?$/);
-        return match ? [{ name: match[1], count: Number.parseInt(match[2], 10) }] : [];
+        return match ? [{ name: match[1] ?? 'gpu', count: Number.parseInt(match[2] ?? '0', 10) }] : [];
     });
 }
 

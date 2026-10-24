@@ -40,7 +40,7 @@ export class Plane {
     async signedIn() { return !!await this.load(); }
     async identity() {
         const credential = await this.load();
-        return credential && JSON.parse(Buffer.from(credential.idToken.split('.')[1], 'base64url').toString()).email as string | undefined;
+        return credential && JSON.parse(Buffer.from(credential.idToken.split('.')[1] ?? '', 'base64url').toString()).email as string | undefined;
     }
 
     createSession(session: SlurmSession) { return this.api('sessions', 'POST', toSpec(session)) as Promise<{ id: string }>; }

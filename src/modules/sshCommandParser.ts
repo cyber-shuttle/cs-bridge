@@ -97,16 +97,17 @@ export function sshCommandToConfig(command: string): SshConfigEntry {
     const config: Record<string, string> = {};
     for (let i = 0; i < tokens.length; i++) {
         i += consumeFlags(tokens.slice(i), config);
-        if (i < tokens.length && !config.Host) {
-            const { hostname, port, username } = parseHostToken(tokens[i]);
+        const token = tokens[i];
+        if (token !== undefined && !config.Host) {
+            const { hostname, port, username } = parseHostToken(token);
             config.Host = hostname;
             config.HostName = hostname;
             if (!config.Port && port) { config.Port = port; }
             if (!config.User && username) { config.User = username; }
         }
     }
-    if (!config.Host) { throw new CommandParseError('Missing hostname in SSH connection string'); }
     const { Host, HostName, ...rest } = config;
+    if (!Host || !HostName) { throw new CommandParseError('Missing hostname in SSH connection string'); }
     return { Host, HostName, ...rest };
 }
 

@@ -69,7 +69,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         this.draft = null;
     }
 
-    protected onResolved(): void {
+    protected override onResolved(): void {
         this.initSharedSubscriptions();
     }
 
@@ -244,7 +244,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         return this.remoteSessionId ? getAllSessions().filter(s => s.id === this.remoteSessionId) : getAllSessions();
     }
 
-    protected async pushState(): Promise<void> {
+    protected override async pushState(): Promise<void> {
         const view = this.view;
         if (!view) { return; }
         try {

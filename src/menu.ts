@@ -125,7 +125,7 @@ export class CsBridgeMenu {
                 title: 'Edit SSH Host: Destination', value: [host.user, host.hostname].filter(Boolean).join('@'),
                 placeholder: '[user@]hostname',
                 submit: (destination) => {
-                    const [HostName, User] = destination.split('@').reverse();
+                    const [HostName = '', User] = destination.split('@').reverse();
                     this.sshHosts.saveSshHost({ Host: newAlias, HostName, ...User && { User } }, alias);
                 },
             }),

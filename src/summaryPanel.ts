@@ -19,9 +19,8 @@ export async function enqueuePendingSummary(context: vscode.ExtensionContext, id
 }
 
 export async function consumePendingSummary(context: vscode.ExtensionContext, extensionUri: vscode.Uri): Promise<void> {
-    const queue = context.globalState.get<string[]>(PENDING_KEY, []);
-    if (queue.length === 0) { return; }
-    const [id, ...rest] = queue;
+    const [id, ...rest] = context.globalState.get<string[]>(PENDING_KEY, []);
+    if (!id) { return; }
     await context.globalState.update(PENDING_KEY, rest);
     const session = getSession(id);
     if (session) { openSummaryPanel(extensionUri, session); }

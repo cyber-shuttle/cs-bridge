@@ -31,7 +31,7 @@ test('calls carry the bearer, refreshing once when near expiry', async (t) => {
     await client.deleteSession('s1');
 
     assert.deepEqual(calls.map(c => `${c.method} ${c.path}`).sort(), ['DELETE sessions/s1', 'GET sessions/s1/access', 'POST oauth/refresh', 'POST sessions/s1/stop']);
-    assert.equal(calls[0].path, 'oauth/refresh');
+    assert.equal(calls[0]?.path, 'oauth/refresh');
     assert.deepEqual(access, { jupyter: { token: 't' } });
     assert.ok(calls.slice(1).every(c => c.headers.authorization === 'Bearer new'));
 });

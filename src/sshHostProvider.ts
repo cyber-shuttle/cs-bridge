@@ -15,7 +15,7 @@ export class SshHostProvider extends WebviewProvider<HostsMessage> {
         editSshHost: ({ alias }) => void vscode.commands.executeCommand('csbridge.editHost', alias),
     };
 
-    protected pushState(): void {
+    protected override pushState(): void {
         if (!this.view) { return; }
         const state: HostsState = { sshHosts: SshManager.getInstance().getMergedHosts() };
         this.view.webview.postMessage({ command: 'state', state });

@@ -49,7 +49,7 @@ export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunne
         return false;
     }
 
-    const [installed, latest] = ['installed', 'latest'].map(key => (versions.match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1] ?? '').replace(/[v\s]/g, ''));
+    const [installed = '', latest = ''] = ['installed', 'latest'].map(key => (versions.match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1] ?? '').replace(/[v\s]/g, ''));
     if (keepsInstalledLinkspan(installed, latest) && keepsInstalledLinkspan(installed.replace(/\.[0-9a-f]{7,40}$/, ''), MINIMUM)) {
         log.info(`Linkspan ${installed} on SSH host ${session.alias} is current (latest ${latest || 'unknown'}); keeping it`);
         return true;
@@ -108,10 +108,10 @@ export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner,
     log.info(`Submitting job to Slurm for session ${session.name}`);
 
     const output = (await run.runRemoteCommand(session.alias, submitCommand)).trim();
-    const jobIdMatch = output.match(/Submitted batch job (\d+)/);
-    if (!jobIdMatch) { throw new Error(`Failed to parse job ID from sbatch output: ${output}`); }
+    const jobId = output.match(/Submitted batch job (\d+)/)?.[1];
+    if (!jobId) { throw new Error(`Failed to parse job ID from sbatch output: ${output}`); }
 
-    session.jobId = jobIdMatch[1];
+    session.jobId = jobId;
     session.submittedAt = Date.now();
     log.info(`Job submitted successfully with Job ID: ${session.jobId}`);
 }

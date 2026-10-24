@@ -29,10 +29,11 @@ export function usageGraphs(history: UsageSample[], gpuCount: number, allocated?
     ];
 }
 
-export const graphTitle = (g: Graph) => `${g.label} — ${g.lines.map(l => l.fmt(l.values.at(-1)!)).join(', ')}`;
+export const graphTitle = (g: Graph) => `${g.label} — ${g.lines.map(l => l.fmt(l.values.at(-1) ?? 0)).join(', ')}`;
+export const drawable = (g: Graph) => (g.lines[0]?.values.length ?? 0) >= 2;
 
 export function UsageGraphs({ history, gpuCount }: { history: UsageSample[]; gpuCount: number }) {
-    const shown = usageGraphs(history, gpuCount).filter(g => g.lines[0].values.length >= 2);
+    const shown = usageGraphs(history, gpuCount).filter(drawable);
     if (!shown.length) { return null; }
     return (
         <Row gap={8} wrap>

@@ -28,7 +28,7 @@ function RunItem({ run }: { run: Run }) {
     );
 }
 
-function SessionGroup({ runs }: { runs: Run[] }) {
+function SessionGroup({ runs }: { runs: [Run, ...Run[]] }) {
     const [open, setOpen] = useState(true);
     const { alias, account, partition } = runs[0];
     const runLabel = `${runs.length} run${runs.length === 1 ? '' : 's'}`;

@@ -37,7 +37,7 @@ export class StatsProvider extends WebviewProvider<StatsMessage> {
 
     public refresh(): void { void this.pushState(); }
 
-    protected pushState(): void {
+    protected override pushState(): void {
         const state: StatsState = { runs: readAllRuns() };
         this.view?.webview.postMessage({ command: 'state', state });
     }

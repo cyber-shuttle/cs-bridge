@@ -82,8 +82,7 @@ class Link implements Transport {
         const client = this.relayClient();
         try {
             await client.connect(await this.management().getTunnel({ tunnelId: session.planeId }));
-            await client.waitForForwardedPort(session.connectionInfo?.controlPort ?? 0);
-            return await call(`http://127.0.0.1:${client.forwardedPorts[0].localPort}/api/v1`, {});
+            return await call(`http://127.0.0.1:${await forwardedLocalPort(client, session.connectionInfo?.controlPort ?? 0)}/api/v1`, {});
         }
         finally { await client.dispose(); }
     };

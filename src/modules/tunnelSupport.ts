@@ -61,7 +61,7 @@ class DevTunnelRelayClient extends ForwardRelayClient {
         this.forwardUrl = `ws://127.0.0.1:${await forwardedLocalPort(this.sdk, this.controlPort)}/api/v1/forward/`;
     }
 
-    async dispose() {
+    override async dispose() {
         await super.dispose();
         await this.sdk.dispose();
     }
