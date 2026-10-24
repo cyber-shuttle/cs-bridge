@@ -54,8 +54,9 @@ Local VS Code                              Remote HPC cluster
    reaches `ready_to_connect`.
 8. **Connect.** `connectTransport` composes the step: `connectSessionToTunnel` forwards the control port through an
    in-process `TunnelRelayTunnelClient` and binds `127.0.0.1:N`, whose every connection rides Linkspan's
-   `/api/v1/forward/{sshPort}`, and returns that port; `addSshConfigEntry` writes the per-session SSH host, and only
-   on success does `openOrFocusWindow` open `vscode-remote://ssh-remote+<alias>/…`.
+   `/api/v1/forward/{sshPort}`, and records that port on the session; `syncSshConfig` renders the extension's
+   `ssh_config` and the `remote.SSH.serverInstallPath` map from the records on every change, and only once they are
+   written does `openOrFocusWindow` open `vscode-remote://ssh-remote+<alias>/…`.
 9. **Attach.** VS Code's remote-SSH URI handler runs the OS `ssh` binary against that alias, installs VS Code
    Server, and attaches the window to the compute node. CS Bridge pins that alias's
    `remote.SSH.serverInstallPath` to node-local `/tmp/cs-vscode/<sessionId>`, keeping the server off the shared

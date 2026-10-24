@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { parse, LineType, type Directive, type Section } from 'ssh-config';
 import { SlurmSession, SshHost } from '../models';
+import { keyName } from './ec2';
 import { SshConfigEntry } from './sshCommandParser';
 import { lockedUpdateTextFile } from './fsSupport';
 
@@ -30,8 +31,26 @@ export const SSH_RESILIENCE_OPTIONS: ReadonlyArray<readonly [string, string]> = 
 export const csHostAlias = ({ alias, name }: Pick<SlurmSession, 'alias' | 'name'>): string =>
     `${alias}-${name.slice(-6)}`;
 
-// Per-session block appended to the extension's ssh_config (4-space indent matches deleteSshConfigEntry).
-// alias is csHostAlias() output, or an EC2 instance id.
+export const sessionKeyName = (sessionId: string): string => `id_cshost-${sessionId}`;
+
+// The whole file from the records, so no window edits it in place and nothing is left behind.
+export function renderSshConfig(sessions: SlurmSession[], keyPath: (name: string) => string): string {
+    return sessions.flatMap((s) => {
+        const ci = s.connectionInfo;
+        if (s.ec2) { return ci?.sshPort && s.ec2.ip ? [buildSshConfigBlock(s.id, csHostAlias(s), s.ec2.ip, ci.sshPort, s.ec2.user, keyPath(keyName(s.ec2.region)))] : []; }
+        // The custom SSH server ignores the user.
+        return ci?.localPort ? [buildSshConfigBlock(s.id, csHostAlias(s), '127.0.0.1', ci.localPort, 'cs-ssh-user', keyPath(sessionKeyName(s.id)))] : [];
+    }).map(block => `${block}\n`).join('');
+}
+
+// Pins each Slurm session's server to node-local /tmp, not $HOME/.vscode-server: on HPC $HOME is a shared network fs
+// where stalls miss the ptyHost heartbeat and one account's sessions fight over a single tree.
+export const SERVER_INSTALL_ROOT = '/tmp/cs-vscode/';
+export function renderServerInstallPaths(sessions: SlurmSession[], current: Record<string, string>): Record<string, string> {
+    const ours = Object.fromEntries(sessions.filter(s => !s.ec2 && s.connectionInfo?.localPort).map(s => [csHostAlias(s), `${SERVER_INSTALL_ROOT}${s.id}`]));
+    return { ...Object.fromEntries(Object.entries(current).filter(([, dir]) => !dir.startsWith(SERVER_INSTALL_ROOT))), ...ours };
+}
+
 export function buildSshConfigBlock(
     sessionId: string,
     alias: string,

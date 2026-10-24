@@ -7,10 +7,8 @@ import { Ec2Spec, SlurmJobStatus, SlurmSession } from '../models';
 import { Logger } from '../logger';
 import { addSession, getAllSessions, live, observe, statusOf, updateSession } from '../extensionStore';
 import { AwsClient } from './aws';
-import { keyName } from './ec2';
 import { isTerminal, observedEc2 } from './sessionMachine';
 import { Backend, SessionMonitor } from './sessionSupport';
-import { deleteSshConfigEntry, sshKeyPath, writeSshConfigEntry } from './sshSupport';
 import { csHostAlias } from './sshHostsStore';
 
 const logger = Logger.getInstance();
@@ -73,7 +71,6 @@ export class Ec2Backend implements Backend {
     }
 
     async connect(session: SlurmSession): Promise<boolean> {
-        await this.writeHost(session);
         live.connected.add(session.id);
         return true;
     }
@@ -91,7 +88,6 @@ export class Ec2Backend implements Backend {
         if (ip !== spec.ip) {
             spec.ip = ip; // a stopped instance comes back with a new public IP
             updateSession(session);
-            if (live.connected.has(session.id)) { await this.writeHost(session); }
         }
         if (state === 'running' && !session.connectionInfo && ip && await portOpen(ip, SSH_PORT)) {
             session.connectionInfo = { sshPort: SSH_PORT, controlPort: 0 };
@@ -104,11 +100,5 @@ export class Ec2Backend implements Backend {
         live.connected.delete(session.id);
         session.connectionInfo = undefined;
         updateSession(session);
-        await deleteSshConfigEntry(session.id, csHostAlias(session), false); // the key is the region's
-    }
-
-    private writeHost(session: SlurmSession): Promise<string> {
-        const { region, ip, user } = session.ec2!;
-        return writeSshConfigEntry(session.id, csHostAlias(session), ip, SSH_PORT, user, sshKeyPath(keyName(region)));
     }
 }

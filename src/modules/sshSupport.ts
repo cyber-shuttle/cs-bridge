@@ -1,4 +1,4 @@
-import { SshHost, SlurmSession } from '../models';
+import { SshHost } from '../models';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -6,9 +6,10 @@ import * as vscode from 'vscode';
 import { execFileSync, spawn, spawnSync, ChildProcess } from 'child_process';
 import * as crypto from 'crypto';
 import { Logger, errMsg } from '../logger';
-import { lock, release, lockedUpdateTextFile } from './fsSupport';
+import { lockedUpdateTextFile } from './fsSupport';
+import { getAllSessions } from '../extensionStore';
 import { buildShellCommand, extractCommandResult, READY_MARKER, renderAuthHtml } from './sshShell';
-import { USER_SSH_CONFIG_PATH, SYSTEM_SSH_CONFIG_PATH, mergeHostsByPriority, parseHostsFromConfigText, buildSshConfigBlock, csHostAlias, includeIsEffective } from './sshHostsStore';
+import { USER_SSH_CONFIG_PATH, SYSTEM_SSH_CONFIG_PATH, mergeHostsByPriority, parseHostsFromConfigText, renderSshConfig, renderServerInstallPaths, sessionKeyName, includeIsEffective } from './sshHostsStore';
 
 const logger = Logger.getInstance();
 // The config and keys live in extension storage, which VS Code removes on uninstall. Sockets there would pass the
@@ -26,7 +27,7 @@ function privateControlDir(): string {
 }
 
 export const sshKeyPath = (name: string): string => path.join(CS_SSH_KEYS_DIR, name);
-const sessionKeyPath = (sessionId: string): string => sshKeyPath(`id_cshost-${sessionId}`);
+const sessionKeyPath = (sessionId: string): string => sshKeyPath(sessionKeyName(sessionId));
 
 type CommandResult = { stdout: string; stderr: string; code: number };
 
@@ -324,51 +325,29 @@ export class SshManager {
     }
 }
 
-// Upsert/drop this alias in remote.SSH.serverInstallPath (alias->path map Remote-SSH reads at connect). Best-effort and
-// unlocked: no Remote-SSH, or a race between concurrent connects, just leaves that session on $HOME (today's default).
-async function setServerInstallPath(alias: string, dir: string | undefined): Promise<void> {
+// Keeps the extension's ssh_config and the remote.SSH.serverInstallPath map equal to what the records say; idempotent, so
+// every window runs it on every change. Remote-SSH reads the setting at connect, so a caller about to open a window awaits it.
+export async function syncSshConfig(): Promise<void> {
+    const sessions = getAllSessions();
+    const text = renderSshConfig(sessions, sshKeyPath);
+    if (fs.readFileSync(CS_SSH_CONFIG_PATH, 'utf-8') !== text) {
+        fs.writeFileSync(`${CS_SSH_CONFIG_PATH}.tmp`, text, { mode: 0o600 });
+        fs.renameSync(`${CS_SSH_CONFIG_PATH}.tmp`, CS_SSH_CONFIG_PATH);
+    }
     try {
         const cfg = vscode.workspace.getConfiguration('remote.SSH');
-        const map = { ...(cfg.get<Record<string, string>>('serverInstallPath') ?? {}) };
-        if (map[alias] === dir) { return; }
-        if (dir === undefined) { delete map[alias]; }
-        else { map[alias] = dir; }
-        await cfg.update('serverInstallPath', map, vscode.ConfigurationTarget.Global);
+        const current = cfg.get<Record<string, string>>('serverInstallPath') ?? {};
+        const next = renderServerInstallPaths(sessions, current);
+        if (JSON.stringify(next) !== JSON.stringify(current)) { await cfg.update('serverInstallPath', next, vscode.ConfigurationTarget.Global); }
     }
     catch (err) {
-        logger.warn(`Could not update remote.SSH.serverInstallPath for ${alias}: ${errMsg(err)}`);
+        logger.warn(`Could not update remote.SSH.serverInstallPath: ${errMsg(err)}`); // no Remote-SSH: the session lands on $HOME
     }
 }
 
 // forceNew=false relies on VS Code deduping by workspace identity: it focuses the window already holding this URI.
 export function openSshWindow(alias: string, folder: string, forceNew: boolean): Thenable<unknown> {
     return vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(`vscode-remote://ssh-remote+${alias}${folder}/`), { forceNewWindow: forceNew });
-}
-
-export function addSshConfigEntry(session: SlurmSession, localPort: number): Promise<string> {
-    // Pin the server to node-local /tmp, not $HOME/.vscode-server: on HPC $HOME is a shared network fs where stalls miss
-    // the ptyHost heartbeat and one account's sessions fight over a single tree.
-    // The custom SSH server ignores the user.
-    return writeSshConfigEntry(session.id, csHostAlias(session), '127.0.0.1', localPort, 'cs-ssh-user', sessionKeyPath(session.id), `/tmp/cs-vscode/${session.id}`);
-}
-
-export async function writeSshConfigEntry(id: string, alias: string, hostname: string, port: number, user: string, identityFile: string, serverInstallPath?: string): Promise<string> {
-    await deleteSshConfigEntry(id, alias, false); // keep the key: the caller owns it
-
-    // Locked: startup reattach can rewrite this concurrently, so the append must not interleave.
-    lock(CS_SSH_CONFIG_PATH);
-    try {
-        fs.appendFileSync(CS_SSH_CONFIG_PATH, `${buildSshConfigBlock(id, alias, hostname, port, user, identityFile)}\n`);
-    }
-    catch (err) {
-        logger.error(`Failed to write SSH config for ${alias}:`, err);
-    }
-    finally {
-        release(CS_SSH_CONFIG_PATH);
-    }
-    // Set after the prune above so it wins.
-    await setServerInstallPath(alias, serverInstallPath);
-    return alias;
 }
 
 // The session key's public half, minting the pair on first use; the private key never leaves this machine.
@@ -385,40 +364,9 @@ export function sessionPublicKey(sessionId: string): string {
 
 export const hasSessionKey = (sessionId: string): boolean => fs.existsSync(sessionKeyPath(sessionId));
 
-function deleteSessionPrivateKey(sessionId: string): void {
-    const privateKeyPath = sessionKeyPath(sessionId);
-    try {
-        if (fs.existsSync(privateKeyPath)) {
-            fs.unlinkSync(privateKeyPath);
-        }
-    }
+export function deleteSessionPrivateKey(sessionId: string): void {
+    try { fs.rmSync(sessionKeyPath(sessionId), { force: true }); }
     catch (err) {
         logger.error(`Failed to delete SSH private key for session ${sessionId}:`, err);
     }
-}
-
-export async function deleteSshConfigEntry(sessionId: string, alias: string, deleteKey = true): Promise<void> {
-    lock(CS_SSH_CONFIG_PATH);
-    try {
-        const content = fs.readFileSync(CS_SSH_CONFIG_PATH, 'utf-8');
-        // Escape the alias (an SSH host's alias may contain '.') so it can't over-match; the id marker is a regex-safe uuid.
-        const aliasRe = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const re = new RegExp(
-            `(?:\\n|^)# CS-Bridge auto-generated for session ${sessionId}\\nHost ${aliasRe}\\n(?:    [^\\n]+\\n)*`,
-            'gm',
-        );
-        const cleaned = content.replace(re, '');
-        if (cleaned !== content) {
-            fs.writeFileSync(CS_SSH_CONFIG_PATH, cleaned);
-        }
-
-        if (deleteKey) { deleteSessionPrivateKey(sessionId); }
-    }
-    catch (err) {
-        logger.error(`Failed to clear SSH config entry for session ${sessionId}:`, err);
-    }
-    finally {
-        release(CS_SSH_CONFIG_PATH);
-    }
-    await setServerInstallPath(alias, undefined);
 }

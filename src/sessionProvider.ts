@@ -4,7 +4,7 @@ import { uuidv7 } from 'uuidv7';
 import { errMsg } from './logger';
 import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, WebviewMessage } from './models';
 import { WebviewProvider, confirmModal } from './webviewProvider';
-import { deleteSshConfigEntry, addSshConfigEntry, hasSessionKey, SshManager, openSshWindow } from './modules/sshSupport';
+import { deleteSessionPrivateKey, hasSessionKey, SshManager, openSshWindow, syncSshConfig } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
 import { addSession, deleteSession, getSession, getAllSessions, updateSession, onSessionsChange, onWindowsChange, windowState, statusOf, fail, live, claim, owns } from './extensionStore';
@@ -204,7 +204,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             vscode.window.showErrorMessage(`Failed to delete session: ${errMsg(err)}`);
             return;
         }
-        await deleteSshConfigEntry(sessionId, csHostAlias(session), !session.ec2); // logs its own failure; an EC2 key is the region's
+        if (!session.ec2) { deleteSessionPrivateKey(sessionId); } // an EC2 key is the region's
         deleteSession(sessionId);
     }
 
@@ -300,20 +300,17 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         const transport = this.transports.transportFor(session);
         try {
             await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
-            const localPort = await connectSessionToTunnel(transport, session, () => void this.reconnectDevTunnel(session.id));
-            // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets no local port.
-            if (isTerminal(statusOf(session))) {
-                await disposeTunnelClient(session.id);
-                return false;
-            }
             if (!hasSessionKey(session.id)) { throw new Error('SSH private key not found for session'); }
-            const alias = await addSshConfigEntry(session, localPort);
-            this.logger.info(`SSH config entry ready for session ${session.id} (ssh ${alias})`);
+            await connectSessionToTunnel(transport, session, () => void this.reconnectDevTunnel(session.id));
+            // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets no local port.
+            if (isTerminal(statusOf(session))) { throw new Error('the job ended'); }
+            await syncSshConfig();
             return true;
         }
         catch (error) {
             this.logger.error(`Error connecting the ${transport.label} for session ${session.id}:`, error);
             await disposeTunnelClient(session.id);
+            if (session.connectionInfo) { session.connectionInfo.localPort = undefined; }
             session.errorMessage = `Failed to connect ${transport.label}: ${errMsg(error)}`;
             updateSession(session);
             return false;
