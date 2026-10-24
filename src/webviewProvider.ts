@@ -10,7 +10,7 @@ export type Handlers<M extends WebviewMessage> = { [K in Exclude<M['command'], '
 
 // Base for the sidebar webview views: renders the view's bundle and routes messages to/from the webview.
 // Subclasses set viewKind and override the hooks below.
-export abstract class WebviewProvider<M extends WebviewMessage = { command: 'ready' }> implements vscode.WebviewViewProvider {
+export abstract class WebviewProvider<M extends WebviewMessage> implements vscode.WebviewViewProvider {
     protected abstract readonly viewKind: ViewKind;
     protected abstract readonly handlers: Handlers<M>;
     protected readonly logger = Logger.getInstance();
