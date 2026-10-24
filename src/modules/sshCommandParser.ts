@@ -1,5 +1,6 @@
 import { parse } from 'shell-quote';
 import { BasicParser } from 'posix-getopt';
+import { groups } from './util';
 
 export class CommandParseError extends Error {}
 
@@ -39,9 +40,9 @@ const WITH_ARG: Record<string, (c: Config, arg: string) => void> = {
     i: (c, a) => { c.IdentityFile = a; },
     J: (c, a) => { c.ProxyJump = a; },
     L: (c, a) => {
-        const m = a.match(/^((.*):?\d+)?:(.+?)?$/);
-        if (!m?.[1] || !m[3]) { throw new CommandParseError(`LocalForward needs a listener and a destination separated by a colon. ${a} does not match.`); }
-        c.LocalForward = `${m[1]} ${m[3]}`;
+        const g = groups(a.match(/^(?<listener>(.*):?\d+)?:(?<dest>.+?)?$/), 'listener', 'dest');
+        if (!g) { throw new CommandParseError(`LocalForward needs a listener and a destination separated by a colon. ${a} does not match.`); }
+        c.LocalForward = `${g.listener} ${g.dest}`;
     },
     l: (c, a) => { c.User = a; },
     m: (c, a) => { c.MACs = a; },

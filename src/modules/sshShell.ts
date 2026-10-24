@@ -1,4 +1,5 @@
 // Pure protocol for driving one persistent remote login shell: frame each command with a per-call random
+import { groups } from './util';
 // marker so its stdout, stderr, and exit code can be demuxed from the shell's continuous output streams.
 
 // Printed once at connect to skip profile/MOTD noise before the first command. A fixed token; remote profile
@@ -57,8 +58,9 @@ export function extractCommandResult(
     errBuf: string,
 ): { stdout: string; stderr: string; code: number } | null {
     const m = marker(rid);
-    const out = outBuf.match(new RegExp(`\\n${m} (\\d+)\\n`));
+    const out = outBuf.match(new RegExp(`\\n${m} (?<code>\\d+)\\n`));
     const err = errBuf.match(new RegExp(`\\n${m}\\n`));
-    if (!out || !err) { return null; }
-    return { stdout: outBuf.slice(0, out.index), stderr: errBuf.slice(0, err.index), code: Number(out[1]) };
+    const g = groups(out, 'code');
+    if (!out || !g || !err) { return null; }
+    return { stdout: outBuf.slice(0, out.index), stderr: errBuf.slice(0, err.index), code: Number(g.code) };
 }

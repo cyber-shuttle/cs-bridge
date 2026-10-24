@@ -1,5 +1,6 @@
 import { SlurmSession } from '../models';
 import { buildSlurmScript, devTunnelLaunch, envAssignments } from './slurmParse';
+import { groups } from './util';
 
 // RemoteRunner/LogSink are injected (SshManager and Logger satisfy them structurally) so the steps below
 // are unit-testable with fakes, free of SSH and vscode.
@@ -49,12 +50,13 @@ export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunne
         return false;
     }
 
-    const match = versions.match(/^installed=(.*)\nlatest=(.*)$/m);
-    if (!match) {
+    const g = groups(versions.match(/^installed=(?<installed>.*)\nlatest=(?<latest>.*)$/m), 'installed', 'latest');
+    if (!g) {
         log.error(`Failed to check Linkspan version on SSH host ${session.alias}: ${versions}`);
         return false;
     }
-    const [, installed = '', latest = ''] = match.map(v => v.replace(/[v\s]/g, ''));
+    const clean = (v: string) => v.replace(/[v\s]/g, '');
+    const installed = clean(g.installed), latest = clean(g.latest);
     if (keepsInstalledLinkspan(installed, latest) && keepsInstalledLinkspan(installed.replace(/\.[0-9a-f]{7,40}$/, ''), MINIMUM)) {
         log.info(`Linkspan ${installed} on SSH host ${session.alias} is current (latest ${latest || 'unknown'}); keeping it`);
         return true;
