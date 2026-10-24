@@ -12,6 +12,7 @@ import { storageFiles } from '../storage';
 import { initSessionStore } from '../extensionStore';
 import { initRunStore } from '../modules/runStore';
 import { openSummaryPanel } from '../summaryPanel';
+import { csHostAlias } from '../modules/sshHostsStore';
 
 const EXTENSION_ID = 'cybershuttle.csbridge';
 const userData = process.env.CSBRIDGE_USER_DATA;
@@ -44,12 +45,13 @@ const live = (fields: Partial<SlurmSession>): SlurmSession => newSession({
 export function register(): void {
     describe('cs-bridge in a VS Code host', () => {
         const ended = live({ observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() }, owner: 'closedwindow' });
-        const running = live({ observed: { state: SlurmJobStatus.RUNNING, at: Date.now() }, owner: 'otherwindow' });
+        const running = live({ observed: { state: SlurmJobStatus.RUNNING, at: Date.now() }, owner: 'otherwindow', desired: 'stopped', connectionInfo: { sshPort: 1, controlPort: 2, localPort: 3 } });
         let extensionUri: vscode.Uri;
 
         before(async () => {
             const ext = vscode.extensions.getExtension(EXTENSION_ID);
             assert.ok(ext, 'extension installed');
+            write('windows', 'otherwindow', { at: Date.now() + 600_000 }); // beats for the whole suite, loaded at activation
             await ext.activate();
             extensionUri = ext.extensionUri;
             await until('the window heartbeat', () => fs.existsSync(path.join(storage, 'windows')));
@@ -71,17 +73,15 @@ export function register(): void {
         });
 
         it('leaves a Stop to the beating owner and takes it once that window is gone', async () => {
-            write('windows', 'otherwindow', { at: Date.now() });
             write('sessions', running.id, running);
-            await sleep(1500);
-            write('sessions', running.id, { ...running, desired: 'stopped' });
-            await sleep(3000);
+            // The SSH config is rendered in the same change event as the sweep, so its Host block shows the record was seen.
+            const sshConfig = path.join(storage, 'ssh_config'); // absent until a session has a Host block
+            await until('the record to be loaded', () => fs.existsSync(sshConfig) && fs.readFileSync(sshConfig, 'utf8').includes(`Host ${csHostAlias(running)}`));
             assert.deepEqual([record(running.id)?.desired, record(running.id)?.owner], ['stopped', 'otherwindow']);
             fs.rmSync(file('windows', 'otherwindow'));
-            await until('the failed stop to revert', () => record(running.id)?.desired === 'running');
-            const s = record(running.id);
-            assert.notEqual(s?.owner, 'otherwindow');
-            assert.match(String(s?.errorMessage), /stop/);
+            // The stop fails on the unreachable host and is reverted; the monitor loop this window then starts may replace the message.
+            await until('the failed stop to revert', () => record(running.id)?.desired === 'running' && !!record(running.id)?.errorMessage);
+            assert.notEqual(record(running.id)?.owner, 'otherwindow');
         });
 
         it('opens a summary panel whose webview reports ready', async () => {
@@ -89,8 +89,10 @@ export function register(): void {
             await initSessionStore(files, (err) => { throw err; });
             await initRunStore(files, (err) => { throw err; });
             const panel = openSummaryPanel(extensionUri, ended);
-            const ready = new Promise<void>(resolve => panel.webview.onDidReceiveMessage((m: { command: string }) => { if (m.command === 'ready') { resolve(); } }));
-            await Promise.race([ready, sleep(30_000).then(() => { throw new Error('the summary webview never reported ready'); })]);
+            await new Promise<void>((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error('the summary webview never reported ready')), 30_000);
+                panel.webview.onDidReceiveMessage((m: { command: string }) => { if (m.command === 'ready') { clearTimeout(timer); resolve(); } });
+            });
             assert.equal(panel.title, `Session ${ended.name} summary`);
             panel.dispose();
         });
