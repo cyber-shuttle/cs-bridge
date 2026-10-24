@@ -24,7 +24,7 @@ test('list reads every page of tagged instances and takes the login user from th
             ? { Reservations: [{ Instances: [instance('i-2', 'ubuntu')] }] }
             : { Reservations: [{ Instances: [instance('i-1', 'ec2-user')] }], NextToken: 'p2' },
     });
-    const listed = await new Ec2(() => client, () => '').list('r1');
+    const listed = await new Ec2(() => client, () => '', 'm').list('r1');
     assert.deepEqual(listed.map(i => [i.id, i.user, i.ip]), [['i-1', 'ec2-user', '1.2.3.4'], ['i-2', 'ubuntu', '1.2.3.4']]);
     assert.deepEqual((filters[0] as unknown[])[0], { Name: 'tag-key', Values: ['CS-Bridge-User'] });
 });
@@ -39,7 +39,7 @@ test('concurrent first launches in a region share one key pair and create the mi
         CreateKeyPairCommand: () => ({ KeyMaterial: `key${++created}` }),
     });
     const dir = mkdtempSync(join(tmpdir(), 'ec2-'));
-    const ec2 = new Ec2(() => client, name => join(dir, name));
+    const ec2 = new Ec2(() => client, name => join(dir, name), 'm');
     const image = '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64';
     await Promise.all([ec2.launch(image, 't3.micro', 'r1', 'a'), ec2.launch(image, 't3.micro', 'r1', 'b')]);
     assert.equal(created, 1);
@@ -48,5 +48,5 @@ test('concurrent first launches in a region share one key pair and create the mi
 
 test('describe reads an instance gone from DescribeInstances as absent', async () => {
     const client = fakeClient({ DescribeInstancesCommand: () => ({ Reservations: [] }) });
-    assert.equal(await new Ec2(() => client, () => '').describe('r1', 'i-9'), undefined);
+    assert.equal(await new Ec2(() => client, () => '', 'm').describe('r1', 'i-9'), undefined);
 });

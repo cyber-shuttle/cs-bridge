@@ -104,7 +104,7 @@ activation, whose first call lists the account's regions. Sign-in also adopts ev
 | Step | EC2 behaviour |
 |---|---|
 | Create | the menu's **Create Cloud VM** pages pick region, type and image; the record lands `not_started`, with no instance yet |
-| Start | `RunInstances` with `resolve:ssm:` for the image's latest AMI, or `StartInstances` for a stopped one; the first launch in a region creates the default VPC if the account lacks one, one AWS-generated key pair saved beside the session SSH keys, and one security group opening port 22 |
+| Start | `RunInstances` with `resolve:ssm:` for the image's latest AMI, or `StartInstances` for a stopped one; the first launch in a region creates the default VPC if the account lacks one, one AWS-generated key pair per machine saved beside the session SSH keys, and one security group opening port 22 |
 | Poll | `DescribeInstances` every 5 s through `computeEc2Transition`; `preparing` holds until port 22 accepts a connection, which sets `connectionInfo.sshPort` and reaches `ready_to_connect` |
 | Connect | writes the per-session SSH host (public IP, port 22, the image's user, the region's key) and opens the window in the user's home |
 | Stop | waits out a pending boot, `StopInstances`, then holds the task until the instance reads `stopped`; a reload resumes it like a Slurm stop |

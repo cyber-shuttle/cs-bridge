@@ -1,5 +1,6 @@
 // EC2 calls behind AwsClient, free of vscode for unit tests. Each region gets one AWS-generated key pair, saved at
-// keyPath(keyName(region)), and one security group opening SSH.
+// keyPath(keyName(region, machine)), and one security group opening SSH. The key pair is this machine's: another machine
+// sharing the account mints its own, so neither replaces the other's.
 import * as fs from 'fs';
 import {
     EC2Client, CreateKeyPairCommand, DeleteKeyPairCommand, DescribeVpcsCommand, CreateDefaultVpcCommand, DescribeSecurityGroupsCommand, CreateSecurityGroupCommand,
@@ -32,7 +33,7 @@ function expect<T>(value: T | undefined, what: string): T {
     if (value === undefined) { throw new Error(`${what} came back empty`); }
     return value;
 }
-export const keyName = (region: string) => `cs-aws-generated-key-${region}`;
+export const keyName = (region: string, machine: string) => `cs-aws-generated-key-${region}-${machine}`;
 
 export class Ec2 {
     private readonly prepared = new Map<string, Promise<string>>();
@@ -40,6 +41,7 @@ export class Ec2 {
     constructor(
         private readonly client: (region: string) => EC2Client,
         private readonly keyPath: (name: string) => string,
+        private readonly machine: string,
     ) { }
 
     // The regions enabled for the account; the first call with the credentials, so it also validates them.
@@ -54,7 +56,7 @@ export class Ec2 {
         if (!user) { throw new Error(`Unknown image ${image}`); }
         const group = await this.prepare(region);
         const { Instances } = await this.client(region).send(new RunInstancesCommand({
-            ImageId: `resolve:ssm:${image}`, InstanceType: type as _InstanceType, KeyName: keyName(region), SecurityGroupIds: [group], MinCount: 1, MaxCount: 1,
+            ImageId: `resolve:ssm:${image}`, InstanceType: type as _InstanceType, KeyName: keyName(region, this.machine), SecurityGroupIds: [group], MinCount: 1, MaxCount: 1,
             TagSpecifications: [{ ResourceType: 'instance', Tags: [
                 { Key: 'Name', Value: name },
                 { Key: USER_TAG, Value: user },
@@ -71,7 +73,7 @@ export class Ec2 {
     }
 
     private async ensureKeyPair(region: string): Promise<void> {
-        const KeyName = keyName(region);
+        const KeyName = keyName(region, this.machine);
         if (fs.existsSync(this.keyPath(KeyName))) { return; }
         const client = this.client(region);
         await client.send(new DeleteKeyPairCommand({ KeyName })); // AWS keeps it after a local uninstall

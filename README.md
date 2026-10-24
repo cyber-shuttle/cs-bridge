@@ -49,7 +49,7 @@ A cluster is entered through an SSH host, but work runs on compute nodes that Sl
 
 With `csbridge.experimentalFeatures` on, the `csbridge.transport` setting also offers `link` **(experimental)**: after signing in to CyberShuttle from **CS Bridge: Open Menu**, Linkspan opens a WebSocket to cs-plane instead of a Dev Tunnel, and **Connect** forwards SSH through cs-plane.
 
-EC2 instances **(experimental)** skip Slurm and the tunnel: **Sign In to AWS** from **CS Bridge: Open Menu** with an access key, then **Create Cloud VM** picks a region, an instance type and an image. The instance is a session like any other: its card starts, stops, connects and deletes it, and Connect opens a VS Code window on it over plain SSH. CS Bridge creates a key pair and an SSH security group per region, and signing in adopts instances it launched from elsewhere.
+EC2 instances **(experimental)** skip Slurm and the tunnel: **Sign In to AWS** from **CS Bridge: Open Menu** with an access key, then **Create Cloud VM** picks a region, an instance type and an image. The instance is a session like any other: its card starts, stops, connects and deletes it, and Connect opens a VS Code window on it over plain SSH. CS Bridge creates a key pair per region and machine and an SSH security group per region, and signing in adopts instances it launched from elsewhere.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/02-sessions.png" alt="Sessions sidebar" width="480">
 

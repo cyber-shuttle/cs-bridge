@@ -102,11 +102,11 @@ test('renderSshConfig lists a Slurm session with a forward and an EC2 instance w
         { ...base, id: 'a', alias: 'delta', jobId: '1', connectionInfo: { sshPort: 40, controlPort: 20000, localPort: 50122 } },
         { ...base, id: 'b', alias: 'delta', jobId: '2', connectionInfo: { sshPort: 40, controlPort: 20000 } },
         { ...base, id: 'c', alias: 'aws-us-east-1', jobId: 'i-1', connectionInfo: { sshPort: 22, controlPort: 0 }, ec2: { region: 'us-east-1', type: 't', image: '', user: 'ubuntu', ip: '1.2.3.4' } },
-    ], name => `/keys/${name}`);
+    ], name => `/keys/${name}`, 'm1');
     assert.deepEqual(text.match(/^Host .*$/gm), ['Host delta-493119', 'Host aws-us-east-1-493119']);
     assert.match(text, /^# CS-Bridge auto-generated for session a\nHost delta-493119\n {4}HostName 127\.0\.0\.1\n {4}Port 50122\n {4}User cs-ssh-user/m);
-    assert.match(text, /^Host aws-us-east-1-493119\n {4}HostName 1\.2\.3\.4\n {4}Port 22\n {4}User ubuntu\n(?:.*\n)*? {4}IdentityFile "\/keys\/cs-aws-generated-key-us-east-1"/m);
-    assert.equal(renderSshConfig([], () => ''), '');
+    assert.match(text, /^Host aws-us-east-1-493119\n {4}HostName 1\.2\.3\.4\n {4}Port 22\n {4}User ubuntu\n(?:.*\n)*? {4}IdentityFile "\/keys\/cs-aws-generated-key-us-east-1-m1"/m);
+    assert.equal(renderSshConfig([], () => '', 'm1'), '');
     assert.deepEqual(renderServerInstallPaths([{ ...base, id: 'a', alias: 'delta', jobId: '1', connectionInfo: { sshPort: 40, controlPort: 1, localPort: 5 } }], { 'delta-000000': '/tmp/cs-vscode/old', 'mine': '/srv/code' }),
         { 'mine': '/srv/code', 'delta-493119': '/tmp/cs-vscode/a' });
 });
