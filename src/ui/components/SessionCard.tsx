@@ -1,7 +1,7 @@
 import { createContext } from 'preact';
 import { useContext } from 'preact/hooks';
 import type { CSSProperties, VNode } from 'preact';
-import { SAMPLE_HISTORY_LEN, type ViewSession } from '@/models';
+import { SAMPLE_HISTORY_LEN, type SessionsMessage, type ViewSession } from '@/models';
 import { cardModel, type SessionAction } from '@/ui/logic/session';
 import { isReachable } from '@/modules/sessionMachine';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button, Spinner, Chip } from '@/ui/components/base';
@@ -17,7 +17,7 @@ interface Props {
 // 1s clock owned by the Sessions root, fed through this context so the status text re-renders each tick.
 export const NowContext = createContext(Date.now());
 
-const COMMAND_FOR: Record<SessionAction['kind'], string | null> = {
+const COMMAND_FOR: Record<SessionAction['kind'], Extract<SessionsMessage, { sessionId: string }>['command'] | null> = {
     start: 'prepareLaunchSession',
     stop: 'stopSessionExecution',
     switch: 'connectTunnel',

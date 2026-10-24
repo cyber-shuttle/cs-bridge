@@ -169,16 +169,15 @@ export interface HostsState {
     sshHosts: SshHost[];
 }
 
-// A message posted from a webview to its provider. Fields are optional; each command reads the ones it needs.
-export interface WebviewMessage {
-    command: string;
-    sessionId?: string;
-    alias?: string;
-    partition?: string;
-    account?: string;
-    resources?: Resources;
-    jobId?: string;
-}
+// What each webview posts to its provider; `ready` is every view's first message.
+export type SessionsMessage =
+    | { command: 'ready' | 'dismissDraftSession' | 'dismissPreview' | 'dismissAlert' }
+    | { command: 'addSession'; alias: string; partition: string; account: string; resources: Resources }
+    | { command: 'refreshSlurmDiscovery'; alias: string }
+    | { command: 'prepareLaunchSession' | 'launchSession' | 'stopSessionExecution' | 'stopRemoteSession' | 'connectTunnel' | 'deleteSession'; sessionId: string };
+export type HostsMessage = { command: 'ready' } | { command: 'deleteSshHost' | 'openTerminal' | 'editSshHost'; alias: string };
+export type StatsMessage = { command: 'ready' } | { command: 'openRunSummary'; sessionId: string; jobId: string };
+export type WebviewMessage = SessionsMessage | HostsMessage | StatsMessage;
 
 // EC2 launch choices; the types run in every region, and each SSM parameter holds the image's latest x86_64 AMI id.
 export const EC2_IMAGES = [

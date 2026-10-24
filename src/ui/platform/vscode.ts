@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import type { WebviewMessage } from '@/models';
 
 declare function acquireVsCodeApi(): {
     postMessage(message: unknown): void;
@@ -8,7 +9,7 @@ declare function acquireVsCodeApi(): {
 
 const vscode = acquireVsCodeApi();
 
-export const post = (msg: unknown) => vscode.postMessage(msg);
+export const post = (msg: WebviewMessage) => vscode.postMessage(msg);
 
 // Posts `ready` once on mount, then re-renders on each `state` message the extension pushes.
 export function useWebviewState<T>(): T | null {

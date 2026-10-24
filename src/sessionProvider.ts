@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { enabled } from './features';
 import { uuidv7 } from 'uuidv7';
 import { errMsg } from './logger';
-import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, WebviewMessage } from './models';
-import { WebviewProvider, confirmModal } from './webviewProvider';
+import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage } from './models';
+import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSessionPrivateKey, hasSessionKey, SshManager, openSshWindow, syncSshConfig } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
@@ -33,7 +33,7 @@ function openSessionWindow(session: SlurmSession, forceNew: boolean): void {
     void openSshWindow(csHostAlias(session), session.rootFolder, forceNew);
 }
 
-export class SessionProvider extends WebviewProvider implements vscode.Disposable {
+export class SessionProvider extends WebviewProvider<SessionsMessage> implements vscode.Disposable {
     public static readonly viewType = 'csbridge.sessionsView';
     protected readonly viewKind = 'sessions' as const;
 
@@ -112,46 +112,28 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         void disposeAllTunnelClients(); // window close: free local ports (remote stays, reaped by linkspan)
     }
 
-    private readonly dismissals: Record<string, () => void> = {
-        dismissDraftSession: () => { this.draftAlias = null; },
-        dismissPreview: () => this.dropDraft(),
-        dismissAlert: () => { this.alert = null; },
-    };
-
-    private readonly handlers: Record<string, (data: WebviewMessage, id: string) => void> = {
-        ready: () => void this.pushState(),
-        addSession: data => this.createSession(data),
-        refreshSlurmDiscovery: data => this.fetchSlurmDiscovery(data.alias ?? '', true),
-        // An EC2 session has no job script to preview, so Start submits at once.
-        prepareLaunchSession: (_data, id) => getSession(id)?.ec2 ? this.submitSession(id) : void this.prepareLaunchSession(id),
-        launchSession: (_data, id) => this.submitSession(id),
-        stopSessionExecution: (_data, id) => this.stopSessionExecution(id),
-        stopRemoteSession: () => {
-            if (this.remoteSessionId) { void vscode.commands.executeCommand('csbridge.stopRemoteSession'); }
-        },
-        connectTunnel: (_data, id) => void this.connectSession(id),
-        deleteSession: (_data, id) => this.confirmAndDeleteSession(id),
-    };
-
-    protected handleMessage(data: WebviewMessage) {
-        this.logger.info('Received message from webview:', data);
-        const dismiss = this.dismissals[data.command];
-        if (dismiss) {
-            dismiss();
-            void this.pushState();
-            return;
-        }
-        const handler = this.handlers[data.command];
-        if (!handler) {
-            this.logger.warn('Unknown command from webview:', data.command);
-            return;
-        }
-        handler(data, data.sessionId ?? '');
+    private dismiss(reset: () => void) {
+        return () => { reset(); void this.pushState(); };
     }
 
-    private createSession(data: WebviewMessage): void {
+    protected readonly handlers: Handlers<SessionsMessage> = {
+        dismissDraftSession: this.dismiss(() => { this.draftAlias = null; }),
+        dismissPreview: this.dismiss(() => this.dropDraft()),
+        dismissAlert: this.dismiss(() => { this.alert = null; }),
+        addSession: m => this.createSession(m),
+        refreshSlurmDiscovery: ({ alias }) => this.fetchSlurmDiscovery(alias, true),
+        // An EC2 session has no job script to preview, so Start submits at once.
+        prepareLaunchSession: ({ sessionId }) => getSession(sessionId)?.ec2 ? this.submitSession(sessionId) : void this.prepareLaunchSession(sessionId),
+        launchSession: ({ sessionId }) => this.submitSession(sessionId),
+        stopSessionExecution: ({ sessionId }) => void this.stopSessionExecution(sessionId),
+        stopRemoteSession: () => { if (this.remoteSessionId) { void vscode.commands.executeCommand('csbridge.stopRemoteSession'); } },
+        connectTunnel: ({ sessionId }) => void this.connectSession(sessionId),
+        deleteSession: ({ sessionId }) => void this.confirmAndDeleteSession(sessionId),
+    };
+
+    private createSession(data: Extract<SessionsMessage, { command: 'addSession' }>): void {
         const now = Date.now();
-        const alias = data.alias ?? '';
+        const { alias } = data;
         const runtime = this.hostRuntime.get(alias);
         const session: SlurmSession = {
             id: uuidv7(), // time-ordered, so sorting by id is creation order
@@ -159,9 +141,9 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
             desired: 'running',
             alias,
             account: slurmAccount(data.account),
-            partition: data.partition ?? '',
+            partition: data.partition,
             rootFolder: runtime?.phase === 'ready' ? runtime.info.homeDir ?? '' : '',
-            resources: data.resources!,
+            resources: data.resources,
             jobId: '',
             submittedAt: now,
             errorMessage: '',

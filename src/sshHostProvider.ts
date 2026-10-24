@@ -1,24 +1,19 @@
 import * as vscode from 'vscode';
-import { HostsState, WebviewMessage } from './models';
-import { WebviewProvider } from './webviewProvider';
+import { HostsState, HostsMessage } from './models';
+import { Handlers, WebviewProvider } from './webviewProvider';
 import { SshManager } from './modules/sshSupport';
 import { SshConfigEntry, assertValidHost } from './modules/sshCommandParser';
 import { USER_SSH_CONFIG_PATH, addHostToConfigFile, deleteHostFromConfigFile, editHostInConfigFile } from './modules/sshHostsStore';
 
 // Webview provider for the SSH Hosts view: reads user + read-only system SSH config, writes user SSH hosts to ~/.ssh/config.
-export class SshHostProvider extends WebviewProvider {
+export class SshHostProvider extends WebviewProvider<HostsMessage> {
     public static readonly viewType = 'csbridge.hostsView';
     protected readonly viewKind = 'hosts' as const;
-
-    protected handleMessage(data: WebviewMessage): void {
-        switch (data.command) {
-            case 'ready': this.pushState(); break;
-            case 'deleteSshHost': void this.deleteSshHost(data.alias ?? ''); break;
-            case 'openTerminal': SshManager.getInstance().openTerminal(data.alias ?? ''); break;
-            case 'editSshHost': void vscode.commands.executeCommand('csbridge.editHost', data.alias); break;
-            default: this.logger.warn('Unknown command from hosts webview:', data);
-        }
-    }
+    protected readonly handlers: Handlers<HostsMessage> = {
+        deleteSshHost: ({ alias }) => void this.deleteSshHost(alias),
+        openTerminal: ({ alias }) => SshManager.getInstance().openTerminal(alias),
+        editSshHost: ({ alias }) => void vscode.commands.executeCommand('csbridge.editHost', alias),
+    };
 
     protected pushState(): void {
         if (!this.view) { return; }
