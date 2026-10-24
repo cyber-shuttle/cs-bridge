@@ -39,7 +39,7 @@ export abstract class WebviewProvider<M extends WebviewMessage> implements vscod
         (this.handlers[data.command as keyof Handlers<M>] as (message: M) => void)(data);
     }
 
-    protected pushState(): void { }
+    protected abstract pushState(): void;
 }
 
 export async function confirmModal(title: string, confirmLabel: string, detail?: string): Promise<boolean> {

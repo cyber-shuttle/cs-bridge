@@ -21,12 +21,10 @@ const promptFile = path.join(sessionDir, `prompt-${requestId}`);
 const responseFile = path.join(sessionDir, `response-${requestId}`);
 const cancelFile = path.join(sessionDir, 'cancel');
 
-// Write the prompt so the extension can read it
 fs.writeFileSync(promptFile, JSON.stringify({ id: requestId, prompt: prompt }), 'utf-8');
 
-// Poll for the response or cancel file
 const startTime = Date.now();
-const timeout = 120000; // 2 minute timeout
+const timeout = 120000;
 
 function poll() {
     if (Date.now() - startTime > timeout) {
@@ -44,7 +42,6 @@ function poll() {
         const password = fs.readFileSync(responseFile, 'utf-8');
         try { fs.unlinkSync(responseFile); } catch {}
         try { fs.unlinkSync(promptFile); } catch {}
-        // Output password to stdout — SSH reads it from here
         process.stdout.write(password);
         process.exit(0);
     }
