@@ -1,4 +1,4 @@
-import { SAMPLE_HISTORY_LEN, type GpuSample, type Resources, type UsageSample } from '@/models';
+import { type GpuSample, type Resources, type UsageSample } from '@/models';
 import { cpuCoreSeries } from '@/ui/logic/usage';
 import { humanKib } from '@/modules/slurmParse';
 import { Row, Stack, Text } from '@/ui/components/base';
@@ -40,7 +40,7 @@ export function UsageGraphs({ history, gpuCount }: { history: UsageSample[]; gpu
             {shown.map(g => (
                 <Stack key={g.label} gap={1}>
                     <Text muted size={10}>{g.label}</Text>
-                    <Sparkline lines={g.lines} slots={SAMPLE_HISTORY_LEN} title={graphTitle(g)} />
+                    <Sparkline lines={g.lines} title={graphTitle(g)} />
                 </Stack>
             ))}
         </Row>

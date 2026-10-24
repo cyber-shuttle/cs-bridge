@@ -153,7 +153,7 @@ export class SlurmBackend implements Backend {
         this.monitor().startMonitoring(session);
     }
 
-    // A refused scancel with the job still running leaves the session running, so Stop can be asked again.
+    // Throws when the job is still running after a refused scancel; the caller then leaves the session as it was.
     async stop(session: SlurmSession): Promise<void> {
         const stopCommand = `scancel ${session.jobId}`;
         this.log(session, `sending stop command: ${stopCommand}`);
@@ -165,10 +165,9 @@ export class SlurmBackend implements Backend {
         catch (err) {
             const read = await getSlurmJobStatus(session).catch(() => undefined); // it may have ended anyway
             if (read) { observe(session, read.status); }
-            if (!isTerminal(statusOf(session))) { patch(session, { desired: 'running' }); throw new Error(`failed to send stop command: ${errMsg(err)}`, { cause: err }); }
+            if (!isTerminal(statusOf(session))) { throw new Error(`failed to send stop command: ${errMsg(err)}`, { cause: err }); }
             this.log(session, `job already ended`);
         }
-        await this.monitor().endSession(session);
     }
 
     // Step 2: (re)build the in-process connection from the persisted refs. No window — reattach and connect share this.

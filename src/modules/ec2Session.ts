@@ -68,27 +68,20 @@ export class Ec2Backend implements Backend<Ec2Session> {
     }
 
     // EC2 refuses to stop a pending instance, so the stop is sent once the instance can take it and the task holds
-    // until the instance has stopped. A stop that could not be sent leaves the instance running.
+    // until the instance has stopped. Throws only before the stop is sent; the caller then leaves the instance running.
     async stop(session: Ec2Session): Promise<void> {
         const { region } = session.ec2;
+        const { ec2 } = await this.aws.ready();
         let sent = false;
-        try {
-            const { ec2 } = await this.aws.ready();
-            for (;;) {
-                // Once the stop is sent, an unreachable API only delays the reading.
-                const read = await ec2.describe(region, session.jobId).then(instance => ({ instance }), (err) => { if (sent) { return undefined; } throw err; });
-                if (!read) { logger.warn(`EC2 describe of ${session.jobId} failed; retrying`); await sleep(this.pollMs); continue; }
-                const { instance } = read;
-                if (!instance || instance.state === 'stopped' || instance.state === 'terminated') { observe(session, instance ? observedEc2(instance.state) : observedEc2('terminated')); break; }
-                if (!sent && instance.state !== 'pending') { await ec2.act('stop', region, session.jobId); sent = true; }
-                await sleep(this.pollMs);
-            }
+        for (;;) {
+            // Once the stop is sent, an unreachable API only delays the reading.
+            const read = await ec2.describe(region, session.jobId).then(instance => ({ instance }), (err) => { if (sent) { return undefined; } throw err; });
+            if (!read) { logger.warn(`EC2 describe of ${session.jobId} failed; retrying`); await sleep(this.pollMs); continue; }
+            const { instance } = read;
+            if (!instance || instance.state === 'stopped' || instance.state === 'terminated') { observe(session, instance ? observedEc2(instance.state) : observedEc2('terminated')); return; }
+            if (!sent && instance.state !== 'pending') { await ec2.act('stop', region, session.jobId); sent = true; }
+            await sleep(this.pollMs);
         }
-        catch (err) {
-            patch(session, { desired: 'running' }); // nothing throws once the stop is sent
-            throw err;
-        }
-        await this.monitor().endSession(session);
     }
 
     async connect(session: Ec2Session): Promise<boolean> {
