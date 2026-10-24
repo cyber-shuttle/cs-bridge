@@ -54,13 +54,11 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         this.shared.push(onRunsChange(() => void this.pushState()));
     }
 
-    private release(session: SlurmSession): Promise<void> { return this.transports.transportFor(session).release(session); }
-
-    // A preview that goes unsubmitted gives back its run and its claim.
-    private dropDraft() {
+    // A preview that goes unsubmitted gives back its run and its claim; the teardown is the monitor's, so quiesce waits for it.
+    private async dropDraft(): Promise<void> {
         const session = this.draft && getSession(this.draft.sessionId);
-        if (session) { void this.release(session); this.settle(session); }
         this.draft = null;
+        if (session) { await this.monitor.endSession(session); this.settle(session); }
     }
 
     // Sidebar only: drive every live session no beating window owns, rebuilding its tunnel connection (gone after a restart).
@@ -92,7 +90,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     protected readonly handlers: Handlers<SessionsMessage> = {
         dismissDraftSession: this.dismiss(() => { this.draftAlias = null; }),
-        dismissPreview: this.dismiss(() => this.dropDraft()),
+        dismissPreview: this.dismiss(() => void this.dropDraft()),
         dismissAlert: this.dismiss(() => { this.alert = null; }),
         addSession: m => this.createSession(m),
         refreshSlurmDiscovery: ({ alias }) => this.fetchSlurmDiscovery(alias, true),
@@ -305,7 +303,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         live.launching.add(session.id);
         this.runSessionTask(session, 'launch', () => start().finally(() => live.launching.delete(session.id)),
             isEc2(session) ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.',
-            (s, detail) => { fail(s, detail); void this.release(s); });
+            (s, detail) => { fail(s, detail); void this.monitor.endSession(s); });
     }
 
     private runSessionTask(session: SlurmSession, verb: string, run: () => Promise<void>, hint: string, mark: (session: SlurmSession, detail: string) => void): void {
@@ -330,10 +328,10 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
         live.busy.add(session.id);
         try {
+            await this.dropDraft(); // one preview at a time; a repeated Start gives its earlier attach back through the transport it used
             if (session.connectionInfo) { await this.monitor.endSession(session); } // the previous run's teardown, before a transport switch hides it
             patch(session, { transport: configuredTransport() });
             const draft = await prepareLaunch(session, this.transports.transportFor(session));
-            if (this.draft?.sessionId !== sessionId) { this.dropDraft(); }
             this.draft = { sessionId, ...draft };
         }
         catch (err) {
