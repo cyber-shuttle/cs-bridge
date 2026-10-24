@@ -56,7 +56,7 @@ export class JsonDir<T extends object> {
         Object.assign(queued, fields);
         this.emit();
         return this.save(id, record, queued, async () => {
-            if (this.pending.get(id) !== queued) { return; } // taken by an earlier write, or superseded by a set
+            if (!this.pending.has(id) || this.records.get(id) !== record) { return; } // taken by an earlier write, or superseded by a set
             this.pending.delete(id);
             const text = await this.files.read(this.path(id));
             if (text === undefined) {

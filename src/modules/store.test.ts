@@ -110,15 +110,15 @@ test('JsonDir keeps the fields of a failed write queued and lands them with the 
     const dir = new JsonDir<Rec>(files, 'recs', err => errors.push(err), (cur, next) => (cur ? replaceFields(cur, next) : next));
     await dir.load();
     const write = files.write;
-    files.write = async () => { throw new Error('disk full'); };
-    await dir.patch('a', { m: 7 });
+    files.write = async () => { files.write = write; throw new Error('disk full'); }; // fails once
+    dir.patch('a', { m: 7 });
+    await dir.patch('a', { k: 8 }); // queued behind the failed write, it carries both fields
     assert.equal(errors.length, 1);
-    assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 1 });
-    files.write = write;
+    assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 1, m: 7, k: 8 });
 
     await files.write('recs/a.json', JSON.stringify({ n: 2 })); // another window
     await dir.reload('a');
-    assert.deepEqual(dir.get('a'), { n: 2, m: 7 }, 'the queued field stays on top of the reload');
+    assert.deepEqual(dir.get('a'), { n: 2 }, 'nothing is queued once the fields landed');
     await dir.patch('a', { k: 9 });
-    assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 2, m: 7, k: 9 });
+    assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 2, k: 9 });
 });
