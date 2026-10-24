@@ -207,12 +207,8 @@ export class SshManager {
             'bash -l',
         ], { env, stdio: ['pipe', 'pipe', 'pipe'] });
 
-        let readyResolve!: () => void;
-        let readyReject!: (e: Error) => void;
-        const shell: HostShell = {
-            proc, askpassDir, alive: true, connecting: true,
-            ready: new Promise<void>((res, rej) => { readyResolve = res; readyReject = rej; }),
-        };
+        const ready = Promise.withResolvers<void>();
+        const shell: HostShell = { proc, askpassDir, alive: true, connecting: true, ready: ready.promise };
 
         const settle = (p: Pending): void => {
             const result = extractCommandResult(p.rid, p.outBuf, p.errBuf);
@@ -224,7 +220,7 @@ export class SshManager {
             const s = d.toString();
             if (shell.connecting) {
                 readyBuf += s; // drain profile/MOTD noise until the shell echoes its readiness marker
-                if (readyBuf.includes(READY_MARKER)) { shell.connecting = false; readyResolve(); }
+                if (readyBuf.includes(READY_MARKER)) { shell.connecting = false; ready.resolve(); }
                 return;
             }
             if (shell.current) { shell.current.outBuf += s; settle(shell.current); }
@@ -246,7 +242,7 @@ export class SshManager {
             try { fs.rmSync(askpassDir, { recursive: true, force: true }); }
             catch { /* best-effort */ }
             if (this.shells.get(alias) === shell) { this.shells.delete(alias); }
-            if (shell.connecting) { shell.connecting = false; readyReject(onConnect()); }
+            if (shell.connecting) { shell.connecting = false; ready.reject(onConnect()); }
             if (shell.current && !shell.current.settled) {
                 shell.current.settled = true;
                 shell.current.resolve({ stdout: shell.current.outBuf, stderr: `${shell.current.errBuf}\nssh connection closed`, code: 255 });

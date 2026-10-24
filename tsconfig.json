@@ -3,7 +3,8 @@
 		"module": "Node20",
 		"target": "ES2022",
 		"lib": [
-			"ES2022"
+			"ES2022",
+			"ES2024.Promise"
 		],
 		"rootDir": "src",
 		"paths": {
