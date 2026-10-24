@@ -27,7 +27,8 @@ function host(stubs: Record<string, string> = {}): { run: RemoteRunner; home: st
             buildShellCommand('t', command);
             calls.push(command);
             const r = spawnSync('bash', ['-c', command], { encoding: 'utf-8', env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` } });
-            return { stdout: r.stdout, stderr: r.stderr, code: r.status ?? 1 };
+            if (r.status !== 0) { throw new Error(`exit ${r.status}: ${r.stderr}`); }
+            return r.stdout;
         },
     };
     return { run, home, calls };
@@ -93,7 +94,7 @@ test('installLinkspan fails on a broken download and keeps the installed binary'
     const bin = join(home, '.cybershuttle/bin');
     mkdirSync(bin, { recursive: true });
     writeFileSync(join(bin, 'linkspan'), 'working build');
-    await assert.rejects(() => installLinkspan(session(), run, noopLog), /Failed to install Linkspan on SSH host cl/);
+    await assert.rejects(() => installLinkspan(session(), run, noopLog), /tar: /);
     assert.equal(readFileSync(join(bin, 'linkspan'), 'utf-8'), 'working build');
     assert.deepEqual(readdirSync(bin), ['linkspan']);
 });
@@ -113,8 +114,7 @@ test('validateSlurmConfig hands sbatch --test-only the job script and surfaces t
     assert.match(readFileSync(join(ok.home, 'script'), 'utf-8'), /^#SBATCH --partition=skx-dev$/m);
 
     const refused = host({ sbatch: 'echo "ERROR: Unknown project acct1" >&2; exit 1' });
-    await assert.rejects(() => validateSlurmConfig(s, refused.run, noopLog),
-        /Slurm on SSH host cl rejected the session configuration: ERROR: Unknown project acct1/);
+    await assert.rejects(() => validateSlurmConfig(s, refused.run, noopLog), /exit 1: ERROR: Unknown project acct1/);
 });
 
 test('submitJobToSlurm feeds sbatch the script and sbatchEnv, recording the job id', async () => {
