@@ -9,7 +9,6 @@ type ViewKind = 'sessions' | 'hosts' | 'stats' | 'summary';
 export type Handlers<M extends WebviewMessage> = { [K in Exclude<M['command'], 'ready'>]: (message: Extract<M, { command: K }>) => void };
 
 // Base for the sidebar webview views: renders the view's bundle and routes messages to/from the webview.
-// Subclasses set viewKind and override the hooks below.
 export abstract class WebviewProvider<M extends WebviewMessage> implements vscode.WebviewViewProvider {
     protected abstract readonly viewKind: ViewKind;
     protected abstract readonly handlers: Handlers<M>;

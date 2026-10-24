@@ -39,8 +39,7 @@ export function keepsInstalledLinkspan(local: string, latest: string): boolean {
     return !here[4];
 }
 
-// A version-check failure returns false (→ reinstall) rather than throwing, so it never fails the launch. As in
-// cs-plane, the latest tag decides, and the floor counts a build as its release.
+// As in cs-plane, the latest tag decides, and the floor counts a build as its release.
 export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<boolean> {
     let versions: string;
     try { versions = await run.runRemoteCommand(session.alias, `printf 'installed=%s\\nlatest=%s\\n' "$(~/.cybershuttle/bin/linkspan --version 2>/dev/null | head -1)" "$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cyber-shuttle/linkspan/releases/latest 2>/dev/null | sed 's#.*/##')"`); }
