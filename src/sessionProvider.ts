@@ -136,7 +136,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
         live.busy.add(sessionId);
         try {
-            await this.quiesce(session);
+            await this.monitor.quiesce(session);
             if (!this.drive(session)) { return; } // claimed after the loop ends, which releases the owner
             await disposeTunnelClient(sessionId);
             await this.backends.use(session, (b, s) => b.remove(s));
@@ -261,9 +261,6 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         return false;
     }
 
-    // A loop that has not yet noticed its session end, or a teardown still running, would undo what follows.
-    private quiesce(session: SlurmSession): Promise<void> { return this.monitor.quiesce(session); }
-
     // A claim outlives its task only as a monitor loop.
     private settle(session: SlurmSession): void {
         if (!this.monitor.monitoring(session.id)) { disown(session); }
@@ -322,7 +319,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         const session = this.requireSession(sessionId, 'prepare launch');
         if (!session || live.busy.has(session.id) || live.connecting.has(session.id)) { return; } // a Start during a prepare or a connect is a no-op
         live.busy.add(session.id);
-        try { await this.quiesce(session); }
+        try { await this.monitor.quiesce(session); }
         finally { live.busy.delete(session.id); }
         if (!this.drive(session)) { return; }
         // An EC2 session has no job script to preview, so Start submits at once.
