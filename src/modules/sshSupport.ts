@@ -33,7 +33,7 @@ const sessionKeyPath = (sessionId: string): string => sshKeyPath(sessionKeyName(
 type CommandResult = { stdout: string; stderr: string; code: number };
 
 // The single command in flight on a shell; its streams accumulate until both sentinels arrive (see sshShell).
-type Pending = { rid: string; outBuf: string; errBuf: string; settled: boolean; resolve: (r: CommandResult) => void };
+type Pending = { rid: string; outBuf: string; errBuf: string; resolve: (r: CommandResult) => void }; // resolve latches
 
 // One persistent `ssh … bash -l` per SSH host. `ready` resolves once the connect noise is drained; on Win32 (no
 // ControlMaster) this in-process channel is the only multiplexing, so authentication happens once here.
@@ -145,7 +145,7 @@ export class SshManager {
     private runOnShell(shell: HostShell, command: string): Promise<CommandResult> {
         return new Promise<CommandResult>((resolve) => {
             const rid = crypto.randomBytes(8).toString('hex');
-            shell.current = { rid, outBuf: '', errBuf: '', settled: false, resolve };
+            shell.current = { rid, outBuf: '', errBuf: '', resolve };
             shell.proc.stdin.write(buildShellCommand(rid, command));
         });
     }
@@ -193,7 +193,7 @@ export class SshManager {
 
         const settle = (p: Pending): void => {
             const result = extractCommandResult(p.rid, p.outBuf, p.errBuf);
-            if (result && !p.settled) { p.settled = true; p.resolve(result); }
+            if (result) { p.resolve(result); }
         };
 
         let readyBuf = '';
@@ -226,10 +226,7 @@ export class SshManager {
             }
             if (this.shells.get(alias) === shell) { this.shells.delete(alias); }
             if (shell.connecting) { shell.connecting = false; ready.reject(onConnect()); }
-            if (shell.current && !shell.current.settled) {
-                shell.current.settled = true;
-                shell.current.resolve({ stdout: shell.current.outBuf, stderr: `${shell.current.errBuf}\nssh connection closed`, code: 255 });
-            }
+            shell.current?.resolve({ stdout: shell.current.outBuf, stderr: `${shell.current.errBuf}\nssh connection closed`, code: 255 });
         };
         proc.on('close', (code: number | null) => drop(() => new Error(`SSH connection to ${alias} closed (exit ${code ?? 'null'})`)));
         proc.on('error', (err: Error) => drop(() => err));
