@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { HostsState, HostsMessage } from './models';
-import { Handlers, WebviewProvider } from './webviewProvider';
+import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { SshManager } from './modules/sshSupport';
 import { SshConfigEntry, assertValidHost } from './modules/sshCommandParser';
 import { USER_SSH_CONFIG_PATH, addHostToConfigFile, deleteHostFromConfigFile, editHostInConfigFile } from './modules/sshHostsStore';
@@ -36,12 +36,7 @@ export class SshHostProvider extends WebviewProvider<HostsMessage> {
 
     private async deleteSshHost(alias: string): Promise<void> {
         // Delete controls render only on user-config rows (system is read-only), so the target is always ~/.ssh/config.
-        const choice = await vscode.window.showWarningMessage(
-            `Delete SSH host '${alias}'?`,
-            { modal: true, detail: 'This deletes it from ~/.ssh/config.' },
-            'Delete',
-        );
-        if (choice !== 'Delete') { return; }
+        if (!await confirmModal(`Delete SSH host '${alias}'?`, 'Delete', 'This deletes it from ~/.ssh/config.')) { return; }
         try {
             deleteHostFromConfigFile(USER_SSH_CONFIG_PATH, alias);
         }
