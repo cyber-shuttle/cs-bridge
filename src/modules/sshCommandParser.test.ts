@@ -89,6 +89,7 @@ test('sshCommandToConfig keeps a bare IPv6 host whole', () => {
 
 test('sshCommandToConfig keeps a HostName set by -o', () => {
     assert.deepEqual(sshCommandToConfig('ssh -o HostName=10.0.0.5 lab'), { Host: 'lab', HostName: '10.0.0.5' });
+    assert.deepEqual(sshCommandToConfig('ssh -o hostname=10.0.0.5 lab'), { Host: 'lab', HostName: '10.0.0.5' });
 });
 
 test('sshCommandToConfig stops at the remote command', () => {

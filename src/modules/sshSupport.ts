@@ -244,7 +244,7 @@ export class SshManager {
         );
         panel.webview.html = renderAuthHtml(prompt, nonce);
         return new Promise<string | undefined>((resolve) => {
-            const finish = (v?: string) => { resolve(v); panel.dispose(); shell.cancelAuth = undefined; }; // resolve latches, dispose is idempotent
+            const finish = (v?: string) => { resolve(v); panel.dispose(); if (shell.cancelAuth === finish) { shell.cancelAuth = undefined; } }; // resolve latches, dispose is idempotent
             shell.cancelAuth = finish;
             panel.webview.onDidReceiveMessage((m: { type: 'submit'; value: string } | { type: 'cancel' }) =>
                 finish(m.type === 'submit' ? m.value : undefined));
@@ -262,9 +262,9 @@ export class SshManager {
             catch { return; }
             for (const file of files) {
                 if (!file.startsWith('prompt-') || handled.has(file)) { continue; }
-                handled.add(file);
                 try {
                     const { id, prompt } = parseJson<{ id: string; prompt: string }>(fs.readFileSync(path.join(askpassDir, file), 'utf-8'));
+                    handled.add(file); // a file still being written parses on a later tick
                     const password = await this.promptAuth(shell, alias, prompt);
                     if (password !== undefined) {
                         fs.writeFileSync(path.join(askpassDir, `response-${id}`), password, 'utf-8');
@@ -274,7 +274,7 @@ export class SshManager {
                         shell.proc.kill();
                     }
                 }
-                catch { /* prompt-file read race — ignore, retry next tick */ }
+                catch { /* mid-write, or the folder went with the shell */ }
             }
         }, 200);
     }
