@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JsonDir, replaceFields } from './store';
 import { memoryFiles } from './memoryFiles';
+import { must } from './testSupport';
 
 interface Rec { n: number; m?: number; k?: number }
 
@@ -12,13 +13,13 @@ test('JsonDir skips its own writes and merges another window\'s in place', async
     const dir = new JsonDir<Rec>(files, 'recs', err => assert.fail(String(err)), (cur, next) => (cur ? Object.assign(cur, next) : next));
     await dir.load();
     dir.onDidChange(() => changes++);
-    const a = dir.get('a')!;
+    const a = must(dir.get('a'));
     assert.deepEqual(a, { n: 1 });
 
     a.m = 7;
     dir.set('a', a);
     await dir.reload('a'); // this window's own write, read back once it lands
-    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 1, m: 7 });
+    assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 1, m: 7 });
     assert.equal(changes, 1);
 
     await files.write('recs/a.json', JSON.stringify({ n: 2 })); // another window
@@ -44,13 +45,13 @@ test('JsonDir.patch lands its fields on another window\'s newer record and tells
     dir.patch('a', { m: 7 });
     dir.patch('a', { k: 9 }); // queued while the first write reads the file
     await dir.reload('a');
-    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 7, k: 9 });
+    assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 2, m: 7, k: 9 });
     assert.deepEqual(dir.get('a'), { n: 2, m: 7, k: 9 });
     assert.equal(changes, 3);
 
     await files.write('recs/a.json', JSON.stringify({ n: 2, m: 99, k: 9 })); // another window's newer m
     await dir.patch('a', { k: 10 });
-    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 99, k: 10 }, 'a field written earlier is not put back');
+    assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 2, m: 99, k: 10 }, 'a field written earlier is not put back');
 
     await files.remove('recs/a.json'); // another window deleted it
     await dir.patch('a', { k: 11 });
@@ -99,5 +100,5 @@ test('JsonDir.patch keeps a field patched while its write reads the file', async
     await first;
     await dir.reload('a');
     assert.deepEqual(dir.get('a'), { n: 1, m: 5, k: 1 });
-    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 1, m: 5, k: 1 });
+    assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 1, m: 5, k: 1 });
 });

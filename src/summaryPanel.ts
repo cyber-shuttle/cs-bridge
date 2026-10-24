@@ -33,7 +33,8 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
     // Pinned to the run the panel opened on, which the session may leave behind.
     const job = { alias: session.alias, jobId: session.jobId };
     const post = () => {
-        const live = getSession(session.id) ?? session;
+        const live = getSession(session.id);
+        if (!live) { panel.dispose(); return; } // deleted while the tab was up
         const recorded = past ?? readSessionRuns(live.id).find(r => isSameRun(r, job));
         const state: SummaryState = {
             session: recorded

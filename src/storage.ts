@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as nodeFs from 'fs';
+import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { Files, Steps, migrate } from './modules/store';
 import { initSessionStore } from './extensionStore';
 import { initRunStore } from './modules/runStore';
@@ -13,8 +15,13 @@ export function storageFiles(root: vscode.Uri): Files {
     };
     return {
         read: name => Promise.resolve(fs.readFile(uri(name))).then(b => new TextDecoder().decode(b), missing(undefined)),
-        // Written whole: a rename lands the file in one step, so no window reads a truncated record.
-        write: async (name, text) => { await fs.writeFile(uri(`${name}.tmp`), new TextEncoder().encode(text)); await fs.rename(uri(`${name}.tmp`), uri(name), { overwrite: true }); },
+        // A POSIX rename replaces the file in one step, so no window reads a truncated record; vscode's rename deletes first.
+        write: async (name, text) => {
+            const file = uri(name).fsPath, tmp = `${file}.${randomUUID()}.tmp`;
+            await nodeFs.promises.mkdir(path.dirname(file), { recursive: true });
+            await nodeFs.promises.writeFile(tmp, text);
+            await nodeFs.promises.rename(tmp, file);
+        },
         // Synchronous: deactivate removes the window heartbeat, and an async delete may not land before the host exits.
         remove: name => Promise.resolve(nodeFs.rmSync(uri(name).fsPath, { force: true })),
         list: dir => Promise.resolve(fs.readDirectory(uri(dir))).then(es => es.map(([name]) => name), missing([])),

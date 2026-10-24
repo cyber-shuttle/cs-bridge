@@ -57,19 +57,24 @@ export class JsonDir<T extends object> {
             this.pending.delete(id);
             const record = this.records.get(id);
             if (!queued || !record) { return; }
-            const text = await this.files.read(this.path(id));
-            if (text === undefined) {
-                this.records.delete(id);
-                this.emit();
-                return;
-            }
-            if (text !== record.text) {
-                this.takeTheirs(record.value, parseJson<T>(text), parseJson<T>(record.text), { ...queued, ...this.pending.get(id) });
-                this.emit();
-            }
-            record.text = JSON.stringify(record.value, null, 2);
-            await this.files.write(this.path(id), record.text);
+            try { await this.land(id, record, queued); }
+            catch (err) { this.pending.set(id, { ...queued, ...this.pending.get(id) }); throw err; } // the fields wait for the next write
         });
+    }
+
+    private async land(id: string, record: { value: T; text: string }, queued: Partial<T>): Promise<void> {
+        const text = await this.files.read(this.path(id));
+        if (text === undefined) {
+            this.records.delete(id);
+            this.emit();
+            return;
+        }
+        if (text !== record.text) {
+            this.takeTheirs(record.value, parseJson<T>(text), parseJson<T>(record.text), { ...queued, ...this.pending.get(id) });
+            this.emit();
+        }
+        record.text = JSON.stringify(record.value, null, 2);
+        await this.files.write(this.path(id), record.text);
     }
 
     private takeTheirs(value: T, theirs: T, base: T, held: Partial<T>): void {
