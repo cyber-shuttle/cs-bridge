@@ -64,9 +64,8 @@ export class JsonDir<T extends object> {
                 return;
             }
             if (text !== record.text) {
-                const held = { ...queued, ...this.pending.get(id) };
-                try { this.takeTheirs(record.value, parseJson<T>(text), parseJson<T>(record.text), held); this.emit(); }
-                catch { /* another window mid-write; its reload follows */ }
+                this.takeTheirs(record.value, parseJson<T>(text), parseJson<T>(record.text), { ...queued, ...this.pending.get(id) });
+                this.emit();
             }
             record.text = JSON.stringify(record.value, null, 2);
             await this.files.write(this.path(id), record.text);
@@ -90,7 +89,7 @@ export class JsonDir<T extends object> {
     }
 
     // Runs after this window's earlier writes land, so unchanged text is one of them; a record with a write still queued
-    // waits for that write's event, and text that does not parse is another window's write in progress.
+    // waits for that write's event.
     reload(id: string): Promise<void> {
         return this.enqueue(async () => {
             const text = await this.files.read(this.path(id));
@@ -100,10 +99,7 @@ export class JsonDir<T extends object> {
                 this.records.delete(id);
             }
             else {
-                let next: T;
-                try { next = parseJson<T>(text); }
-                catch { return; }
-                this.records.set(id, { value: this.merge(record?.value, next), text });
+                this.records.set(id, { value: this.merge(record?.value, parseJson<T>(text)), text });
             }
             this.emit();
         });

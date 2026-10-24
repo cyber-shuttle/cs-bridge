@@ -15,3 +15,4 @@ bun.lock
 lefthook.yml
 out/hostTests.js*
 .vscode-test/**
+scripts/hostTest.js
