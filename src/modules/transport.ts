@@ -163,7 +163,7 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
     const tunnel = await mgmtClient.getTunnel(ref, { includePorts: true, tokenScopes: [TunnelAccessScopes.Connect] });
     if (!tunnel) { throw new Error(`${t.label} ${ref.tunnelId} not found.`); }
 
-    logger.info(`Fetched ${t.label} ${tunnel.tunnelId}: ${tunnel.endpoints?.length ?? 0} endpoints, ${tunnel.ports?.length ?? 0} ports`);
+    logger.info(`Fetched ${t.label} ${tunnel.tunnelId} with ports ${tunnel.ports?.map(p => p.portNumber).join(', ')}`);
 
     // Register before connecting so a re-entrant connect can't orphan the prior client and a failed connect stays disposable.
     await disposeTunnelClient(session.id);

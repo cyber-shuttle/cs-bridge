@@ -13,7 +13,7 @@ export interface Files {
 export class JsonDir<T> {
     private readonly items = new Map<string, T>();
     private readonly texts = new Map<string, string>(); // each record's text as last read or written
-    private readonly unsaved = new Map<string, number>(); // this window's queued writes per record
+    private readonly unsaved = new Map<string, Promise<void>>(); // each record's last queued write, until it starts
     private readonly listeners = new Set<() => void>();
     private queue = Promise.resolve();
 
@@ -53,7 +53,7 @@ export class JsonDir<T> {
     reload(id: string): Promise<void> {
         return this.enqueue(async () => {
             const text = await this.files.read(this.path(id));
-            if (this.unsaved.get(id) || text === this.texts.get(id)) { return; }
+            if (this.unsaved.has(id) || text === this.texts.get(id)) { return; }
             if (text === undefined) {
                 this.texts.delete(id);
                 this.items.delete(id);
@@ -77,8 +77,9 @@ export class JsonDir<T> {
     private path(id: string) { return `${this.dir}/${id}.json`; }
 
     private save(id: string, op: () => Promise<void>): Promise<void> {
-        this.unsaved.set(id, (this.unsaved.get(id) ?? 0) + 1);
-        return this.enqueue(() => { this.unsaved.set(id, (this.unsaved.get(id) ?? 1) - 1); return op(); });
+        const write: Promise<void> = this.enqueue(() => { if (this.unsaved.get(id) === write) { this.unsaved.delete(id); } return op(); });
+        this.unsaved.set(id, write);
+        return write;
     }
 
     private enqueue(op: () => Promise<void>): Promise<void> {
@@ -94,7 +95,8 @@ export const SCHEMA_VERSION = 3;
 
 // steps[n] takes the store from version n to n + 1.
 export async function migrate(files: Files, steps: Steps): Promise<void> {
-    let version = (JSON.parse(await files.read('schema.json') ?? '{}') as { version?: number }).version ?? 0;
+    const schema = await files.read('schema.json');
+    let version = schema ? (JSON.parse(schema) as { version: number }).version : 0;
     if (version > SCHEMA_VERSION) {
         throw new Error(`CS Bridge storage is at schema ${version}, newer than this CS Bridge reads (${SCHEMA_VERSION}); update CS Bridge.`);
     }

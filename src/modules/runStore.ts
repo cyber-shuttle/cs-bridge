@@ -3,17 +3,19 @@ import { Files, JsonDir } from './store';
 
 // One file per session: runs/{id}.json = { runs, samples, stats }, the run history, live samples and live sacct copy.
 const RUNS_PER_SESSION = 10;
-let runsDir: JsonDir<Partial<RunsFile>>;
+// On disk any field may be absent, and a run recorded before 0.2.4 may lack its samples.
+export type StoredRunsFile = Partial<Omit<RunsFile, 'runs'> & { runs: (Omit<Run, 'samples'> & Partial<Run>)[] }>;
+let runsDir: JsonDir<StoredRunsFile>;
 
 export async function initRunStore(files: Files, onError: (err: unknown) => void) {
-    runsDir = new JsonDir<Partial<RunsFile>>(files, 'runs', onError);
+    runsDir = new JsonDir<StoredRunsFile>(files, 'runs', onError);
     await runsDir.load();
     return runsDir;
 }
 
 export const isSameRun = (a: Pick<Run, 'alias' | 'jobId'>, b: Pick<Run, 'alias' | 'jobId'>): boolean =>
     a.alias === b.alias && a.jobId === b.jobId;
-const whole = (f: Partial<RunsFile> = {}): RunsFile => ({ runs: [], samples: [], ...f });
+const whole = ({ runs = [], ...f }: StoredRunsFile = {}): RunsFile => ({ samples: [], ...f, runs: runs.map(r => ({ samples: [], ...r })) });
 const read = (id: string): RunsFile => whole(runsDir.get(id));
 
 // fn returns null to skip the write.

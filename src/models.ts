@@ -109,7 +109,7 @@ export enum SlurmJobStatus {
     UNKNOWN = 'unknown',
 }
 
-export type ViewSession = SlurmSession & { status: SessionStatus; isCurrent?: boolean; windowAlive?: boolean; opening?: boolean; samples?: UsageSample[] };
+export type ViewSession = SlurmSession & { status: SessionStatus; samples: UsageSample[]; isCurrent?: boolean; windowAlive?: boolean; opening?: boolean };
 
 export const SAMPLE_HISTORY_LEN = 20; // rolling live-sample window, also the sparkline slot count
 export const POLLING_INTERVAL_MS = 5000;
@@ -147,10 +147,9 @@ export interface Run {
     endedAt: number;
     finalState: SessionStatus;
     stats?: RunStats;
-    samples?: UsageSample[];
+    samples: UsageSample[];
 }
 
-// On disk any field may be absent; runStore reads a file as this shape.
 export interface RunsFile { runs: Run[]; samples: UsageSample[]; stats?: RunStats }
 
 export interface StatsState {
@@ -158,8 +157,7 @@ export interface StatsState {
 }
 
 export interface SummaryState {
-    session: ViewSession;
-    samples?: UsageSample[]; // live sample history (sparklines)
+    session: ViewSession; // its samples are the live history, or a past run's
     stats?: RunStats; // sacct accounting; absent → the webview shows a "fetching…" spinner
 }
 

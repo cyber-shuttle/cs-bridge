@@ -27,7 +27,7 @@ export class StatsProvider extends WebviewProvider<StatsMessage> {
             const session = getSession(sessionId);
             const run = readAllRuns().find(r => r.sessionId === sessionId && r.jobId === jobId);
             // Show the run's own recorded snapshot, not the live session's, which may have been started again.
-            if (session) { openSummaryPanel(this.extensionUri, session, { stats: run?.stats, samples: run?.samples }); }
+            if (session && run) { openSummaryPanel(this.extensionUri, session, run); }
         },
     };
 

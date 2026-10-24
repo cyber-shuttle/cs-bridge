@@ -7,10 +7,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { UUID } from 'uuidv7';
-import { Run, RunStats, RunsFile, SessionStatus, SlurmJobStatus, SlurmSession, UsageSample } from '../models';
+import { Run, RunStats, SessionStatus, SlurmJobStatus, SlurmSession, UsageSample } from '../models';
 import { deleteFile, jsonFiles, lock, readJson, release, writeJson } from './fsSupport';
 import { Files, Steps } from './store';
 import { gpuTypeOf, slurmAccount } from './slurmParse';
+import type { StoredRunsFile } from './runStore';
 
 export const CS_HOME = path.join(os.homedir(), '.cybershuttle');
 
@@ -60,7 +61,7 @@ function statsV1(s?: V0Stats): RunStats | undefined {
     return { ...rest, requestedMemory: rest.requestedMemory ?? reqMem, elapsedSeconds: rest.elapsedSeconds ?? elapsedSec, memoryEfficiencyPct: rest.memoryEfficiencyPct ?? memEfficiencyPct };
 }
 
-function runsFileV1(f: V0RunsFile): Partial<RunsFile> {
+function runsFileV1(f: V0RunsFile): StoredRunsFile {
     return {
         runs: f.runs?.map(r => ({
             sessionId: r.sessionId ?? '', alias: r.alias ?? r.cluster ?? '', jobId: r.jobId ?? '', account: r.account ?? slurmAccount(r.allocation),

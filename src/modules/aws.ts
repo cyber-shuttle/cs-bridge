@@ -20,9 +20,9 @@ export class AwsClient implements vscode.Disposable {
     get account(): string | null { return this.session?.accessKeyId ?? null; }
     get ec2(): Ec2 | undefined { return this.session?.ec2; }
 
-    requireEc2(): Ec2 {
+    require(): { ec2: Ec2; regions: string[] } {
         if (!this.session) { throw new Error('Sign in to AWS first.'); }
-        return this.session.ec2;
+        return this.session;
     }
 
     dispose(): void { this.signedIn.dispose(); }

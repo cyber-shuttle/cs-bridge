@@ -33,10 +33,10 @@ export class Ec2Backend implements Backend<Ec2Session> {
 
     // Every tagged instance without a record becomes one, so a VM launched from another machine is never lost.
     async adopt(): Promise<void> {
-        const ec2 = this.aws.requireEc2();
+        const { ec2, regions } = this.aws.require();
         // A launch in flight elsewhere has tagged its instance with the record's alias before it records the id.
         const known = new Set(getAllSessions().flatMap(s => [s.jobId, csHostAlias(s)]));
-        for (const region of this.aws.regions ?? []) {
+        for (const region of regions) {
             const found = await ec2.list(region).catch((err) => { logger.error(`EC2 list of ${region} failed:`, err); return []; });
             for (const i of found.filter(i => !known.has(i.id) && !(i.name && known.has(i.name)) && i.state !== 'shutting-down')) {
                 // Named by the instance id, so its last six characters alias the SSH host.
@@ -50,7 +50,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
     }
 
     async start(session: Ec2Session): Promise<void> {
-        const ec2 = this.aws.requireEc2();
+        const { ec2 } = this.aws.require();
         const spec = session.ec2;
         const jobId = session.jobId || await ec2.launch(spec.image, spec.type, spec.region, csHostAlias(session));
         if (session.jobId) { await ec2.act('start', spec.region, jobId); }
@@ -61,7 +61,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
 
     // EC2 refuses to stop a pending instance. 'stopping' then holds until the poll sees the instance stopped.
     async stop(session: Ec2Session): Promise<void> {
-        const ec2 = this.aws.requireEc2();
+        const { ec2 } = this.aws.require();
         const { region } = session.ec2;
         while ((await ec2.describe(region, session.jobId))?.state === 'pending') { await new Promise(res => setTimeout(res, 5_000)); }
         await ec2.act('stop', region, session.jobId);
@@ -74,7 +74,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
     }
 
     async remove(session: Ec2Session): Promise<void> {
-        if (session.jobId) { await this.aws.requireEc2().act('terminate', session.ec2.region, session.jobId); }
+        if (session.jobId) { await this.aws.require().ec2.act('terminate', session.ec2.region, session.jobId); }
     }
 
     async tick(session: Ec2Session): Promise<void> {

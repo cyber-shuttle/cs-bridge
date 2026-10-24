@@ -5,7 +5,7 @@ import { isSameRun, readAllRuns, readRecentSamples, readSessionStats, onRunsChan
 import { UsageSample, RunStats, SlurmSession, SummaryState, WebviewMessage } from './models';
 
 // A finished run's fixed snapshot (from the Run History view), shown instead of the live session, which may have been started again.
-interface RunSnapshot { stats?: RunStats; samples?: UsageSample[] }
+interface RunSnapshot { stats?: RunStats; samples: UsageSample[] }
 
 const PENDING_KEY = 'csbridge.pendingSummaries';
 // Trade-off: hard cap so a never-consumed baton (e.g. an activation that errors before consuming) can't grow globalState unbounded. Bump if summaries ever legitimately queue deeper than this.
@@ -38,7 +38,7 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
         const run = runSnapshot ? undefined : readAllRuns().find(r => isSameRun(r, s));
         const samples = runSnapshot ? runSnapshot.samples : readRecentSamples(s.id);
         const stats = runSnapshot ? runSnapshot.stats : (run?.stats ?? readSessionStats(s.id));
-        const state: SummaryState = { session: { ...s, status: statusOf(s) }, samples, stats };
+        const state: SummaryState = { session: { ...s, status: statusOf(s), samples }, stats };
         void panel.webview.postMessage({ command: 'state', state });
     };
     const msgSub = panel.webview.onDidReceiveMessage((m: WebviewMessage) => { if (m.command === 'ready') { post(); } });

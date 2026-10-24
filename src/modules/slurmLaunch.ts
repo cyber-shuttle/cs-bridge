@@ -49,7 +49,12 @@ export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunne
         return false;
     }
 
-    const [installed = '', latest = ''] = ['installed', 'latest'].map(key => (versions.match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1] ?? '').replace(/[v\s]/g, ''));
+    const match = versions.match(/^installed=(.*)\nlatest=(.*)$/m);
+    if (!match) {
+        log.error(`Failed to check Linkspan version on SSH host ${session.alias}: ${versions}`);
+        return false;
+    }
+    const [, installed = '', latest = ''] = match.map(v => v.replace(/[v\s]/g, ''));
     if (keepsInstalledLinkspan(installed, latest) && keepsInstalledLinkspan(installed.replace(/\.[0-9a-f]{7,40}$/, ''), MINIMUM)) {
         log.info(`Linkspan ${installed} on SSH host ${session.alias} is current (latest ${latest || 'unknown'}); keeping it`);
         return true;
