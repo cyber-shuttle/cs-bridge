@@ -43,7 +43,7 @@ export class Backends {
 }
 
 // One independent poll loop per active session. No shared lock: each loop mutates
-// only its own session and updateSession is synchronous, so ticks never race.
+// only its own session and a patch applies synchronously, so ticks never race.
 interface Loop { session: SlurmSession; timer: ReturnType<typeof setInterval>; ticking: boolean }
 export class SessionMonitor {
     private loops = new Map<string, Loop>();
@@ -146,12 +146,13 @@ export class SlurmBackend implements Backend {
         const stopCommand = `scancel ${session.jobId}`;
         this.log(session, `sending stop command: ${stopCommand}`);
         try {
-            await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand);
+            await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand, { batch: true }); // the owner's shell is up; no auth prompt in a window that did not ask
             observe(session, SlurmJobStatus.CANCELLED);
             this.log(session, `stop command sent successfully`);
         }
         catch (err) {
-            observe(session, await getSlurmJobStatus(session).then(r => r.status, () => SlurmJobStatus.UNKNOWN)); // it may have ended anyway
+            const read = await getSlurmJobStatus(session).catch(() => undefined); // it may have ended anyway
+            if (read) { observe(session, read.status); }
             if (!isTerminal(statusOf(session))) { patch(session, { desired: 'running' }); throw new Error(`failed to send stop command: ${errMsg(err)}`, { cause: err }); }
             this.log(session, `job already ended`);
         }

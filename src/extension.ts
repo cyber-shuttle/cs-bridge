@@ -37,6 +37,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const plane = new Plane(context.secrets);
     const transports = new Transports(plane);
     const aws = new AwsClient(context.secrets);
+    await aws.restore(); // before any sweep can resume an EC2 stop
     const sessionProvider = new SessionProvider(context.extensionUri, transports, aws, id);
     const sshHostProvider = new SshHostProvider(context.extensionUri);
     const statsProvider = new StatsProvider(context.extensionUri);
@@ -55,7 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('csbridge.clearRunHistory', () => statsProvider.clearHistory()),
     );
 
-    void aws.restore().finally(() => void sessionProvider.reattachLiveSessions()); // a resumed EC2 stop needs the client
+    void sessionProvider.reattachLiveSessions();
 
     if (id) {
         context.subscriptions.push(new RemoteSessionController(context, id));

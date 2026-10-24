@@ -140,7 +140,7 @@ function statusText<S extends ViewSession>(s: S, now: number, provider: Provider
         case 'connecting': return { text: 'Connecting…' };
         case 'unreachable': return { text: err ? `Unreachable: ${err}` : 'SSH host unreachable — retrying…', title: err };
         case 'stopping': return { text: 'Stopping…' };
-        case 'stopped': return { text: err ? `Stop failed: ${err}` : 'Stopped' };
+        case 'stopped': return { text: 'Stopped', title: err };
         case 'failed': return { text: err ? `Failed: ${err}` : 'Failed', title: err };
     }
 }

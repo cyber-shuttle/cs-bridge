@@ -43,12 +43,8 @@ export function addSession(session: SlurmSession) {
     sessions.set(session.id, session);
 }
 
-export function updateSession(session: SlurmSession) {
-    if (sessions.get(session.id)) { sessions.set(session.id, session); }
-}
-
 export function patch(session: SlurmSession, fields: Partial<SlurmSession>): void {
-    updateSession(Object.assign(session, fields));
+    sessions.patch(session.id, fields);
 }
 
 // Written only on change: the monitor says it every tick.

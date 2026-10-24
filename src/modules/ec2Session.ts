@@ -64,13 +64,12 @@ export class Ec2Backend implements Backend<Ec2Session> {
     }
 
     // EC2 refuses to stop a pending instance, so the stop is sent once the instance can take it and the task holds
-    // until the instance has stopped. Signed out, the stop waits for the next sweep; refused, it leaves the instance running.
+    // until the instance has stopped. A stop that could not be sent leaves the instance running.
     async stop(session: Ec2Session): Promise<void> {
-        const ec2 = this.aws.ec2;
-        if (!ec2) { return; }
         const { region } = session.ec2;
+        let sent = false;
         try {
-            let sent = false;
+            const { ec2 } = this.aws.require();
             for (;;) {
                 const instance = await ec2.describe(region, session.jobId);
                 if (!instance || instance.state === 'stopped' || instance.state === 'terminated') { observe(session, instance ? observedEc2(instance.state) : observedEc2('terminated')); break; }
@@ -78,7 +77,10 @@ export class Ec2Backend implements Backend<Ec2Session> {
                 await sleep(5_000);
             }
         }
-        catch (err) { patch(session, { desired: 'running' }); throw err; }
+        catch (err) {
+            if (!sent) { patch(session, { desired: 'running' }); }
+            throw err;
+        }
         await this.monitor().endSession(session);
     }
 

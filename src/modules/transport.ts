@@ -5,7 +5,7 @@
 import { ConnectionInfo, SlurmSession } from '../models';
 import { Logger, errMsg } from '../logger';
 import { Plane } from '../plane';
-import { live, patch, updateSession } from '../extensionStore';
+import { live, patch } from '../extensionStore';
 import type { TunnelRequestOptions } from '@microsoft/dev-tunnels-management';
 import { ConnectionStatus, type TunnelConnectionOptions, type TunnelRelayTunnelClient } from '@microsoft/dev-tunnels-connections';
 import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
@@ -144,7 +144,7 @@ export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Pr
         throw err;
     }
 
-    updateSession(session);
+    patch(session, { connectionInfo: ci });
     logger.info(`SSH server for session ${session.id} is on port ${ci.sshPort}, reached through ${t.label} ${t.tunnelRef(session)?.tunnelId}.`);
     return ci;
 }
