@@ -70,7 +70,7 @@ function consumeFlags(tokens: string[], config: Config): number {
     return parser.optind();
 }
 
-function parseHostToken(token: string): { hostname: string; username?: string; port?: string } {
+export function parseHostToken(token: string): { hostname: string; username?: string; port?: string } {
     let url: URL | undefined;
     try { url = new URL(token); }
     catch { /* not a URL */ }

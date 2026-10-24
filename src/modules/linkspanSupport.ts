@@ -32,10 +32,6 @@ async function post(baseUrl: string, headers: Record<string, string>, path: stri
     return resp;
 }
 
-export async function getHealth(baseUrl: string, headers: Record<string, string>): Promise<void> {
-    await get(baseUrl, headers, '/health', (j): j is { status: 'ok' } => isRecord(j) && j.status === 'ok');
-}
-
 // GET /usage — Linkspan's live sample; a valid body also confirms Linkspan is up.
 export async function getSample(baseUrl: string, headers: Record<string, string>): Promise<UsageSample> {
     return get(baseUrl, headers, '/usage', (j): j is UsageSample => isRecord(j));

@@ -22,7 +22,7 @@ export function fmtPct(pct?: number): string {
 }
 
 // Group runs by session, preserving input order across groups (each session ordered by its most recent run) and within
-// each group. Assumes `runs` is already newest-first, as readAllRuns returns it; each group is non-empty.
+// each group. Assumes `runs` is already newest-first, as readAllRuns returns it.
 export function groupRunsBySession(runs: Run[]): [Run, ...Run[]][] {
     const byId = new Map<string, [Run, ...Run[]]>();
     for (const run of runs) {
