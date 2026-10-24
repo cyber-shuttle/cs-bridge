@@ -3,7 +3,7 @@ import { Logger, errMsg } from './../logger';
 import { PlaneError } from '../plane';
 import { getSession, patch, setError, observe, statusOf, live, claim, owns, disown } from '../extensionStore';
 import { recordSessionRun, sacctStats } from '../sessionRunSupport';
-import { SshManager, hasSessionKey, syncSshConfig } from './sshSupport';
+import { SshManager, deleteSessionPrivateKey, hasSessionKey, syncSshConfig } from './sshSupport';
 import { getSampleViaSrun, getSlurmJobStatus } from './slurmSupport';
 import { buildSlurmScript } from './slurmParse';
 import { isReachable, isTerminal } from './sessionMachine';
@@ -33,7 +33,7 @@ export interface Backend<S extends SlurmSession = SlurmSession> {
     forget(sessionId: string): void;
 }
 
-// The one place that tells an EC2 record from a Slurm one.
+// Routes a lifecycle call to the record's backend.
 export class Backends {
     constructor(private readonly slurm: Backend, private readonly ec2: Backend<Ec2Session>) { }
 
@@ -172,6 +172,7 @@ export class SlurmBackend implements Backend {
         const transport = this.transports.transportFor(session);
         try {
             const ci = await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
+            patch(session, { connectionInfo: ci });
             if (!hasSessionKey(session.id)) { throw new Error('SSH private key not found for session'); }
             await connectSessionToTunnel(transport, session, ci, () => void this.reconnect(session.id));
             // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets no local port.
@@ -199,7 +200,10 @@ export class SlurmBackend implements Backend {
         await this.connect(session);
     }
 
-    remove(session: SlurmSession): Promise<void> { return this.transports.remove(session); }
+    async remove(session: SlurmSession): Promise<void> {
+        await this.transports.remove(session);
+        deleteSessionPrivateKey(session.id);
+    }
 
     async tick(session: SlurmSession, alive: () => boolean): Promise<void> {
         const status = statusOf(session);
@@ -223,7 +227,7 @@ export class SlurmBackend implements Backend {
                     this.run(session.id).probeFails = 0;
                     setError(session, ''); // samples go to the per-session runs file, not the record
                     if (m.memBytes !== undefined) { appendSample(session.id, { ...m, atMs: Date.now() }); }
-                    void this.refreshStats(session);
+                    void this.refreshStats(session, alive);
                 }
                 catch (err) {
                     if (alive() && isReachable(statusOf(session))) {
@@ -284,6 +288,7 @@ export class SlurmBackend implements Backend {
             const ci = await ensureRemoteSession(transport, session); // also refreshes the tunnel
             await transport.withLinkspan(session, ci, getHealth); // a reused sshd port proves nothing; Linkspan must answer
             if (!alive()) { return; }
+            patch(session, { connectionInfo: ci });
             this.run(session.id).probeFails = 0;
             this.log(session, 'Linkspan is ready to connect.');
             setError(session, ''); // clear any transient-retry warning
@@ -305,12 +310,12 @@ export class SlurmBackend implements Backend {
     }
 
     // Throttled sacct refresh, fire-and-forget from the health path (sacctStats swallows its own errors).
-    private async refreshStats(session: SlurmSession): Promise<void> {
+    private async refreshStats(session: SlurmSession, alive: () => boolean): Promise<void> {
         const now = Date.now(), run = this.run(session.id);
         if (run.sacctAt !== undefined && now - run.sacctAt < SACCT_REFRESH_MS) { return; }
         run.sacctAt = now;
         const m = await sacctStats(session);
-        if (m) { writeSessionStats(session.id, m); }
+        if (m && alive()) { writeSessionStats(session.id, m); }
     }
 }
 

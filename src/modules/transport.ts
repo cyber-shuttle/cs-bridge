@@ -131,10 +131,10 @@ export class Transports {
 const activeTunnelClients = new Map<string, TunnelRelayClient>();
 
 // Step 1: the session's sshd. Linkspan answers a repeat with the running one, so asking each time self-heals a port a
-// Linkspan restart changed.
+// Linkspan restart changed. Returns the connection info to record; the caller writes it, once it knows the run still wants it.
 export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Promise<ConnectionInfo> {
-    const ci = session.connectionInfo;
-    if (!ci) { throw new Error(`Session ${session.id} has no run to reach.`); }
+    if (!session.connectionInfo) { throw new Error(`Session ${session.id} has no run to reach.`); }
+    const ci = { ...session.connectionInfo };
     await t.ensureTunnel(session, ci); // refreshes the tunnel and its connect token
 
     // Best-effort: if Linkspan stalls (a flaky tunnel) once its sshd is known, proceed with that port.
@@ -143,8 +143,6 @@ export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Pr
         if (ci.sshPort) { return ci; }
         throw err;
     }
-
-    patch(session, { connectionInfo: ci });
     logger.info(`SSH server for session ${session.id} is on port ${ci.sshPort}, reached through ${t.label} ${t.tunnelRef(session)?.tunnelId}.`);
     return ci;
 }
@@ -181,20 +179,12 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
     });
     activeTunnelClients.set(session.id, client);
 
-    let localPort: number;
-    try {
-        await client.connect(tunnel, {
-            enableRetry: true,
-            enableReconnect: true,
-            keepAliveIntervalInSeconds: 15, // probe the upstream WebSocket so a half-open Dev Tunnel is detected and reconnected fast (default 0 = off)
-        });
-        localPort = await forwardedLocalPort(client, ci.sshPort);
-    }
-    catch (err) {
-        await disposeTunnelClient(session.id);
-        throw err;
-    }
-
+    await client.connect(tunnel, {
+        enableRetry: true,
+        enableReconnect: true,
+        keepAliveIntervalInSeconds: 15, // probe the upstream WebSocket so a half-open Dev Tunnel is detected and reconnected fast (default 0 = off)
+    });
+    const localPort = await forwardedLocalPort(client, ci.sshPort);
     patch(session, { connectionInfo: { ...ci, localPort } });
     live.connected.add(session.id);
     logger.info(`${t.label} connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
