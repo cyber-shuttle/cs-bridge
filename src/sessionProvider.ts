@@ -85,7 +85,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     dispose(): void {
         this.monitor.dispose();
         this.shared.forEach(d => d.dispose());
-        void disposeAllTunnelClients(); // window close: free local ports (remote stays, reaped by linkspan)
+        void disposeAllTunnelClients(); // window close: free local ports
     }
 
     private dismiss(reset: () => void) {

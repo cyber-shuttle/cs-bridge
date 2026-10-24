@@ -39,7 +39,6 @@ type Pending = { rid: string; outBuf: string; errBuf: string; settled: boolean; 
 // ControlMaster) this in-process channel is the only multiplexing, so authentication happens once here.
 type HostShell = {
     proc: ChildProcessWithoutNullStreams;
-    askpassDir?: string; // interactive shells only
     ready: Promise<void>;
     alive: boolean;
     connecting: boolean;
@@ -191,7 +190,7 @@ export class SshManager {
         ], { env, stdio: ['pipe', 'pipe', 'pipe'] });
 
         const ready = Promise.withResolvers<void>();
-        const shell: HostShell = { proc, askpassDir, alive: true, connecting: true, ready: ready.promise };
+        const shell: HostShell = { proc, alive: true, connecting: true, ready: ready.promise };
 
         const settle = (p: Pending): void => {
             const result = extractCommandResult(p.rid, p.outBuf, p.errBuf);
