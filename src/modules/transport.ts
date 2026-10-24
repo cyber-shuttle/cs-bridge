@@ -208,7 +208,6 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
         throw err;
     }
 
-    session.connectionInfo!.localPort = localPort;
     live.connected.add(session.id);
     logger.info(`${t.label} connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
     return localPort;

@@ -353,7 +353,7 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         try {
             // Already connected with a live remote window — this window's own, or another sidebar's (windowAlive reads the
             // shared window heartbeats). Just focus it; a second connection to the same Dev Tunnel is redundant and fights the first.
-            if (statusOf(session) === 'connected' && (windowState(session).windowAlive || session.connectionInfo?.localPort)) {
+            if (statusOf(session) === 'connected') {
                 this.openOrFocusWindow(session);
                 return;
             }

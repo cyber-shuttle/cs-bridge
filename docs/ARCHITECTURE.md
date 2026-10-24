@@ -174,8 +174,8 @@ Sessions, run history and window heartbeats are one JSON record per id under `se
 Code's extension storage: a folder on desktop, IndexedDB in the browser. A `JsonDir` (`store.ts`) holds each directory
 in memory, so reads are synchronous; writes, and reloads of other windows' writes from a file watcher (`storage.ts`),
 run in order on that directory's queue, and the last write to a record wins. A window connected to a session rewrites
-its heartbeat, carrying the folder URI it has open, until it closes; Switch focuses that exact URI. Of the connection, only `sshPort` and `controlPort` are persisted, the latter so a
-reattached session health-pings Linkspan instead of polling the SSH host; secrets and the local port stay in memory.
+its heartbeat, carrying the folder URI it has open, until it closes; Switch focuses that exact URI. A record holds only
+what every window shares; this window's local forward, connect token and connection are `extensionStore.live`.
 
 Field names match cs-plane's wire types: a session is `alias`, `account`, `partition`, `rootFolder` and `resources`
 (`cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`); a run is `Run` with `RunStats` and `samples`.

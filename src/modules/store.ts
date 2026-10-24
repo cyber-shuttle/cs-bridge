@@ -22,7 +22,6 @@ export class JsonDir<T> {
         readonly dir: string,
         private readonly onError: (err: unknown) => void,
         private readonly merge: (cur: T | undefined, next: T) => T = (_, next) => next,
-        private readonly persist: (value: T) => unknown = value => value, // the part of a record that is written
     ) { }
 
     async load(): Promise<void> {
@@ -35,7 +34,7 @@ export class JsonDir<T> {
     entries(): [string, T][] { return [...this.items.entries()]; }
 
     set(id: string, value: T): void {
-        const text = JSON.stringify(this.persist(value), null, 2);
+        const text = JSON.stringify(value, null, 2);
         this.items.set(id, value);
         this.texts.set(id, text);
         this.save(id, () => this.files.write(this.path(id), text));
