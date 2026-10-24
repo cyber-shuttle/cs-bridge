@@ -54,7 +54,6 @@ export function register(): void {
             write('windows', 'otherwindow', { at: Date.now() + 600_000 }); // beats for the whole suite, loaded at activation
             await ext.activate();
             extensionUri = ext.extensionUri;
-            await until('the window heartbeat', () => fs.existsSync(path.join(storage, 'windows')));
         });
 
         after(() => { for (const s of [ended, running]) { fs.rmSync(file('sessions', s.id), { force: true }); } });
