@@ -27,7 +27,7 @@ export const isDeletable = (status: Status): boolean => isTerminal(status) || st
 export const isStoppable = (status: Status): boolean => STOPPABLE.includes(status);
 export const isReachable = (status: Status): boolean => REACHABLE.includes(status);
 
-export interface LiveFacts {
+interface LiveFacts {
     launching: boolean;
     connecting: boolean;
     connected: boolean;

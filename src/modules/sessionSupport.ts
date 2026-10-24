@@ -16,7 +16,7 @@ import { getOrSet } from './util';
 const logger = Logger.getInstance();
 // How often to refresh the in-run sacct copy; coarse since usage only flushes at step end.
 const SACCT_REFRESH_MS = 30_000;
-// Consecutive failed probes before we stop trusting the Dev Tunnel and cross-check the job over batch sacct.
+// Consecutive failed probes before we stop trusting the tunnel and cross-check the job over batch sacct.
 const PROBE_GIVEUP = 6;
 
 const sessionLine = (name: string, msg: string): string => `Session ${name}: ${msg}`;
@@ -201,7 +201,7 @@ export class SlurmBackend implements Backend {
     async tick(session: SlurmSession): Promise<void> {
         const status = statusOf(session);
         const transport = this.transports.transportFor(session);
-        // Job running but not yet up: drive bring-up over the Dev Tunnel rather than Slurm,
+        // Job running but not yet up: drive bring-up over the tunnel rather than Slurm,
         // cross-checking sacct only after PROBE_GIVEUP failures, so a running session
         // never SSH-polls the SSH host.
         if (status === 'preparing' && transport.tunnelRef(session) && session.connectionInfo?.controlPort) {
@@ -212,7 +212,7 @@ export class SlurmBackend implements Backend {
         const ci = session.connectionInfo;
         if (transport.tunnelRef(session) && isReachable(status) && ci) {
             // Pulling /usage is the health check: success = alive + a live sample; PROBE_GIVEUP failures
-            // cross-check sacct for death. The sample comes over the Dev Tunnel when this window holds its client, else srun.
+            // cross-check sacct for death. The sample comes over the tunnel when this window holds its client, else srun.
             await this.pingOrCrossCheck(session, async () => {
                 try {
                     const m = await this.pullSample(session, ci);
@@ -244,14 +244,14 @@ export class SlurmBackend implements Backend {
     }
 
     async end(session: SlurmSession): Promise<void> {
+        void recordSessionRun(session); // before the release, which a Start could overtake
         const transport = this.transports.transportFor(session);
         await disconnectSessionFromTunnel(transport, session)
             .catch(err => logger.error(`Session ${session.name}: Failed to disconnect from its ${transport.label}:`, err));
         await transport.release(session);
-        void recordSessionRun(session);
     }
 
-    // Dev Tunnel health gave up — only an authoritative sacct terminal state may tear the session down; else it's alive, resume pinging.
+    // Tunnel health gave up — only an authoritative sacct terminal state may tear the session down; else it's alive, resume pinging.
     private async crossCheckSlurmForDeath(session: SlurmSession): Promise<void> {
         try {
             observe(session, (await getSlurmJobStatus(session)).status);
@@ -262,7 +262,7 @@ export class SlurmBackend implements Backend {
         }
     }
 
-    // Probe over the Dev Tunnel until PROBE_GIVEUP consecutive failures, then fall back
+    // Probe over the tunnel until PROBE_GIVEUP consecutive failures, then fall back
     // to an authoritative sacct cross-check. The probe differs by phase.
     private async pingOrCrossCheck(session: SlurmSession, probe: () => Promise<void>): Promise<void> {
         if (this.run(session.id).probeFails < PROBE_GIVEUP) { await probe(); }

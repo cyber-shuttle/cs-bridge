@@ -14,7 +14,7 @@ import { Files, Steps } from './store';
 import { gpuTypeOf, slurmAccount } from './slurmParse';
 import type { StoredRunsFile } from './runStore';
 
-export const CS_HOME = path.join(os.homedir(), '.cybershuttle');
+const CS_HOME = path.join(os.homedir(), '.cybershuttle');
 
 type V2Session = Omit<SlurmSession, 'desired' | 'observed' | 'failure'> & { status: SessionStatus };
 
@@ -143,7 +143,7 @@ const OBSERVED_BY_STATUS: Partial<Record<SessionStatus, SlurmJobStatus>> = {
     queued: SlurmJobStatus.QUEUED, preparing: SlurmJobStatus.RUNNING, ready_to_connect: SlurmJobStatus.RUNNING,
     connecting: SlurmJobStatus.RUNNING, connected: SlurmJobStatus.RUNNING, stopped: SlurmJobStatus.CANCELLED,
 };
-export function sessionV3({ status, ...r }: V2Session): SlurmSession {
+function sessionV3({ status, ...r }: V2Session): SlurmSession {
     const state = OBSERVED_BY_STATUS[status];
     return {
         ...r,

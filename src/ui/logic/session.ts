@@ -67,8 +67,8 @@ export function sessionActions(session: ViewSession): SessionAction[] {
     else if (s === 'connecting') {
         actions.push({ kind: 'opening', label: 'Connecting…', icon: 'loading' });
     }
-    else if (s === 'ready_to_connect' || s === 'unreachable') {
-        // For 'unreachable', Reconnect rebuilds the Dev Tunnel connection via the Dev Tunnels API → back to reachable, off the SSH host path.
+    else if (s === 'ready_to_connect' || (s === 'unreachable' && session.connectionInfo?.sshPort)) {
+        // Reconnect rebuilds the tunnel connection through the backend; without an sshd there is nothing to connect to yet.
         actions.push({ kind: 'connect', label: s === 'ready_to_connect' ? 'Connect' : 'Reconnect', icon: 'arrow-swap' });
     }
     return actions;
