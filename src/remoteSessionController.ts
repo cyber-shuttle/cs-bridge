@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { getSession, statusOf, patch, onSessionsChange } from './extensionStore';
 import { isTerminal } from './modules/sessionMachine';
+import { isEc2 } from './models';
 import { remainingMs, fmtTime, wallMs } from './ui/logic/session';
 import { enqueuePendingSummary } from './summaryPanel';
 import { confirmModal } from './webviewProvider';
@@ -81,7 +82,8 @@ export class RemoteSessionController implements vscode.Disposable {
         clearInterval(this.ticker);
         this.item.hide();
         this.stopItem.hide();
-        if (!getSession(this.sessionId)?.ec2) { await enqueuePendingSummary(this.context, this.sessionId); } // no Slurm accounting to summarize
+        const session = getSession(this.sessionId);
+        if (session && !isEc2(session)) { await enqueuePendingSummary(this.context, this.sessionId); } // an instance has no Slurm accounting to summarize
         // remote.close reuses this window with remoteAuthority:null → local reload. If unavailable, fall back to closing.
         try { await vscode.commands.executeCommand('workbench.action.remote.close'); }
         catch { void vscode.commands.executeCommand('workbench.action.closeWindow'); }
