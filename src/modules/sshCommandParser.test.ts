@@ -87,6 +87,10 @@ test('sshCommandToConfig keeps a bare IPv6 host whole', () => {
     assert.deepEqual(sshCommandToConfig('ssh 2001:db8::1'), { Host: '2001:db8::1', HostName: '2001:db8::1' });
 });
 
+test('sshCommandToConfig keeps a HostName set by -o', () => {
+    assert.deepEqual(sshCommandToConfig('ssh -o HostName=10.0.0.5 lab'), { Host: 'lab', HostName: '10.0.0.5' });
+});
+
 test('sshCommandToConfig stops at the remote command', () => {
     assert.deepEqual(sshCommandToConfig('ssh alice@h ls -la'), { Host: 'h', HostName: 'h', User: 'alice' });
     assert.deepEqual(sshCommandToConfig('ssh h -A tmux attach -d'), { Host: 'h', HostName: 'h', ForwardAgent: 'yes' });
