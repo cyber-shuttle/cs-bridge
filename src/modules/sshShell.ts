@@ -62,5 +62,5 @@ export function extractCommandResult(
     const err = errBuf.match(new RegExp(`\\n${m}\\n`));
     if (!out || !err) { return null; }
     const g = groups(out, 'code');
-    return g ? { stdout: outBuf.slice(0, out.index), stderr: errBuf.slice(0, err.index), code: Number(g.code) } : null;
+    return g ? { stdout: outBuf.slice(0, out.index), stderr: errBuf.slice(0, err.index), code: Number(g[0]) } : null;
 }
