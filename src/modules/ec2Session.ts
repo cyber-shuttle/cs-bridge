@@ -63,7 +63,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
     async stop(session: Ec2Session): Promise<void> {
         const ec2 = this.aws.requireEc2();
         const { region } = session.ec2;
-        while ((await ec2.describe(region, session.jobId)).state === 'pending') { await new Promise(res => setTimeout(res, 5_000)); }
+        while ((await ec2.describe(region, session.jobId))?.state === 'pending') { await new Promise(res => setTimeout(res, 5_000)); }
         await ec2.act('stop', region, session.jobId);
         this.monitor().startMonitoring(session);
     }
@@ -81,7 +81,9 @@ export class Ec2Backend implements Backend<Ec2Session> {
         const ec2 = this.aws.ec2;
         if (!ec2) { return; } // signed out, or activation has not restored the key yet: hold
         const spec = session.ec2;
-        const { state, ip } = await ec2.describe(spec.region, session.jobId);
+        const instance = await ec2.describe(spec.region, session.jobId);
+        if (!instance) { observe(session, observedEc2('terminated')); return; }
+        const { state, ip } = instance;
         observe(session, observedEc2(state));
         if (ip !== spec.ip) { patch(session, { ec2: { ...spec, ip } }); } // a stopped instance comes back with a new public IP
         if (state === 'running' && !session.connectionInfo && ip && await portOpen(ip, SSH_PORT)) {
