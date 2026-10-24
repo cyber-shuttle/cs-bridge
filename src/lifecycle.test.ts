@@ -192,9 +192,9 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
     assert.equal(owns(s), true, 'the preview holds the claim');
 
     await files.write('windows/other.json', JSON.stringify({ at: Date.now() }));
-    await windows.reload('other'); // a heartbeat lands while the preview waits
+    await windows.reload('other'); // a heartbeat's sweep lands while the preview waits
     await sleep(20);
-    assert.deepEqual(released, [s.id], 'no second teardown');
+    assert.equal(owns(s), true, 'the sweep leaves an owned record alone');
     assert.equal(state()?.preview?.sessionId, s.id);
 
     receive({ command: 'dismissPreview' });
