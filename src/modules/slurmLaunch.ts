@@ -13,7 +13,7 @@ interface LogSink {
     error(message: string, ...args: unknown[]): void;
 }
 
-// Each step throws on failure; the caller persists what a step returns.
+// A step throws on failure, except the version check, which answers false; the caller persists what a step returns.
 
 export interface LaunchDraft { script: string; sbatchEnv: Record<string, string> }
 

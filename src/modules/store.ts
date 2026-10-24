@@ -3,6 +3,7 @@
 // watcher reports, run in order behind them, and the last write to a record wins. schema.json versions the layout;
 // desktop's steps below 2 import ~/.cybershuttle.
 import { parseJson } from './json';
+import { getOrSet } from './util';
 
 export interface Files {
     read(name: string): Promise<string | undefined>; // undefined when missing
@@ -15,6 +16,7 @@ export class JsonDir<T> {
     private readonly items = new Map<string, T>();
     private readonly texts = new Map<string, string>(); // each record's text as last read or written
     private readonly unsaved = new Map<string, Promise<void>>(); // each record's last queued write, until it starts
+    private readonly pending = new Map<string, Partial<T>>(); // fields patched since the last write began
     private readonly listeners = new Set<() => void>();
     private queue = Promise.resolve();
 
@@ -40,6 +42,26 @@ export class JsonDir<T> {
         this.texts.set(id, text);
         this.save(id, () => this.files.write(this.path(id), text));
         this.emit();
+    }
+
+    // The fields land on the record as another window last wrote it, so two windows' patches to different fields both
+    // survive; the fields of every patch still queued go with the first write.
+    patch(id: string, fields: Partial<T>): void {
+        const cur = this.items.get(id);
+        if (!cur) { return; }
+        Object.assign(cur, fields);
+        Object.assign(getOrSet(this.pending, id, () => ({})), fields);
+        this.emit();
+        this.save(id, async () => {
+            const queued = this.pending.get(id);
+            if (!queued) { return; }
+            this.pending.delete(id);
+            const text = await this.files.read(this.path(id));
+            if (text !== undefined && text !== this.texts.get(id)) { replaceFields(cur, { ...parseJson<T>(text), ...queued }); }
+            const next = JSON.stringify(cur, null, 2);
+            this.texts.set(id, next);
+            await this.files.write(this.path(id), next);
+        });
     }
 
     delete(id: string): Promise<void> {

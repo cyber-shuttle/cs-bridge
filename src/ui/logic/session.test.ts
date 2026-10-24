@@ -87,7 +87,7 @@ test('cardModel: status text carries the error where there is one, with a hover 
     assert.deepEqual(cardModel(sess('queued', base), 61_000).status, { text: 'Queued (1m 0s)' });
     assert.deepEqual(cardModel(sess('unreachable', base), 0).status, { text: 'SSH host unreachable — retrying…', title: undefined });
     assert.deepEqual(cardModel(sess('unreachable', { ...base, errorMessage: 'ssh: timeout' }), 0).status, { text: 'Unreachable: ssh: timeout', title: 'ssh: timeout' });
-    assert.deepEqual(cardModel(sess('stopped', { ...base, errorMessage: 'scancel refused' }), 0).status, { text: 'Stop failed: scancel refused' });
+    assert.deepEqual(cardModel(sess('stopped', { ...base, errorMessage: 'ssh: timeout' }), 0).status, { text: 'Stopped', title: 'ssh: timeout' });
     assert.deepEqual(cardModel(sess('failed', { ...base, errorMessage: 'OOM' }), 0).status, { text: 'Failed: OOM', title: 'OOM' });
     assert.equal(cardModel(sess('stopped', base), 0).canDelete, true);
     const remote = cardModel(sess('connected', { ...base, isCurrent: true }), 0, true);

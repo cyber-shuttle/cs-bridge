@@ -37,6 +37,18 @@ test('JsonDir skips its own writes and merges another window\'s in place', async
     assert.equal(changes, 3);
 });
 
+test('JsonDir.patch lands its fields on another window\'s newer record', async () => {
+    const files = memoryFiles();
+    await files.write('recs/a.json', JSON.stringify({ n: 1 }));
+    const dir = new JsonDir<Rec>(files, 'recs', err => assert.fail(String(err)));
+    await dir.load();
+    await files.write('recs/a.json', JSON.stringify({ n: 2 })); // another window, not yet reloaded here
+    dir.patch('a', { m: 7 });
+    await dir.reload('a');
+    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 7 });
+    assert.deepEqual(dir.get('a'), { n: 2, m: 7 });
+});
+
 test('replaceFields drops a field the other window cleared', () => {
     const cur: Rec = { n: 1, m: 7 };
     assert.equal(replaceFields(cur, { n: 2 }), cur);
