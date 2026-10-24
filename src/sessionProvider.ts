@@ -71,7 +71,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             // The owner carries out a Stop asked anywhere; without a beating owner, this window takes it.
             if (status === 'stopping') { if (claim(s)) { this.runStop(s); } continue; }
             // A run ended by the clock while no window had its loop (the walltime passed with VS Code closed) is still torn
-            // down; a task in flight here (a prepare writing the next run's connection info) keeps its record.
+            // down; a task in flight here keeps its record.
             if (isTerminal(status)) { if (s.connectionInfo && !live.busy.has(s.id) && claim(s)) { void this.monitor.endSession(s).finally(() => this.settle(s)); } continue; }
             if (owns(s)) { continue; }
             this.monitor.startMonitoring(s);
@@ -330,7 +330,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
         live.busy.add(session.id);
         try {
-            await this.release(session); // the previous run's, before a transport switch hides it
+            if (session.connectionInfo) { await this.monitor.endSession(session); } // the previous run's teardown, before a transport switch hides it
             patch(session, { transport: configuredTransport() });
             const draft = await prepareLaunch(session, this.transports.transportFor(session));
             if (this.draft?.sessionId !== sessionId) { this.dropDraft(); }

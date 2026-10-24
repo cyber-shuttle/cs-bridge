@@ -1,4 +1,4 @@
-import { SlurmSession } from '../models';
+import { ConnectionInfo, SlurmSession } from '../models';
 import { buildSlurmScript, devTunnelLaunch, envAssignments } from './slurmParse';
 import { groups } from './util';
 
@@ -15,7 +15,7 @@ interface LogSink {
 
 // A step throws on failure, except the version check, which answers false; the caller persists what a step returns.
 
-export interface LaunchDraft { script: string; sbatchEnv: Record<string, string> }
+export interface LaunchDraft { script: string; sbatchEnv: Record<string, string>; connectionInfo: ConnectionInfo } // the run's, recorded on submit
 
 export async function checkSlurmAvailability(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
     await run.runRemoteCommand(session.alias, 'sinfo');

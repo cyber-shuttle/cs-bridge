@@ -51,14 +51,17 @@ export class SessionMonitor {
 
     constructor(private readonly backends: Backends) { }
 
-    // Teardown for a Stop and for a backend that ended on its own; one in flight is the teardown, not restarted.
+    // Teardown for a Stop and for a backend that ended on its own; one in flight is the teardown, not restarted. It is
+    // registered before the loop stops, since stopping the loop writes the record and a sweep on that write ends again.
     endSession(session: SlurmSession): Promise<void> {
         const inFlight = this.ending.get(session.id);
-        if (inFlight) { return inFlight; }
+        if (inFlight) { this.stopMonitoring(session.id); return inFlight; } // a loop begun during the teardown ends with it
+        const { promise, resolve, reject } = Promise.withResolvers<void>();
+        this.ending.set(session.id, promise);
+        void promise.finally(() => { if (this.ending.get(session.id) === promise) { this.ending.delete(session.id); } });
         this.stopMonitoring(session.id);
-        const end = this.backends.use(session, (b, s) => b.end(s)).finally(() => { if (this.ending.get(session.id) === end) { this.ending.delete(session.id); } });
-        this.ending.set(session.id, end);
-        return end;
+        this.backends.use(session, (b, s) => b.end(s)).then(resolve, reject);
+        return promise;
     }
 
     // Resolves once the session has no loop and no teardown in flight, so what follows is not undone by either.
@@ -151,7 +154,7 @@ export class SlurmBackend implements Backend {
         if (!await linkspanIsUpToDate(session, run, logger)) {
             await installLinkspan(session, run, logger);
         }
-        patch(session, { jobId: await submitJobToSlurm(session, run, logger, draft), submittedAt: Date.now() });
+        patch(session, { jobId: await submitJobToSlurm(session, run, logger, draft), connectionInfo: draft.connectionInfo, submittedAt: Date.now() });
         this.monitor().startMonitoring(session);
     }
 
@@ -336,6 +339,6 @@ export async function prepareLaunch(session: SlurmSession, transport: Transport)
     resetLive(session.id);
 
     const launch = await transport.prepare(session, ci);
-    patch(session, { connectionInfo: ci, errorMessage: '' });
-    return { script: buildSlurmScript(session, launch, ci.controlPort), sbatchEnv: launch.sbatchEnv };
+    setError(session, '');
+    return { script: buildSlurmScript(session, launch, ci.controlPort), sbatchEnv: launch.sbatchEnv, connectionInfo: ci };
 }
