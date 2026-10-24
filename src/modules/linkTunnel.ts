@@ -34,7 +34,6 @@ export class LinkManagementClient {
 }
 
 export class ForwardRelayClient {
-    connectionStatus = 'none';
     readonly forwardedPorts: { remotePort: number; localPort: number }[] = [];
     private readonly listeners: Promise<net.Server>[] = [];
     private readonly sockets = new Set<net.Socket>();
@@ -69,14 +68,12 @@ export class ForwardRelayClient {
 
     private bridge(local: net.Socket, remotePort: number) {
         const remote = new this.WebSocket(`${this.forwardUrl}${remotePort}`, this.protocols);
-        let opened = false;
         this.sockets.add(local);
         remote.binaryType = 'arraybuffer';
         // No backpressure: SSH channel windows bound the ssh stream, and Linkspan's API responses are small.
-        remote.onopen = () => { opened = true; this.connectionStatus = 'connected'; local.on('data', chunk => remote.send(chunk)); };
+        remote.onopen = () => { local.on('data', chunk => remote.send(chunk)); };
         remote.onmessage = ({ data }) => local.write(Buffer.from(data));
-        // A socket that never opened was refused (a revoked token or a session no longer READY).
-        remote.onclose = () => { if (!opened) { this.connectionStatus = 'disconnected'; } local.destroy(); };
+        remote.onclose = () => local.destroy();
         local.on('close', () => { this.sockets.delete(local); remote.close(); }).on('error', () => { });
     }
 }
@@ -87,7 +84,6 @@ export class LinkRelayClient extends ForwardRelayClient {
         if (!token) { throw new Error('cs-plane returned no connect token for the session.'); }
         this.forwardUrl = `${PLANE_URL.replace(/^http/, 'ws')}/sessions/${tunnel.tunnelId}/forward/`;
         this.protocols = ['cybershuttle.v1', `capability.${token}`];
-        this.connectionStatus = 'connected';
     }
 }
 

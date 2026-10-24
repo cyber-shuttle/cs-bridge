@@ -6,7 +6,7 @@ import { remainingMs, fmtTime, wallMs } from './ui/logic/session';
 import { enqueuePendingSummary } from './summaryPanel';
 import { confirmModal } from './webviewProvider';
 
-const WARN_THRESHOLD_MS = 10 * 60_000; // color the status bar under 10 minutes left
+const WARN_THRESHOLD_MS = 10 * 60_000;
 
 // Lives only in a remote window. Owns the walltime status bar + a Stop button, and the end-to-local:
 // on walltime expiry, terminal status, or the user hitting Stop, queue the summary and convert this window to local.
@@ -36,7 +36,6 @@ export class RemoteSessionController implements vscode.Disposable {
         this.watcher = onSessionsChange(() => this.render());
     }
 
-    // Refresh the countdown, and fire the graceful end the moment the session is expired or terminal.
     private render(): void {
         const s = getSession(this.sessionId);
         if (!s) { return; }

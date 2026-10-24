@@ -116,7 +116,7 @@ export function parseHostsFromConfigText(text: string, source: SshHost['source']
 
 export function addHostToConfigText(text: string, entry: SshConfigEntry): string {
     const config = parse(text);
-    config.remove({ Host: entry.Host }); // replace-on-readd: clean recreate, no duplicates
+    config.remove({ Host: entry.Host });
     config.prepend(entry, true); // top of file, after any Include lines
     return config.toString();
 }
@@ -147,7 +147,7 @@ export function editHostInConfigText(text: string, alias: string, edit: SshConfi
 export function mergeHostsByPriority(...lists: SshHost[][]): SshHost[] {
     const byAlias = new Map<string, SshHost>();
     for (const host of lists.flat()) {
-        if (!byAlias.has(host.alias)) { byAlias.set(host.alias, host); } // keep-first: earlier lists win
+        if (!byAlias.has(host.alias)) { byAlias.set(host.alias, host); }
     }
     return [...byAlias.values()];
 }

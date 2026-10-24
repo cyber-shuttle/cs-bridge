@@ -5,6 +5,7 @@ import { EC2Client } from '@aws-sdk/client-ec2';
 import { Ec2 } from './ec2';
 import { sshKeyPath } from './sshSupport';
 import { parseJson } from './json';
+import { getOrSet } from './util';
 import { errMsg } from '@/logger';
 
 const CREDENTIALS_KEY = 'aws.credentials';
@@ -47,11 +48,7 @@ export class AwsClient implements vscode.Disposable {
 
     private async connect(credentials: Credentials): Promise<boolean> {
         const clients = new Map<string, EC2Client>();
-        const client = (region: string) => {
-            let c = clients.get(region);
-            if (!c) { clients.set(region, c = new EC2Client({ region, credentials, requestHandler: { connectionTimeout: 5_000, requestTimeout: 15_000 } })); }
-            return c;
-        };
+        const client = (region: string) => getOrSet(clients, region, () => new EC2Client({ region, credentials, requestHandler: { connectionTimeout: 5_000, requestTimeout: 15_000 } }));
         const ec2 = new Ec2(client, sshKeyPath);
         try { this.session = { ec2, regions: await ec2.regions(), accessKeyId: credentials.accessKeyId }; }
         catch (err) {

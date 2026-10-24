@@ -39,7 +39,6 @@ test('a forwarded port bridges each 127.0.0.1 connection to its own cs-plane for
     assert.equal(String(reply), 'ping');
     assert.deepEqual(dialed, ['wss://jupyterapi.cybershuttle.org/api/v1/sessions/p1/forward/22']);
     assert.deepEqual(offered, [['cybershuttle.v1', 'capability.tok']]);
-    assert.equal(relay.connectionStatus, 'connected');
 
     await relay.dispose();
     await once(socket, 'close');

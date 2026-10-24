@@ -8,7 +8,7 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import { UUID } from 'uuidv7';
 import { Run, RunStats, SessionStatus, SlurmJobStatus, SlurmSession, UsageSample } from '../models';
-import { deleteFile, jsonFiles, lock, readJson, release, writeJson } from './fsSupport';
+import { deleteFile, jsonFiles, lock, lockedUpdateTextFile, readJson, release, writeJson } from './fsSupport';
 import { parseJson } from './json';
 import { Files, Steps } from './store';
 import { gpuTypeOf, slurmAccount } from './slurmParse';
@@ -114,10 +114,10 @@ function v0ToV1(home: string): void {
 
 // Removes ~/.ssh/config's Include of a file in ~/.cybershuttle.
 function dropInclude(home: string, name: string): void {
-    const sshConfig = path.join(path.dirname(home), '.ssh', 'config');
-    const text = fs.existsSync(sshConfig) ? fs.readFileSync(sshConfig, 'utf-8') : '';
-    const kept = text.split('\n').filter(line => !new RegExp(`^\\s*Include\\s+\\S*\\.cybershuttle/${name}\\s*$`).test(line)).join('\n');
-    if (kept !== text) { fs.writeFileSync(sshConfig, kept); }
+    lockedUpdateTextFile(path.join(path.dirname(home), '.ssh', 'config'), (text, exists) => {
+        const kept = text.split('\n').filter(line => !new RegExp(`^\\s*Include\\s+\\S*\\.cybershuttle/${name}\\s*$`).test(line)).join('\n');
+        return exists && kept !== text ? kept : null;
+    });
 }
 
 // The session keys move with their permissions; the ssh_config is rebuilt on connect.

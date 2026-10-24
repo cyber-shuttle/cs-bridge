@@ -11,6 +11,7 @@ import { checkSlurmAvailability, linkspanIsUpToDate, installLinkspan, submitJobT
 import { Transport, Transports, connectSessionToTunnel, disconnectSessionFromTunnel, disposeTunnelClient, ensureRemoteSession, isTunnelClientConnected } from './transport';
 import { getHealth, getSample } from './linkspanSupport';
 import { appendSample, writeSessionStats, resetLive } from './runStore';
+import { getOrSet } from './util';
 
 const logger = Logger.getInstance();
 // How often to refresh the in-run sacct copy; coarse since usage only flushes at step end.
@@ -112,9 +113,10 @@ export class SessionMonitor {
     }
 }
 
+interface Tally { probeFails: number; sacctAt?: number }
 export class SlurmBackend implements Backend {
     readonly label = 'SSH host';
-    private runs = new Map<string, { probeFails: number; sacctAt?: number }>(); // this window's tallies per session
+    private runs = new Map<string, Tally>(); // this window's tallies per session
 
     // The monitor is built with this backend, so it arrives lazily.
     constructor(private readonly transports: Transports, private readonly monitor: () => SessionMonitor) { }
@@ -122,11 +124,7 @@ export class SlurmBackend implements Backend {
     private log(session: SlurmSession, msg: string): void { logger.info(sessionLine(session.name, msg)); }
     private warn(session: SlurmSession, msg: string): void { logger.warn(sessionLine(session.name, msg)); }
 
-    private run(id: string) {
-        let run = this.runs.get(id);
-        if (!run) { this.runs.set(id, run = { probeFails: 0 }); }
-        return run;
-    }
+    private run(id: string) { return getOrSet(this.runs, id, (): Tally => ({ probeFails: 0 })); }
 
     forget(sessionId: string): void { this.runs.delete(sessionId); }
 
@@ -213,12 +211,13 @@ export class SlurmBackend implements Backend {
             return;
         }
 
-        if (transport.tunnelRef(session) && isReachable(status)) {
+        const ci = session.connectionInfo;
+        if (transport.tunnelRef(session) && isReachable(status) && ci) {
             // Pulling /usage is the health check: success = alive + a live sample; PROBE_GIVEUP failures
             // cross-check sacct for death. The sample comes over the Dev Tunnel when this window holds its client, else srun.
             await this.pingOrCrossCheck(session, async () => {
                 try {
-                    const m = await this.pullSample(session);
+                    const m = await this.pullSample(session, ci);
                     this.run(session.id).probeFails = 0;
                     setError(session, ''); // samples go to the per-session runs file, not the record
                     if (m.memBytes !== undefined) { appendSample(session.id, { ...m, atMs: Date.now() }); }
@@ -281,7 +280,7 @@ export class SlurmBackend implements Backend {
             const transport = this.transports.transportFor(session);
             await ensureRemoteSession(transport, session); // also refreshes the tunnel
             await transport.withLinkspan(session, getHealth); // a reused sshd port proves nothing; Linkspan must answer
-            this.run(session.id).probeFails = 0; // Step 1 up — clear the prepare-failure tally
+            this.run(session.id).probeFails = 0;
             this.log(session, 'Linkspan is ready to connect.');
             setError(session, ''); // clear any transient-retry warning
         }
@@ -295,8 +294,8 @@ export class SlurmBackend implements Backend {
         }
     }
 
-    private pullSample(session: SlurmSession): Promise<UsageSample> {
-        if (!isTunnelClientConnected(session.id)) { return getSampleViaSrun(session); }
+    private pullSample(session: SlurmSession, ci: ConnectionInfo): Promise<UsageSample> {
+        if (!isTunnelClientConnected(session.id)) { return getSampleViaSrun(session, ci.controlPort); }
         return this.transports.transportFor(session).withLinkspan(session, getSample);
     }
 

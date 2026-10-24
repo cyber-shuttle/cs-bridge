@@ -5,7 +5,7 @@ import { SessionCard, NowContext } from '@/ui/components/SessionCard';
 import { HostForm } from '@/ui/components/HostForm';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button } from '@/ui/components/base';
 
-function ConfigCard({ alias, runtime, onDismiss, validating }: { alias: string; runtime: HostRuntime | undefined; onDismiss: () => void; validating?: boolean }) {
+function ConfigCard({ alias, runtime, onDismiss, validating }: { alias: string; runtime: HostRuntime | undefined; onDismiss: () => void; validating: boolean }) {
     return (
         <Card>
             <Row gap={6}>

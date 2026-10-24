@@ -59,14 +59,12 @@ export async function activate(context: vscode.ExtensionContext) {
     void aws.restore();
 
     if (id) {
-        // Remote window: own the walltime status bar + graceful end for this session.
         context.subscriptions.push(new RemoteSessionController(context, id));
     }
     else {
         void consumePendingSummary(context, context.extensionUri);
     }
 
-    // on first-time install, show a toast with an "Open" action to reveal the sidebar panel.
     const marker = vscode.Uri.joinPath(context.globalStorageUri, 'opened.marker');
     if (!(await vscode.workspace.fs.stat(marker).then(() => true, () => false))) {
         await vscode.workspace.fs.writeFile(marker, new Uint8Array());
