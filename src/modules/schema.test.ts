@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { legacySteps } from './schema';
 import { SCHEMA_VERSION, migrate } from './store';
 import { memoryFiles } from './memoryFiles';
+import { must } from './testSupport';
 
 const UUID = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b';
 const write = (file: string, value: unknown) => writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value));
@@ -40,7 +41,7 @@ test('migrate brings every ~/.cybershuttle layout into the store, reruns idempot
     const storage = join(root, 'storage');
 
     const files = memoryFiles();
-    const record = (name: string) => JSON.parse(files.texts.get(name)!);
+    const record = (name: string) => JSON.parse(must(files.texts.get(name)));
     await migrate(files, legacySteps(files, storage, home));
 
     assert.deepEqual(record('schema.json'), { version: SCHEMA_VERSION });

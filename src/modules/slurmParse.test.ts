@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSlurmScript, devTunnelLaunch, linkLaunch, classifySchedulerState, parseAccounts, parsePartitionLine, parseSacctStatus, parseSacctUtil, slurmAccount } from './slurmParse';
 import { SlurmJobStatus, SlurmSession } from '../models';
+import { must } from './testSupport';
 
 test('parseAccounts de-duplicates per-partition associations', () => {
     const out = 'pearc26-tutorial\npearc26-tutorial\ndelta-cpu\n';
@@ -120,15 +121,15 @@ test('parseSacctUtil derives CPU and memory efficiency from the batch step usage
     assert.equal(m.cores, 2);
     assert.equal(m.elapsedSeconds, 1573);
     assert.equal(m.maxRss, '1.0 GB'); // 1048576K = 1 GiB
-    assert.equal(Math.round(m.memoryEfficiencyPct!), 50); // 1 GiB used / 2 GiB requested
-    assert.equal(Math.round(m.cpuEfficiencyPct!), 50); // 1560s used / 3146s allocated = 49.6%
+    assert.equal(Math.round(must(m.memoryEfficiencyPct)), 50); // 1 GiB used / 2 GiB requested
+    assert.equal(Math.round(must(m.cpuEfficiencyPct)), 50); // 1560s used / 3146s allocated = 49.6%
 });
 
 test('parseSacctUtil derives efficiency across a day-spanning TotalCPU', () => {
     const out = '55|4|4194304K|86400|345600||\n55.batch|4|4194304K|86400|345600|2097152K|1-00:00:00';
     const m = parseSacctUtil(out);
-    assert.equal(Math.round(m.memoryEfficiencyPct!), 50); // 2 GiB used / 4 GiB requested
-    assert.equal(Math.round(m.cpuEfficiencyPct!), 25); // 86400s used / 345600s allocated = 25%
+    assert.equal(Math.round(must(m.memoryEfficiencyPct)), 50); // 2 GiB used / 4 GiB requested
+    assert.equal(Math.round(must(m.cpuEfficiencyPct)), 25); // 86400s used / 345600s allocated = 25%
 });
 
 test('parseSacctUtil ignores srun poll steps and the empty running batch (no efficiency until it flushes)', () => {

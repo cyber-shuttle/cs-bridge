@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { linkspanIsUpToDate, keepsInstalledLinkspan, installLinkspan, submitJobToSlurm, validateSlurmConfig, RemoteRunner } from './slurmLaunch';
 import { SlurmSession } from '../models';
 import { buildShellCommand } from './sshShell';
+import { must } from './testSupport';
 
 const noopLog = { info() {}, warn() {}, error() {} };
 const session = (over: Partial<SlurmSession> = {}) => ({ alias: 'cl', name: 's', ...over }) as SlurmSession;
@@ -85,7 +86,7 @@ test('installLinkspan puts the release for the host\'s architecture at ~/.cybers
     assert.equal(statSync(bin).mode & 0o777, 0o700);
     assert.equal(statSync(join(bin, 'linkspan')).mode & 0o777, 0o700);
     assert.deepEqual(readdirSync(bin), ['linkspan'], 'no staged file is left behind');
-    assert.match(calls.at(-1)!, /\| base64 -d \| bash$/, 'set -eu and the EXIT trap run in their own bash, not the shared login shell');
+    assert.match(must(calls.at(-1)), /\| base64 -d \| bash$/, 'set -eu and the EXIT trap run in their own bash, not the shared login shell');
 });
 
 // An interrupted download must not replace the binary the next launch execs.
