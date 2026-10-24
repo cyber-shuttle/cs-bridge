@@ -39,7 +39,7 @@ type Pending = { rid: string; outBuf: string; errBuf: string; settled: boolean; 
 // ControlMaster) this in-process channel is the only multiplexing, so authentication happens once here.
 type HostShell = {
     proc: ChildProcessWithoutNullStreams;
-    askpassDir: string;
+    askpassDir?: string; // interactive shells only
     ready: Promise<void>;
     alive: boolean;
     connecting: boolean;
@@ -173,8 +173,8 @@ export class SshManager {
     }
 
     private spawnShell(alias: string, batch: boolean): HostShell {
-        const askpassDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-askpass-'));
-        const env: NodeJS.ProcessEnv = { ...process.env, ...(batch ? {} : this.askpassEnvironment(askpassDir)) };
+        const askpassDir = batch ? undefined : fs.mkdtempSync(path.join(os.tmpdir(), 'cs-askpass-'));
+        const env: NodeJS.ProcessEnv = { ...process.env, ...(askpassDir && this.askpassEnvironment(askpassDir)) };
 
         const connectArgs = batch
             ? ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10']
@@ -215,15 +215,17 @@ export class SshManager {
 
         proc.stdin.write(`printf '\\n${READY_MARKER}\\n'\n`);
 
-        const poll = batch ? undefined : this.pollAskpass(shell, alias);
+        const poll = askpassDir && this.pollAskpass(shell, askpassDir, alias);
         const stopPoll = (): void => { if (poll) { clearInterval(poll); } };
         shell.ready.then(stopPoll, stopPoll); // authentication is one-shot at connect
 
         const drop = (onConnect: () => Error): void => {
             shell.alive = false;
             stopPoll();
-            try { fs.rmSync(askpassDir, { recursive: true, force: true }); }
-            catch { /* best-effort */ }
+            if (askpassDir) {
+                try { fs.rmSync(askpassDir, { recursive: true, force: true }); }
+                catch { /* best-effort */ }
+            }
             if (this.shells.get(alias) === shell) { this.shells.delete(alias); }
             if (shell.connecting) { shell.connecting = false; ready.reject(onConnect()); }
             if (shell.current && !shell.current.settled) {
@@ -253,22 +255,22 @@ export class SshManager {
         });
     }
 
-    private pollAskpass(shell: HostShell, alias: string): NodeJS.Timeout {
+    private pollAskpass(shell: HostShell, askpassDir: string, alias: string): NodeJS.Timeout {
         const handled = new Set<string>();
-        const cancelFile = path.join(shell.askpassDir, 'cancel');
+        const cancelFile = path.join(askpassDir, 'cancel');
         return setInterval(async () => {
             if (!shell.alive) { return; }
             let files: string[];
-            try { files = fs.readdirSync(shell.askpassDir); }
+            try { files = fs.readdirSync(askpassDir); }
             catch { return; }
             for (const file of files) {
                 if (!file.startsWith('prompt-') || handled.has(file)) { continue; }
                 handled.add(file);
                 try {
-                    const { id, prompt } = parseJson<{ id: string; prompt: string }>(fs.readFileSync(path.join(shell.askpassDir, file), 'utf-8'));
+                    const { id, prompt } = parseJson<{ id: string; prompt: string }>(fs.readFileSync(path.join(askpassDir, file), 'utf-8'));
                     const password = await this.promptAuth(alias, prompt);
                     if (password !== undefined) {
-                        fs.writeFileSync(path.join(shell.askpassDir, `response-${id}`), password, 'utf-8');
+                        fs.writeFileSync(path.join(askpassDir, `response-${id}`), password, 'utf-8');
                     }
                     else {
                         fs.writeFileSync(cancelFile, '', 'utf-8');

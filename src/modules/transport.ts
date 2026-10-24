@@ -200,7 +200,7 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
     logger.info(`${t.label} connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
 }
 
-// Frees the local port only. Never deletes the remote sshd or tunnel (job-scoped, reaped by Linkspan) — that would break reattach.
+// Frees the local port only. The remote sshd dies with the job; the tunnel outlives it and the next launch replaces it.
 export async function disposeTunnelClient(sessionId: string): Promise<void> {
     live.connected.delete(sessionId);
     const client = activeTunnelClients.get(sessionId);

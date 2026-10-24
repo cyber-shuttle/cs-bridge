@@ -22,7 +22,7 @@ export async function getSampleViaSrun({ alias, jobId }: Job, controlPort: numbe
 // for partitions or $HOME could only produce a session that fails later.
 export async function getSlurmDiscovery(alias: string): Promise<SlurmDiscovery> {
     const run = (command: string) => SshManager.getInstance().runRemoteCommand(alias, command);
-    // Only the first command authenticates (later ones reuse the ControlMaster socket), so the auth box surfaces here.
+    // Only the first command authenticates (later ones ride the host's one persistent shell), so the auth box surfaces here.
     // Slurm's database lowercases account names; TACC's submit filter wants them as project.map spells them.
     const accounts = parseAccounts(await run('sacctmgr -n show associations where user=$USER format=Account -P'
         + ' | if [ -r /usr/local/etc/project.map ]; then grep -iwf - /usr/local/etc/project.map | cut -d" " -f1; else cat; fi'));

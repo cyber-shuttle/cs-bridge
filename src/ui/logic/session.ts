@@ -114,7 +114,7 @@ const AWS: Provider<ViewSession & Ec2Session> = {
     running: () => 'Running',
 };
 
-export interface CardModel {
+interface CardModel {
     kind: Provider['kind'];
     theme: Provider['theme'];
     icon: { name: string; spin?: boolean };

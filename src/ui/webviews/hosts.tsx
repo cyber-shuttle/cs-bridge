@@ -6,7 +6,6 @@ import { Row, Stack, Text, Icon, Button } from '@/ui/components/base';
 
 const SOURCE_ICON: Record<SshHost['source'], string> = { user: 'account', system: 'settings-gear' };
 const SOURCE_TITLE: Record<SshHost['source'], string> = { user: 'User SSH config (~/.ssh/config)', system: 'System SSH config (read-only)' };
-const SOURCE_ORDER: Record<SshHost['source'], number> = { user: 0, system: 1 };
 
 function DetailRow({ label, children }: { label: string; children: ComponentChildren }) {
     return (
@@ -47,7 +46,7 @@ function HostItem({ host }: { host: SshHost }) {
 }
 
 function HostList({ state }: { state: HostsState }) {
-    const hosts = [...state.sshHosts].sort((a, b) => SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source]);
+    const hosts = state.sshHosts; // user entries first, as getMergedHosts orders them
     if (hosts.length === 0) { return <Text muted style={{ margin: '4px 0' }}>No SSH hosts yet — use + above.</Text>; }
     return <>{hosts.map(host => <HostItem key={host.alias} host={host} />)}</>;
 }

@@ -1,6 +1,6 @@
 import { nonEmpty, type NonEmpty, type SlurmDiscovery, type SlurmPartitionInfo } from '@/models';
 
-export type ResourceTab = 'cpu' | 'gpu';
+type ResourceTab = 'cpu' | 'gpu';
 export const tabOf = (p: SlurmPartitionInfo): ResourceTab => p.gres.length ? 'gpu' : 'cpu';
 
 export const tabGroups = (info: SlurmDiscovery): { tab: ResourceTab; parts: NonEmpty<SlurmPartitionInfo> }[] =>
