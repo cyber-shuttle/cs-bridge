@@ -63,7 +63,8 @@ export function SessionCard({ session, remote }: Props) {
     const m = cardModel(session, useContext(NowContext), remote);
 
     const act = (a: SessionAction) => {
-        const command = remote ? 'stopRemoteSession' : COMMAND_FOR[a.kind];
+        if (remote) { post({ command: 'stopRemoteSession' }); return; }
+        const command = COMMAND_FOR[a.kind];
         if (command) { post({ command, sessionId: session.id }); }
     };
 
