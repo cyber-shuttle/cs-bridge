@@ -233,7 +233,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         this.opening.add(session.id);
         setTimeout(() => { if (this.opening.delete(session.id)) { void this.pushState(); } }, 60_000);
         // The per-session SSH host's alias VS Code runs `ssh` against and shows as the "[SSH: …]" label.
-        void openSshWindow(csHostAlias(session), session.rootFolder, true);
+        void openSshWindow(csHostAlias(session), session.rootFolder);
     }
 
     private async connectSession(sessionId: string) {

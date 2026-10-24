@@ -311,9 +311,9 @@ export async function syncSshConfig(): Promise<void> {
     }
 }
 
-// forceNew=false relies on VS Code deduping by workspace identity: it focuses the window already holding this URI.
-export function openSshWindow(alias: string, folder: string, forceNew: boolean): Thenable<unknown> {
-    return vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(`vscode-remote://ssh-remote+${alias}${folder}/`), { forceNewWindow: forceNew });
+// A new window on the session's SSH host; focusing an existing one is openOrFocusWindow's, by the folder its beat names.
+export function openSshWindow(alias: string, folder: string): Thenable<unknown> {
+    return vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(`vscode-remote://ssh-remote+${alias}${folder}/`), { forceNewWindow: true });
 }
 
 // The session key's public half, minting the pair on first use; the private key never leaves this machine.
