@@ -47,8 +47,23 @@ export function updateSession(session: SlurmSession) {
     if (sessions.get(session.id)) { sessions.set(session.id, session); }
 }
 
+// A live-set change notifies onSessionsChange like a record write, so no caller has to re-render by hand.
+const liveListeners = new Set<() => void>();
+class LiveSet extends Set<string> {
+    add(id: string): this {
+        if (!this.has(id)) { super.add(id); liveListeners.forEach(l => l()); }
+        return this;
+    }
+
+    delete(id: string): boolean {
+        const had = super.delete(id);
+        if (had) { liveListeners.forEach(l => l()); }
+        return had;
+    }
+}
+
 export const live = {
-    launching: new Set<string>(), connecting: new Set<string>(), connected: new Set<string>(), unreachable: new Set<string>(),
+    launching: new LiveSet(), connecting: new LiveSet(), connected: new LiveSet(), unreachable: new LiveSet(),
     connectTokens: new Map<string, string>(),
 };
 
@@ -95,8 +110,9 @@ export function windowState(s: SlurmSession): { isCurrent: boolean; windowAlive:
     return { isCurrent: windows.get(windowId)?.sessionId === s.id, windowAlive: !!live, windowFolder: live?.folder };
 }
 
-// Heartbeats fire it too.
+// Heartbeats and live sets fire it too.
 export function onSessionsChange(listener: () => void): { dispose(): void } {
     const subs = [sessions.onDidChange(listener), windows.onDidChange(listener)];
-    return { dispose: () => subs.forEach(s => s.dispose()) };
+    liveListeners.add(listener);
+    return { dispose: () => { subs.forEach(s => s.dispose()); liveListeners.delete(listener); } };
 }
