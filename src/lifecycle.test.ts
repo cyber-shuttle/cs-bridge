@@ -65,7 +65,7 @@ test('a tick that outlives its loop writes nothing, and a teardown is awaited by
     assert.equal(owns(s), false, 'the loop released the claim');
 });
 
-test('the summary shows a run as recorded, pinned to the job it opened on', () => {
+test('the summary shows a run as recorded, pinned to the job it opened on', async () => {
     const s = running();
     openSummaryPanel({ fsPath: '/ext' } as never, s);
     const panel = panels.at(-1)!;
@@ -73,6 +73,7 @@ test('the summary shows a run as recorded, pinned to the job it opened on', () =
     const last = () => panel.webview.posted.at(-1)?.state as SummaryState;
     let state = last();
     assert.equal(state.pending, true, 'no run recorded yet');
+    await patch(s, { jobId: '8' }); // a restart moves the session on; the panel stays with job 7
     const run: Run = { sessionId: s.id, alias: 'delta', jobId: '7', account: '', partition: 'cpu', startedAt: s.startedAt, endedAt: 5_000, finalState: 'stopped', samples: [{ memBytes: 1 }], stats: { cores: 1 } };
     appendRun(run);
     state = last();

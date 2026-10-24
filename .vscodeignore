@@ -10,3 +10,4 @@ esbuild.js
 **/tsconfig.json
 **/eslint.config.mjs
 **/*.map
+scripts/vscodeMock.*
