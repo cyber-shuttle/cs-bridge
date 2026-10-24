@@ -5,14 +5,11 @@ import { SessionCard, NowContext } from '@/ui/components/SessionCard';
 import { HostForm } from '@/ui/components/HostForm';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button } from '@/ui/components/base';
 
-function ConfigCard({ icon, muted, alias, runtime, onDismiss, validating }: {
-    icon: string; muted?: boolean; alias: string; runtime: HostRuntime | undefined;
-    onDismiss: () => void; validating?: boolean;
-}) {
+function ConfigCard({ alias, runtime, onDismiss, validating }: { alias: string; runtime: HostRuntime | undefined; onDismiss: () => void; validating?: boolean }) {
     return (
         <Card>
             <Row gap={6}>
-                <Icon name={icon} style={muted ? { color: 'var(--vscode-descriptionForeground)' } : undefined} />
+                <Icon name="circle-outline" style={{ color: 'var(--vscode-descriptionForeground)' }} />
                 <Text weight={600}>{alias}</Text>
                 <Row gap={4} style={{ marginLeft: 'auto' }}>
                     <ActionIcon name="refresh" title="Refresh Slurm details" ariaLabel="Refresh Slurm details" onClick={() => post({ command: 'refreshSlurmDiscovery', alias })} />
@@ -66,7 +63,7 @@ function SessionsView({ state }: { state: SessionsState }) {
     }
     return (
         <>
-            {state.draftAlias ? <ConfigCard key={state.draftAlias} icon="circle-outline" muted alias={state.draftAlias} runtime={state.hostRuntime[state.draftAlias]} onDismiss={() => post({ command: 'dismissDraftSession' })} validating={state.validating} /> : null}
+            {state.draftAlias ? <ConfigCard key={state.draftAlias} alias={state.draftAlias} runtime={state.hostRuntime[state.draftAlias]} onDismiss={() => post({ command: 'dismissDraftSession' })} validating={state.validating} /> : null}
             {state.sessions.map(s => <SessionCard key={s.id} session={s} />)}
             {!state.sessions.length && !state.draftAlias
                 ? <Text muted block style={{ margin: '4px', textAlign: 'center' }}>No sessions yet. Click on + to create one.</Text>

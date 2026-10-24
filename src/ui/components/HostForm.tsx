@@ -12,13 +12,16 @@ interface Props {
     validating?: boolean;
 }
 
+type Options = readonly (readonly [value: string, label: string])[];
+const pairs = (values: string[]): Options => values.map(v => [v, v] as const);
+
 const DEFAULT_WALL = '30';
-const WALL_OPTIONS: [string, string][] = [
+const WALL_OPTIONS: Options = [
     [DEFAULT_WALL, '30 min'], ['60', '1 hour'], ['120', '2 hours'],
     ['240', '4 hours'], ['480', '8 hours'], ['720', '12 hours'], ['1440', '24 hours'],
 ];
 
-export function Select({ label, value, onChange, options, children }: { label: string; value: string; onChange: (v: string) => void; options?: string[][]; children?: ComponentChildren }) {
+function Select({ label, value, onChange, options, children }: { label: string; value: string; onChange: (v: string) => void; options?: Options; children?: ComponentChildren }) {
     return (
         <Stack gap={2}>
             <Text weight={600} size={12}>{label}</Text>
@@ -85,7 +88,7 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
                 : null}
 
             {/* '' → (no Slurm account): a cluster may expose no Slurm accounts to pick (buildSlurmScript then omits --account). */}
-            <Select label="Slurm account" value={account} onChange={setAccount} options={[['', '(no Slurm account)'], ...info.accounts.map(a => [a, a])]} />
+            <Select label="Slurm account" value={account} onChange={setAccount} options={[['', '(no Slurm account)'], ...pairs(info.accounts)]} />
             <Select label="Partition" value={partName} onChange={setPartName}>
                 {parts.map(p => (
                     <option key={p.name} value={p.name}>
@@ -93,13 +96,13 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
                     </option>
                 ))}
             </Select>
-            <Select label="CPUs" value={cpu} onChange={setCpu} options={cpus.map(c => [c, c])} />
-            <Select label="Memory" value={memory} onChange={setMemory} options={mems.map(m => [m, m])} />
+            <Select label="CPUs" value={cpu} onChange={setCpu} options={pairs(cpus)} />
+            <Select label="Memory" value={memory} onChange={setMemory} options={pairs(mems)} />
             {tab === 'gpu' && gpus.counts.length
                 ? (
                         <>
-                            <Select label="GPUs" value={gpuCount} onChange={setGpuCount} options={gpuCounts.map(n => [n, n])} />
-                            <Select label="GPU Type" value={gpuType} onChange={setGpuType} options={gpus.types.map(t => [t, t])} />
+                            <Select label="GPUs" value={gpuCount} onChange={setGpuCount} options={pairs(gpuCounts)} />
+                            <Select label="GPU Type" value={gpuType} onChange={setGpuType} options={pairs(gpus.types)} />
                         </>
                     )
                 : null}
