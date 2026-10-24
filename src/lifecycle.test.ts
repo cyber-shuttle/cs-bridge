@@ -204,3 +204,29 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
     assert.equal(owns(s), false, 'the claim is given back');
     provider.dispose();
 });
+
+test('a second Start during a preview keeps the claim and gives the first attach back', async () => {
+    const s = running();
+    await patch(s, { jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() } });
+    const log: string[] = [];
+    const transport: Transport = {
+        label: 'fake', description: '', management: () => ({ getTunnel: async () => null }),
+        relayClient: () => ({ connect: async () => { }, waitForForwardedPort: async () => { }, dispose: async () => { } }),
+        tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); }, deleteTunnel: async () => { },
+        signedIn: async () => true, prepare: async () => { log.push('attach'); return { tunnelArgs: '', sbatchEnv: {} }; }, release: async () => { log.push('release'); },
+    };
+    const aws = new AwsClient({ get: async () => undefined, store: async () => { }, delete: async () => { }, onDidChange: () => ({ dispose() { } }) } as never);
+    const provider = new SessionProvider({ fsPath: '/ext' } as never, { transportFor: () => transport, remove: async () => { } }, aws);
+    let receive: (m: SessionsMessage) => void = () => { };
+    provider.resolveWebviewView({
+        webview: { options: {}, html: '', cspSource: 'x', asWebviewUri: (u: unknown) => u, postMessage: async () => true, onDidReceiveMessage: (l: (m: SessionsMessage) => void) => { receive = l; return { dispose() { } }; } },
+        visible: true, onDidChangeVisibility: () => ({ dispose() { } }), onDidDispose: () => ({ dispose() { } }),
+    } as never);
+    receive({ command: 'prepareLaunchSession', sessionId: s.id });
+    await sleep(20);
+    receive({ command: 'prepareLaunchSession', sessionId: s.id });
+    await sleep(20);
+    assert.deepEqual(log, ['attach', 'release', 'attach']);
+    assert.equal(owns(s), true, 'the new preview holds the claim');
+    provider.dispose();
+});
