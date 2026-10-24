@@ -1,7 +1,7 @@
 import { SshManager } from './modules/sshSupport';
 import { parseSacctUtil } from './modules/slurmParse';
 import { readSessionRuns, readRecentSamples, readSessionStats, appendRun, isSameRun } from './modules/runStore';
-import { statusOf } from './extensionStore';
+import { getSession, statusOf } from './extensionStore';
 import { RunStats, SlurmSession } from './models';
 import { sleep } from './modules/util';
 
@@ -17,7 +17,7 @@ export async function recordSessionRun(session: SlurmSession): Promise<void> {
     const { id: sessionId, alias, jobId, account, partition, startedAt } = session;
     const run = { sessionId, alias, jobId, account, partition, startedAt, endedAt: Date.now(), finalState: statusOf(session), samples: readRecentSamples(session.id) };
     const stats = await fetchStats(run) ?? readSessionStats(session.id);
-    appendRun({ ...run, stats });
+    if (getSession(sessionId)) { appendRun({ ...run, stats }); } // a session deleted during the wait keeps no runs file
 }
 
 async function fetchStats(job: Pick<SlurmSession, 'alias' | 'jobId'>): Promise<RunStats | undefined> {
