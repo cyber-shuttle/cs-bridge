@@ -69,9 +69,13 @@ export class Ec2Backend implements Backend<Ec2Session> {
         const { region } = session.ec2;
         let sent = false;
         try {
+            await this.aws.restored;
             const { ec2 } = this.aws.require();
             for (;;) {
-                const instance = await ec2.describe(region, session.jobId);
+                // Once the stop is sent, an unreachable API only delays the reading.
+                const read = await ec2.describe(region, session.jobId).then(instance => ({ instance }), (err) => { if (sent) { return undefined; } throw err; });
+                if (!read) { logger.warn(`EC2 describe of ${session.jobId} failed; retrying`); await sleep(5_000); continue; }
+                const { instance } = read;
                 if (!instance || instance.state === 'stopped' || instance.state === 'terminated') { observe(session, instance ? observedEc2(instance.state) : observedEc2('terminated')); break; }
                 if (!sent && instance.state !== 'pending') { await ec2.act('stop', region, session.jobId); sent = true; }
                 await sleep(5_000);
@@ -96,7 +100,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
 
     async tick(session: Ec2Session): Promise<void> {
         const ec2 = this.aws.ec2;
-        if (!ec2) { return; } // signed out, or activation has not restored the key yet: hold
+        if (!ec2) { return; } // signed out, or still restoring: hold
         const spec = session.ec2;
         const instance = await ec2.describe(spec.region, session.jobId);
         if (!instance) { observe(session, observedEc2('terminated')); return; }

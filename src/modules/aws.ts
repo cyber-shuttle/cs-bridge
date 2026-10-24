@@ -10,13 +10,25 @@ import { errMsg } from '@/logger';
 
 const CREDENTIALS_KEY = 'aws.credentials';
 type Credentials = { accessKeyId: string; secretAccessKey: string; sessionToken?: string };
+// The errors AWS answers a bad key with; anything else, such as no network, is not the key's fault.
+const REFUSED_KEY = /^(AuthFailure|UnrecognizedClientException|InvalidClientTokenId|ExpiredToken|SignatureDoesNotMatch)$/;
 
 export class AwsClient implements vscode.Disposable {
     private readonly signedIn = new vscode.EventEmitter<void>();
     readonly onDidSignIn = this.signedIn.event;
     private session?: { ec2: Ec2; regions: string[]; accessKeyId: string };
 
-    constructor(private readonly secrets: vscode.SecretStorage) { }
+    // Signs back in with the stored key; a key AWS refuses is dropped so the menu offers Sign In again.
+    readonly restored: Promise<void>;
+
+    constructor(private readonly secrets: vscode.SecretStorage) {
+        this.restored = this.restore();
+    }
+
+    private async restore(): Promise<void> {
+        const stored = await this.secrets.get(CREDENTIALS_KEY);
+        if (stored) { await this.connect(parseJson<Credentials>(stored)); }
+    }
 
     get regions(): string[] | undefined { return this.session?.regions; }
     get account(): string | null { return this.session?.accessKeyId ?? null; }
@@ -40,12 +52,6 @@ export class AwsClient implements vscode.Disposable {
         }
     }
 
-    // Signs back in with the stored key; a key that no longer works is dropped so the menu offers Sign In again.
-    async restore(): Promise<void> {
-        const stored = await this.secrets.get(CREDENTIALS_KEY);
-        if (stored) { await this.connect(parseJson<Credentials>(stored)); }
-    }
-
     private async connect(credentials: Credentials): Promise<boolean> {
         const clients = new Map<string, EC2Client>();
         const client = (region: string) => getOrSet(clients, region, () => new EC2Client({ region, credentials, requestHandler: { connectionTimeout: 5_000, requestTimeout: 15_000 } }));
@@ -53,7 +59,7 @@ export class AwsClient implements vscode.Disposable {
         try { this.session = { ec2, regions: await ec2.regions(), accessKeyId: credentials.accessKeyId }; }
         catch (err) {
             void vscode.window.showErrorMessage(`AWS sign-in failed: ${errMsg(err)}`);
-            await this.secrets.delete(CREDENTIALS_KEY);
+            if (err instanceof Error && REFUSED_KEY.test(err.name)) { await this.secrets.delete(CREDENTIALS_KEY); }
             return false;
         }
         await this.secrets.store(CREDENTIALS_KEY, JSON.stringify(credentials));

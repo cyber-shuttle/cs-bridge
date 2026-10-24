@@ -57,7 +57,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             void this.pushState();
             void this.reattachLiveSessions(); // a Stop from any window reaches the owner through the record; a beat, too
         }));
-        // Live samples land in the per-session files (bypassing updateSession); pushState reads them at render time.
+        // Live samples land in the per-session files, not the record; pushState reads them at render time.
         this.shared.push(onRunsChange(() => void this.pushState()));
     }
 

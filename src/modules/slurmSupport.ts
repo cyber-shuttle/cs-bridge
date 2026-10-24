@@ -3,17 +3,19 @@ import { SshManager } from './sshSupport';
 import { parseJson } from './json';
 import { parseAccounts, parsePartitionLine, parseSacctStatus } from './slurmParse';
 
-export async function getSlurmJobStatus(slurmSession: SlurmSession): Promise<{ status: SlurmJobStatus; elapsedSeconds: number }> {
-    const command = `sacct -j ${slurmSession.jobId} -n -o State%20,ExitCode,Reason%40,ElapsedRaw --parsable2 2>/dev/null | head -1`;
-    return parseSacctStatus((await SshManager.getInstance().runRemoteCommand(slurmSession.alias, command, { batch: true })).trim());
+type Job = Pick<SlurmSession, 'alias' | 'jobId'>;
+
+export async function getSlurmJobStatus({ alias, jobId }: Job): Promise<{ status: SlurmJobStatus; elapsedSeconds: number }> {
+    const command = `sacct -j ${jobId} -n -o State%20,ExitCode,Reason%40,ElapsedRaw --parsable2 2>/dev/null | head -1`;
+    return parseSacctStatus((await SshManager.getInstance().runRemoteCommand(alias, command, { batch: true })).trim());
 }
 
 // Linkspan's /usage on its loopback control port from inside the job. --input none is load-bearing: srun forwards
 // stdin to the task, which would otherwise swallow the persistent shell's completion marker (sshShell) and hang.
-export async function getSampleViaSrun(session: SlurmSession, controlPort: number): Promise<UsageSample> {
-    const command = `srun --jobid=${session.jobId} --overlap --quiet --input none `
+export async function getSampleViaSrun({ alias, jobId }: Job, controlPort: number): Promise<UsageSample> {
+    const command = `srun --jobid=${jobId} --overlap --quiet --input none `
         + `curl -sf --max-time 4 http://127.0.0.1:${controlPort}/api/v1/usage`;
-    return parseJson<UsageSample>(await SshManager.getInstance().runRemoteCommand(session.alias, command, { batch: true }));
+    return parseJson<UsageSample>(await SshManager.getInstance().runRemoteCommand(alias, command, { batch: true }));
 }
 
 // Everything the session form needs, or an error the form shows with Retry: a host that answers for accounts but not
