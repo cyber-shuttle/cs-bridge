@@ -1,4 +1,4 @@
-import type { SlurmSession, ViewSession } from '@/models';
+import { ec2ImageLabel, type SlurmSession, type ViewSession } from '@/models';
 import { isDeletable, isReachable, isStoppable, wallMs } from '@/modules/sessionMachine';
 
 export { wallMs }; // shared with the monitor via the vscode-free sessionMachine
@@ -72,4 +72,84 @@ export function sessionActions(session: ViewSession): SessionAction[] {
         actions.push({ kind: 'connect', label: s === 'ready_to_connect' ? 'Connect' : 'Reconnect', icon: 'arrow-swap' });
     }
     return actions;
+}
+
+// A dot at rest, a spinner in progress, a square for trouble; dotColor carries the state distinction.
+const STATUS_ICON: Record<ViewSession['status'], { name: string; spin?: boolean }> = {
+    not_started: { name: 'circle-outline' },
+    submitting: { name: 'loading', spin: true },
+    queued: { name: 'loading', spin: true },
+    preparing: { name: 'loading', spin: true },
+    ready_to_connect: { name: 'circle-outline' },
+    connecting: { name: 'loading', spin: true },
+    connected: { name: 'circle-filled' },
+    unreachable: { name: 'primitive-square' },
+    failed: { name: 'primitive-square' },
+    stopped: { name: 'primitive-square' },
+    stopping: { name: 'loading', spin: true },
+};
+
+interface Provider {
+    theme: 'info' | 'warning';
+    chips: (s: ViewSession) => string[];
+    details?: (s: ViewSession) => string[]; // absent: the card renders the resource graphs
+    booting: string;
+    running: (s: ViewSession, now: number) => string;
+}
+
+const PROVIDER: Record<'HPC' | 'AWS', Provider> = {
+    HPC: {
+        theme: 'info',
+        chips: s => [s.account, s.partition],
+        booting: 'Starting Linkspan…',
+        running: (s, now) => `${fmtTime(remainingMs(s, now))} left`,
+    },
+    AWS: {
+        theme: 'warning',
+        chips: s => [s.ec2!.type, ec2ImageLabel(s.ec2!)],
+        details: s => [s.ec2!.region, s.jobId, s.ec2!.ip].filter(Boolean),
+        booting: 'Booting…',
+        running: () => 'Running',
+    },
+};
+
+export interface CardModel {
+    kind: keyof typeof PROVIDER;
+    theme: Provider['theme'];
+    icon: { name: string; spin?: boolean };
+    color: string;
+    chips: string[];
+    walltime?: string;
+    details?: string[];
+    status: { text: string; title?: string };
+    actions: SessionAction[];
+    canDelete: boolean;
+}
+
+function statusText(s: ViewSession, now: number, provider: Provider): CardModel['status'] {
+    const err = s.errorMessage || undefined;
+    switch (s.status) {
+        case 'not_started': return { text: 'Not started' };
+        case 'submitting': return { text: 'Submitting…' };
+        case 'queued': return { text: `Queued${s.submittedAt ? ` (${elapsedLabel(s.submittedAt, now)})` : ''}` };
+        case 'preparing': return { text: provider.booting };
+        case 'ready_to_connect':
+        case 'connected': return { text: provider.running(s, now) };
+        case 'connecting': return { text: 'Connecting…' };
+        case 'unreachable': return { text: err ? `Unreachable: ${err}` : 'SSH host unreachable — retrying…', title: err };
+        case 'stopping': return { text: 'Stopping…' };
+        case 'stopped': return { text: err ? `Stop failed: ${err}` : 'Stopped' };
+        case 'failed': return { text: err ? `Failed: ${err}` : 'Failed', title: err };
+    }
+}
+
+export function cardModel(s: ViewSession, now: number, remote = false): CardModel {
+    const kind = s.ec2 ? 'AWS' : 'HPC';
+    const provider = PROVIDER[kind];
+    const actions = sessionActions(s);
+    return {
+        kind, theme: provider.theme, icon: STATUS_ICON[s.status], color: dotColor(s.status), chips: provider.chips(s),
+        ...kind === 'HPC' && { walltime: fmtTime(wallMs(s)) }, details: provider.details?.(s), status: statusText(s, now, provider),
+        actions: remote ? actions.filter(a => a.kind === 'stop') : actions, canDelete: !remote && isDeletable(s.status),
+    };
 }
