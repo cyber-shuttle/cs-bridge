@@ -34,7 +34,7 @@ export async function ensureDevTunnel(session: SlurmSession, ci: ConnectionInfo)
     if (!tunnel.tunnelId || !tunnel.clusterId) { throw new Error('Dev Tunnels returned a tunnel without an id.'); }
 
     const devtunnel = { id: tunnel.tunnelId, cluster: tunnel.clusterId };
-    patch(session, { devtunnel });
+    if (session.devtunnel?.id !== devtunnel.id || session.devtunnel.cluster !== devtunnel.cluster) { patch(session, { devtunnel }); } // every tick refreshes; write on change
     const connectToken = tunnel.accessTokens?.[TunnelAccessScopes.Connect];
     if (connectToken) { connectTokens.set(session.id, connectToken); }
 
