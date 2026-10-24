@@ -6,8 +6,11 @@ export function getOrSet<K, V>(map: Map<K, V>, key: K, make: () => V): V {
     return value;
 }
 
-// The named groups of a match, once every one of them has matched.
-export function groups<K extends string>(match: RegExpMatchArray | null, ...keys: K[]): Record<K, string> | undefined {
-    const found = match?.groups;
-    return found && keys.every(k => found[k] !== undefined) ? (found as Record<K, string>) : undefined;
+// The named groups of a match, in the order asked for, once every one of them has matched.
+export function groups(match: RegExpMatchArray | null, a: string): [string] | undefined;
+export function groups(match: RegExpMatchArray | null, a: string, b: string): [string, string] | undefined;
+export function groups(match: RegExpMatchArray | null, a: string, b: string, c: string, d: string): [string, string, string, string] | undefined;
+export function groups(match: RegExpMatchArray | null, ...keys: string[]): string[] | undefined {
+    const values = keys.map(k => match?.groups?.[k]);
+    return values.every((v): v is string => v !== undefined) ? values : undefined;
 }

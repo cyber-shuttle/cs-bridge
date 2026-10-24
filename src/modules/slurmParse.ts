@@ -190,11 +190,12 @@ export function parseSacctUtil(output: string): RunStats {
 export function parsePartitionLine(line: string): SlurmPartitionInfo {
     const g = groups(line.match(/^\s*(?<name>[^|]*?)\s*\|\s*(?<cpus>[^|]*?)\s*\|\s*(?<memory>[^|]*?)\s*\|\s*(?<gres>[^|]*?)\s*$/), 'name', 'cpus', 'memory', 'gres');
     if (!g) { throw new Error(`Invalid sinfo line: ${line}`); }
+    const [name, cpus, memory, gres] = g;
     return {
-        name: g.name.replace(/\*$/, ''), // trailing "*" marks the default partition
-        cpuCount: parseLeadingInt(g.cpus),
-        memoryMb: parseInt(g.memory, 10) || 0, // sinfo's %m is MB, '+' when nodes differ
-        gres: parseGres(g.gres),
+        name: name.replace(/\*$/, ''), // trailing "*" marks the default partition
+        cpuCount: parseLeadingInt(cpus),
+        memoryMb: parseInt(memory, 10) || 0, // sinfo's %m is MB, '+' when nodes differ
+        gres: parseGres(gres),
     };
 }
 
@@ -214,7 +215,7 @@ function parseGres(rawGres: string): GresInfo[] {
     // GPUs only, as cs-plane's hasGPU: gpu:v100:2(S:0-1) and gpu:8, not tmpdisk:100G.
     return splitCommaOutsideParens(rawGres).flatMap((entry) => {
         const g = groups(entry.match(/^(?<name>gpu(?::.+)?):(?<count>\d+)(?:\([^)]*\))?$/), 'name', 'count');
-        return g ? [{ name: g.name, count: Number.parseInt(g.count, 10) }] : [];
+        return g ? [{ name: g[0], count: Number.parseInt(g[1], 10) }] : [];
     });
 }
 

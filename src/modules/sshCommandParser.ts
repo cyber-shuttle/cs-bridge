@@ -42,7 +42,7 @@ const WITH_ARG: Record<string, (c: Config, arg: string) => void> = {
     L: (c, a) => {
         const g = groups(a.match(/^(?<listener>(.*):?\d+)?:(?<dest>.+?)?$/), 'listener', 'dest');
         if (!g) { throw new CommandParseError(`LocalForward needs a listener and a destination separated by a colon. ${a} does not match.`); }
-        c.LocalForward = `${g.listener} ${g.dest}`;
+        c.LocalForward = g.join(' ');
     },
     l: (c, a) => { c.User = a; },
     m: (c, a) => { c.MACs = a; },

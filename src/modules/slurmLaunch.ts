@@ -55,7 +55,7 @@ export async function linkspanIsUpToDate(session: SlurmSession, run: RemoteRunne
         return false;
     }
     const clean = (v: string) => v.replace(/[v\s]/g, '');
-    const installed = clean(g.installed), latest = clean(g.latest);
+    const [installed, latest] = [clean(g[0]), clean(g[1])];
     if (keepsInstalledLinkspan(installed, latest) && keepsInstalledLinkspan(installed.replace(/\.[0-9a-f]{7,40}$/, ''), MINIMUM)) {
         log.info(`Linkspan ${installed} on SSH host ${session.alias} is current (latest ${latest || 'unknown'}); keeping it`);
         return true;
