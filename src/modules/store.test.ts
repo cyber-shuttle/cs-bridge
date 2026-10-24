@@ -3,29 +3,28 @@ import assert from 'node:assert/strict';
 import { JsonDir } from './store';
 import { memoryFiles } from './memoryFiles';
 
-interface Rec { n: number; live?: string }
+interface Rec { n: number; m?: number }
 
-test('JsonDir writes the persisted part, skips its own writes and merges another window\'s in place', async () => {
+test('JsonDir skips its own writes and merges another window\'s in place', async () => {
     const files = memoryFiles();
     await files.write('recs/a.json', JSON.stringify({ n: 1 }));
     let changes = 0;
-    const dir = new JsonDir<Rec>(files, 'recs', err => assert.fail(String(err)),
-        (cur, next) => (cur ? Object.assign(cur, next, { live: cur.live }) : next), ({ live: _, ...rest }) => rest);
+    const dir = new JsonDir<Rec>(files, 'recs', err => assert.fail(String(err)), (cur, next) => (cur ? Object.assign(cur, next) : next));
     await dir.load();
     dir.onDidChange(() => changes++);
     const a = dir.get('a')!;
     assert.deepEqual(a, { n: 1 });
 
-    a.live = 'port';
+    a.m = 7;
     dir.set('a', a);
     await dir.reload('a'); // this window's own write, read back once it lands
-    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 1 }); // live stays in memory
+    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 1, m: 7 });
     assert.equal(changes, 1);
 
     await files.write('recs/a.json', JSON.stringify({ n: 2 })); // another window
     await dir.reload('a');
     assert.equal(dir.get('a'), a); // same object, as the monitor holds it
-    assert.deepEqual(a, { n: 2, live: 'port' });
+    assert.deepEqual(a, { n: 2, m: 7 });
     assert.equal(changes, 2);
 
     await files.write('recs/a.json', '{"n": 3'); // read mid-write

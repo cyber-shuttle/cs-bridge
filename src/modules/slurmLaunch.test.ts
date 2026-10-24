@@ -119,15 +119,14 @@ test('validateSlurmConfig hands sbatch --test-only the job script and surfaces t
 
 test('submitJobToSlurm feeds sbatch the script and sbatchEnv, recording the job id', async () => {
     const { run, home } = host({ sbatch: 'cat > "$HOME/script"; printf %s "$LINKSPAN_LINK_TOKEN" > "$HOME/token"; echo "$*" > "$HOME/args"; echo "Submitted batch job 4242"' });
-    const s = session({ jobScript: '#!/bin/bash\necho hi' });
-    await submitJobToSlurm(s, run, noopLog, { LINKSPAN_LINK_TOKEN: 'tok\'en' });
+    const s = session();
+    await submitJobToSlurm(s, run, noopLog, { script: '#!/bin/bash\necho hi', sbatchEnv: { LINKSPAN_LINK_TOKEN: 'tok\'en' } });
     assert.equal(readFileSync(join(home, 'script'), 'utf-8'), '#!/bin/bash\necho hi');
     assert.equal(readFileSync(join(home, 'token'), 'utf-8'), 'tok\'en');
     assert.equal(readFileSync(join(home, 'args'), 'utf-8').trim(), '--export=ALL');
     assert.equal(s.jobId, '4242');
     assert.ok((s.submittedAt ?? 0) > 0);
 
-    await assert.rejects(() => submitJobToSlurm(session(), host().run, noopLog), /missing job script/);
-    await assert.rejects(() => submitJobToSlurm(session({ jobScript: 'x' }), host({ sbatch: 'echo no id here' }).run, noopLog),
+    await assert.rejects(() => submitJobToSlurm(session(), host({ sbatch: 'echo no id here' }).run, noopLog, { script: 'x', sbatchEnv: {} }),
         /Failed to parse job ID/);
 });

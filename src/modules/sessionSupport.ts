@@ -7,7 +7,7 @@ import { SshManager } from './sshSupport';
 import { getSampleViaSrun, getSlurmJobStatus } from './slurmSupport';
 import { buildSlurmScript } from './slurmParse';
 import { isReachable, isTerminal } from './sessionMachine';
-import { checkSlurmAvailability, linkspanIsUpToDate, installLinkspan, submitJobToSlurm } from './slurmLaunch';
+import { checkSlurmAvailability, linkspanIsUpToDate, installLinkspan, submitJobToSlurm, LaunchDraft } from './slurmLaunch';
 import { Transport, disconnectSessionFromTunnel, disposeTunnelClient, ensureRemoteSession, isTunnelClientConnected } from './transport';
 import { getHealth, getSample } from './linkspanSupport';
 import { appendSample, writeSessionStats, resetLive } from './runStore';
@@ -215,7 +215,7 @@ export class SessionMonitor {
     }
 }
 
-export async function prepareLaunch(session: SlurmSession, transport: Transport): Promise<Record<string, string>> {
+export async function prepareLaunch(session: SlurmSession, transport: Transport): Promise<LaunchDraft> {
     // Fresh connection info with this run's control port pinned before transport.prepare: that call is what puts the port
     // on the Dev Tunnel, and the job's Dev Tunnel host has to find it already there.
     // Trade-off: random high port; ~1/12000 collision on a shared compute node (Linkspan log.Fatals if taken, session then fails) — probe a free port on the node if it ever bites.
@@ -224,22 +224,24 @@ export async function prepareLaunch(session: SlurmSession, transport: Transport)
 
     const launch = await transport.prepare(session);
 
-    try { session.jobScript = buildSlurmScript(session, launch); }
+    let script: string;
+    try { script = buildSlurmScript(session, launch); }
     catch (err) { throw new Error(`Failed to generate Slurm script: ${errMsg(err)}`, { cause: err }); }
 
     session.errorMessage = '';
     updateSession(session);
-    return launch.sbatchEnv;
+    return { script, sbatchEnv: launch.sbatchEnv };
 }
 
-export async function launchSession(session: SlurmSession, monitor: SessionMonitor, sbatchEnv: Record<string, string>): Promise<void> {
+export async function launchSession(session: SlurmSession, monitor: SessionMonitor, draft: LaunchDraft | undefined): Promise<void> {
+    if (!draft) { throw new Error(`Session ${session.name}: no job script was prepared`); }
     logger.info(sessionLine(session.name, `initiating launch`));
     const run = SshManager.getInstance();
     await checkSlurmAvailability(session, run, logger);
     if (!await linkspanIsUpToDate(session, run, logger)) {
         await installLinkspan(session, run, logger);
     }
-    await submitJobToSlurm(session, run, logger, sbatchEnv);
+    await submitJobToSlurm(session, run, logger, draft);
     monitor.startMonitoring(session);
 }
 

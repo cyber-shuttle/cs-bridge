@@ -1,7 +1,7 @@
 import { SlurmSession } from '../models';
 import * as vscode from 'vscode';
 import { Logger } from '../logger';
-import { updateSession } from '../extensionStore';
+import { live, updateSession } from '../extensionStore';
 import { TunnelManagementHttpClient, ManagementApiVersions } from '@microsoft/dev-tunnels-management';
 import { TunnelRelayTunnelClient, TunnelConnectionOptions } from '@microsoft/dev-tunnels-connections';
 import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
@@ -33,8 +33,9 @@ export async function ensureDevTunnel(session: SlurmSession): Promise<string> {
     const tunnel = (ref && await mgmt.getTunnel(ref, opts)) ?? await mgmt.createTunnel(ref ?? {}, opts);
 
     session.devtunnel = { id: tunnel.tunnelId!, cluster: tunnel.clusterId! };
-    ci.connectToken = tunnel.accessTokens?.[TunnelAccessScopes.Connect] ?? ci.connectToken;
     updateSession(session);
+    const connectToken = tunnel.accessTokens?.[TunnelAccessScopes.Connect];
+    if (connectToken) { live.connectTokens.set(session.id, connectToken); }
 
     // Nothing reaches the job on a port the Dev Tunnel does not carry, and a failure here is the session's failure.
     if (ci.controlPort && !tunnel.ports?.some(p => p.portNumber === ci.controlPort)) {
@@ -72,8 +73,8 @@ export const devTunnels = {
     relayClient: (management: TunnelManagementHttpClient, session: SlurmSession) => new DevTunnelRelayClient(new TunnelRelayTunnelClient(management), session.connectionInfo?.controlPort ?? 0),
     tunnelRef: devTunnelRef,
     ensureTunnel: ensureDevTunnel,
-    withLinkspan: ({ devtunnel, connectionInfo: ci }, call) => call(`https://${devtunnel?.id}-${ci?.controlPort}.${devtunnel?.cluster}.devtunnels.ms/api/v1`,
-        { 'X-Tunnel-Authorization': `tunnel ${ci?.connectToken}` }),
+    withLinkspan: ({ id, devtunnel, connectionInfo: ci }, call) => call(`https://${devtunnel?.id}-${ci?.controlPort}.${devtunnel?.cluster}.devtunnels.ms/api/v1`,
+        { 'X-Tunnel-Authorization': `tunnel ${live.connectTokens.get(id)}` }),
     deleteTunnel: deleteDevTunnel,
 } satisfies Tunnels;
 

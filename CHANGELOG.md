@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - A remote command that fails now reports its exit code and stderr the same way everywhere, so a launch, stop or
   discovery failure reads as the command's own error.
+- A session record no longer carries a window's local port or Dev Tunnel token; they stay in that window's memory.
 
 ### Changed
 

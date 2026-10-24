@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { UUID } from 'uuidv7';
-import { Run, RunStats, RunsFile, SessionStatus, SlurmJobStatus, SlurmSession, UsageSample, persistableConnectionInfo } from '../models';
+import { Run, RunStats, RunsFile, SessionStatus, SlurmJobStatus, SlurmSession, UsageSample } from '../models';
 import { deleteFile, jsonFiles, lock, readJson, release, writeJson } from './fsSupport';
 import { Files, Steps } from './store';
 import { gpuTypeOf, slurmAccount } from './slurmParse';
@@ -40,6 +40,7 @@ function gpu(gpuClass = '') {
 
 function sessionV1(r: V0Session): V2Session {
     const ci = r.connectionInfo ?? {};
+    const ports = { sshPort: ci.sshPort ?? 0, controlPort: ci.controlPort ?? ci.apiPort ?? 0 };
     const cluster = r.devtunnel?.cluster ?? r.tunnelCluster ?? ci.region ?? '';
     return {
         id: r.id, name: r.name ?? r.id, status: r.status === 'awaiting_input' ? 'not_started' : r.status,
@@ -49,7 +50,7 @@ function sessionV1(r: V0Session): V2Session {
         jobId: r.jobId ?? '', submittedAt: r.submittedAt ?? 0, startedAt: r.startedAt, errorMessage: r.errorMessage ?? '',
         transport: r.transport ?? 'devtunnel', planeId: r.planeId,
         devtunnel: r.devtunnel ?? (r.tunnelId ? { id: r.tunnelId, cluster } : undefined),
-        connectionInfo: persistableConnectionInfo({ sshPort: ci.sshPort ?? 0, controlPort: ci.controlPort ?? ci.apiPort ?? 0 }),
+        connectionInfo: ports.sshPort || ports.controlPort ? ports : undefined, // a preparing session keeps its control port
     };
 }
 

@@ -37,8 +37,7 @@ export interface SlurmSession {
     transport: 'devtunnel' | 'link'; // the latest run's route to Linkspan
     devtunnel?: { id: string; cluster: string };
     planeId?: string; // the cs-plane session each link run attaches
-    connectionInfo?: SessionConnectionInfo;
-    jobScript?: string; // the previewed run's, cleared once submitted
+    connectionInfo?: ConnectionInfo;
     ec2?: Ec2Spec; // an EC2 session: alias is aws-<region>, jobId the instance id, resources zero, transport unused
 }
 
@@ -51,21 +50,11 @@ export interface Ec2Spec {
     ip: string;
 }
 
-// sshPort > 0 means Step 1 is up: Linkspan serves the session's sshd.
-export interface PersistedConnectionInfo {
+// sshPort > 0 means Step 1 is up: Linkspan serves the session's sshd. This window's local forward and connect token
+// live in extensionStore.live.
+export interface ConnectionInfo {
     sshPort: number;
     controlPort: number;
-}
-
-export interface SessionConnectionInfo extends PersistedConnectionInfo {
-    localPort?: number; // this window's 127.0.0.1 forward to the sshd
-    connectToken?: string; // the Dev Tunnel's connect token
-}
-
-export function persistableConnectionInfo(ci: SessionConnectionInfo | undefined): PersistedConnectionInfo | undefined {
-    // A session preparing has a control port but no sshd yet; drop it and a reload orphans it.
-    if (!ci?.sshPort && !ci?.controlPort) { return undefined; }
-    return { sshPort: ci.sshPort, controlPort: ci.controlPort };
 }
 
 export interface SshHost {
@@ -170,7 +159,7 @@ export interface SessionsState {
     sessions: ViewSession[];
     draftAlias: string | null;
     hostRuntime: Record<string, HostRuntime>;
-    previewSession: SlurmSession | null;
+    preview: { sessionId: string; alias: string; script: string } | null;
     validating: boolean;
     alert: { title: string; message: string } | null;
 }

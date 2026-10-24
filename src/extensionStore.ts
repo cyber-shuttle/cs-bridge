@@ -1,5 +1,5 @@
 import { Logger } from './logger';
-import { SessionStatus, SlurmJobStatus, SlurmSession, persistableConnectionInfo } from './models';
+import { SessionStatus, SlurmJobStatus, SlurmSession } from './models';
 import { deriveStatus } from './modules/sessionMachine';
 import { Files, JsonDir } from './modules/store';
 import { deleteRunsFile } from './modules/runStore';
@@ -19,10 +19,8 @@ let beat: ReturnType<typeof setInterval> | undefined;
 const windowId = Math.random().toString(36).slice(2);
 
 export async function initSessionStore(files: Files, onError: (err: unknown) => void) {
-    sessions = new JsonDir<SlurmSession>(files, 'sessions', onError,
-        // Keeps the object the monitor holds, and this window's live connection details, which are never written.
-        (cur, next) => (cur ? Object.assign(cur, next, { connectionInfo: cur.connectionInfo ?? next.connectionInfo }) : next),
-        s => ({ ...s, connectionInfo: persistableConnectionInfo(s.connectionInfo) }));
+    // Keeps the object the monitor and an in-flight step hold.
+    sessions = new JsonDir<SlurmSession>(files, 'sessions', onError, (cur, next) => (cur ? Object.assign(cur, next) : next));
     windows = new JsonDir<WindowBeat>(files, 'windows', onError);
     await Promise.all([sessions.load(), windows.load()]);
     // A window that died without detaching leaves a beat that lapses with no write to watch.
@@ -49,7 +47,25 @@ export function updateSession(session: SlurmSession) {
     if (sessions.get(session.id)) { sessions.set(session.id, session); }
 }
 
-export const live = { launching: new Set<string>(), connecting: new Set<string>(), connected: new Set<string>(), unreachable: new Set<string>() };
+// A live-set change notifies onSessionsChange like a record write, so no caller has to re-render by hand.
+const liveListeners = new Set<() => void>();
+class LiveSet extends Set<string> {
+    add(id: string): this {
+        if (!this.has(id)) { super.add(id); liveListeners.forEach(l => l()); }
+        return this;
+    }
+
+    delete(id: string): boolean {
+        const had = super.delete(id);
+        if (had) { liveListeners.forEach(l => l()); }
+        return had;
+    }
+}
+
+export const live = {
+    launching: new LiveSet(), connecting: new LiveSet(), connected: new LiveSet(), unreachable: new LiveSet(),
+    connectTokens: new Map<string, string>(),
+};
 
 // A remote window beating for the session is a connection too, whichever window holds the tunnel.
 export function statusOf(session: SlurmSession, now = Date.now()): SessionStatus {
@@ -94,8 +110,9 @@ export function windowState(s: SlurmSession): { isCurrent: boolean; windowAlive:
     return { isCurrent: windows.get(windowId)?.sessionId === s.id, windowAlive: !!live, windowFolder: live?.folder };
 }
 
-// Heartbeats fire it too.
+// Heartbeats and live sets fire it too.
 export function onSessionsChange(listener: () => void): { dispose(): void } {
     const subs = [sessions.onDidChange(listener), windows.onDidChange(listener)];
-    return { dispose: () => subs.forEach(s => s.dispose()) };
+    liveListeners.add(listener);
+    return { dispose: () => { subs.forEach(s => s.dispose()); liveListeners.delete(listener); } };
 }

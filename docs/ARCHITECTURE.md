@@ -45,7 +45,7 @@ Local VS Code                              Remote HPC cluster
    (`linkspan_Linux_x86_64.tar.gz`, `linkspan_Linux_arm64.tar.gz`); anything else is refused by name.
 5. **Submit.** The script is base64-piped into `sbatch`, and the host token rides `LINKSPAN_TUNNEL_HOST_TOKEN=… sbatch
    --export=ALL`, so it never lands on the cluster filesystem. The parsed job id is kept on the session record and the
-   in-memory script is dropped (`slurmLaunch.ts`).
+   provider's draft of the script is dropped (`slurmLaunch.ts`).
 6. **Poll.** `SessionMonitor` runs one `setInterval` per active session — no central loop. Before the job runs it
    polls `sacct` and applies `computeStatusTransition`; once it runs it pings Linkspan over the Dev Tunnel and
    falls back to a `sacct` cross-check only after repeated health failures (`sessionSupport.ts`, `sessionMachine.ts`).
@@ -174,8 +174,8 @@ Sessions, run history and window heartbeats are one JSON record per id under `se
 Code's extension storage: a folder on desktop, IndexedDB in the browser. A `JsonDir` (`store.ts`) holds each directory
 in memory, so reads are synchronous; writes, and reloads of other windows' writes from a file watcher (`storage.ts`),
 run in order on that directory's queue, and the last write to a record wins. A window connected to a session rewrites
-its heartbeat, carrying the folder URI it has open, until it closes; Switch focuses that exact URI. Of the connection, only `sshPort` and `controlPort` are persisted, the latter so a
-reattached session health-pings Linkspan instead of polling the SSH host; secrets and the local port stay in memory.
+its heartbeat, carrying the folder URI it has open, until it closes; Switch focuses that exact URI. A record holds only
+what every window shares; this window's local forward, connect token and connection are `extensionStore.live`.
 
 Field names match cs-plane's wire types: a session is `alias`, `account`, `partition`, `rootFolder` and `resources`
 (`cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`); a run is `Run` with `RunStats` and `samples`.
