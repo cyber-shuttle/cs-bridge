@@ -3,6 +3,7 @@ import { afterEach, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { panels } from '../scripts/vscodeMock.js';
 import { memoryFiles } from './modules/memoryFiles';
+import { must } from './modules/testSupport';
 import type { JsonDir } from './modules/store';
 import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, deleteSession, patch, observe, onSessionsChange } from './extensionStore';
 import { initRunStore, appendRun } from './modules/runStore';
@@ -21,7 +22,6 @@ const fail = (err: unknown) => assert.fail(String(err));
 let windows: JsonDir<{ at: number }>;
 before(async () => { [, windows] = await initSessionStore(files, fail); await initRunStore(files, fail); });
 afterEach(() => { for (const s of getAllSessions()) { deleteSession(s.id); } }); // a provider's sweep sees only its own test's records
-const must = <T>(value: T | undefined): T => { assert.ok(value !== undefined); return value; };
 const running = () => {
     const s = newSession({ alias: 'delta', account: '', partition: 'cpu', rootFolder: '/home/u', resources: { cores: 1, memoryMb: 1024, wallMinutes: 30 } });
     addSession({ ...s, jobId: '7', observed: { state: SlurmJobStatus.RUNNING, at: Date.now() }, startedAt: Date.now() - 1000 });
@@ -72,7 +72,7 @@ test('a tick that outlives its loop writes nothing, and a teardown is awaited by
 
 test('the summary shows a run as recorded, pinned to the job it opened on', async () => {
     const s = running();
-    openSummaryPanel(vscode.Uri.parse('/ext'), s);
+    const summary = openSummaryPanel(vscode.Uri.parse('/ext'), s);
     const panel = must(panels.at(-1));
     panel.receive({ command: 'ready' });
     const last = () => must(panel.webview.posted.at(-1)).state;
@@ -87,6 +87,7 @@ test('the summary shows a run as recorded, pinned to the job it opened on', asyn
     assert.equal(state.session.status, 'stopped');
     assert.deepEqual(state.session.samples, [{ memBytes: 1 }]);
     assert.deepEqual(state.stats, { cores: 1 });
+    summary.dispose();
 });
 
 test('an EC2 instance is adopted once, then started, stopped and removed through the lifecycle', async () => {

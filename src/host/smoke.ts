@@ -18,7 +18,11 @@ const userData = process.env.CSBRIDGE_USER_DATA;
 if (!userData) { throw new Error('CSBRIDGE_USER_DATA names the test profile'); }
 const storage = path.join(userData, 'User', 'globalStorage', EXTENSION_ID);
 const file = (dir: string, id: string) => path.join(storage, dir, `${id}.json`);
-const write = (dir: string, id: string, value: object) => { fs.mkdirSync(path.join(storage, dir), { recursive: true }); fs.writeFileSync(file(dir, id), JSON.stringify(value)); };
+const write = (dir: string, id: string, value: object) => {
+    fs.mkdirSync(path.join(storage, dir), { recursive: true });
+    fs.writeFileSync(`${file(dir, id)}.tmp`, JSON.stringify(value));
+    fs.renameSync(`${file(dir, id)}.tmp`, file(dir, id)); // as the extension writes
+};
 const read = <T>(dir: string, id: string): T | undefined => (fs.existsSync(file(dir, id)) ? parseJson<T>(fs.readFileSync(file(dir, id), 'utf8')) : undefined);
 const record = (id: string) => read<SlurmSession>('sessions', id);
 const runs = (id: string): Run[] => read<RunsFile>('runs', id)?.runs || [];

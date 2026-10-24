@@ -38,7 +38,8 @@ export class CsBridgeMenu {
         const stack: Build[] = [];
         let page: Page;
         const render = (build: Build) => {
-            page = build();
+            try { page = build(); }
+            catch (err) { fail(err); pick.hide(); return; }
             Object.assign(pick, {
                 title: page.title, placeholder: page.placeholder, items: page.items, ignoreFocusOut: !!page.input,
                 buttons: stack.length > 1 ? [vscode.QuickInputButtons.Back] : [],
@@ -62,8 +63,7 @@ export class CsBridgeMenu {
             (async () => item?.run?.())().catch(fail).finally(() => this.refreshAccounts());
         });
         pick.onDidHide(() => { stack.length = 0; nested(false); pick.dispose(); });
-        try { go(start); }
-        catch (err) { pick.dispose(); fail(err); return; }
+        go(start);
         pick.show();
         void this.refreshAccounts().then(() => { if (stack.at(-1) === this.root) { render(this.root); } });
     }
