@@ -28,12 +28,11 @@ export class RemoteSessionController implements vscode.Disposable {
         this.stopItem.command = 'csbridge.stopRemoteSession';
         this.stopCommand = vscode.commands.registerCommand('csbridge.stopRemoteSession', () => this.requestStopHandoff());
 
-        this.render();
-        if (!this.torndown) { this.item.show(); this.stopItem.show(); }
-
         this.ticker = setInterval(() => this.render(), 1000);
         // Catches terminal transitions, from this window or another.
         this.watcher = onSessionsChange(() => this.render());
+        this.render();
+        if (!this.torndown) { this.item.show(); this.stopItem.show(); }
     }
 
     private render(): void {

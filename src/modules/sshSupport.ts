@@ -94,7 +94,7 @@ export class SshManager {
         vscode.window.createTerminal({ name: alias, shellPath: 'ssh', shellArgs: [...this.buildControlMasterArgs(alias), alias] }).show();
     }
 
-    public buildControlMasterArgs(alias: string): string[] {
+    private buildControlMasterArgs(alias: string): string[] {
         // Windows OpenSSH has no Unix-socket ControlMaster ("getsockname failed: Not a socket").
         if (process.platform === 'win32') {
             return [];
@@ -118,7 +118,7 @@ export class SshManager {
         return stdout;
     }
 
-    public disposeAll(): void {
+    private disposeAll(): void {
         for (const shell of this.shells.values()) { shell.alive = false; shell.proc.kill(); }
         this.shells.clear();
     }
