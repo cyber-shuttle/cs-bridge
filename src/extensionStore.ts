@@ -10,7 +10,7 @@ let sessions: JsonDir<SlurmSession>;
 
 // Every window rewrites windows/{windowId}.json until it closes; a remote window's beat names its session and the
 // folder URI it has open, which Switch focuses: VS Code finds a window only by the exact URI, and the user may have
-// opened another folder there. env.sessionId repeats across browser tabs, and a hidden tab's timers can slow to once a minute.
+// opened another folder there.
 interface WindowBeat { sessionId?: string; at: number; folder?: string }
 let windows: JsonDir<WindowBeat>;
 const BEAT_MS = 20_000;

@@ -63,8 +63,10 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     private release(session: SlurmSession | undefined) { return session && this.transports.transportFor(session).release(session); }
 
+    // A preview that goes unsubmitted gives back its run and its claim.
     private dropDraft() {
-        if (this.draft) { void this.release(getSession(this.draft.sessionId)); }
+        const session = this.draft && getSession(this.draft.sessionId);
+        if (session) { void this.release(session); this.settle(session); }
         this.draft = null;
     }
 
@@ -330,6 +332,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             vscode.window.showErrorMessage(errMsg(err));
             setError(session, errMsg(err));
             this.logger.error('Failed to prepare session launch:', err);
+            this.settle(session);
         }
         void this.pushState();
     }
