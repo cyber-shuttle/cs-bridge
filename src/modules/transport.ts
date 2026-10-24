@@ -121,7 +121,7 @@ export class Transports {
 
     constructor(plane: Plane) { this.link = new Link(plane); }
 
-    readonly transportFor = (session: Pick<SlurmSession, 'transport'>) => session.transport === 'link' ? this.link : devTunnel;
+    readonly transportFor = (session: Pick<SlurmSession, 'transport'>): Transport => (session.transport === 'link' ? this.link : devTunnel);
 
     async remove(session: SlurmSession) {
         for (const t of [devTunnel, this.link]) { await t.deleteTunnel(session); }

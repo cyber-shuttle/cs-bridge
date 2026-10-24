@@ -139,7 +139,7 @@ export class SlurmBackend implements Backend {
     private runs = new Map<string, Tally>(); // this window's tallies per session
 
     // The monitor is built with this backend, so it arrives lazily.
-    constructor(private readonly transports: Transports, private readonly monitor: () => SessionMonitor) { }
+    constructor(private readonly transports: Pick<Transports, 'transportFor' | 'remove'>, private readonly monitor: () => SessionMonitor) { }
 
     private log(session: SlurmSession, msg: string): void { logger.info(sessionLine(session.name, msg)); }
     private warn(session: SlurmSession, msg: string): void { logger.warn(sessionLine(session.name, msg)); }
