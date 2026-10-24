@@ -76,22 +76,16 @@ export function buildSlurmScript(session: SlurmSession, launch: LinkspanLaunch):
     return scriptLines.join('\n');
 }
 
-// One `sacct --parsable2` row: State|ExitCode|Reason|ElapsedRaw
+// One `sacct --parsable2` row: State|ExitCode|Reason|ElapsedRaw. No row yet (accounting lags a fresh submit) is an
+// UNKNOWN reading the monitor holds, not an unreachable host.
 export function parseSacctStatus(output: string): { status: SlurmJobStatus; elapsedSeconds: number } {
-    if (!output) {
-        throw new Error('Failed to get job status. No output from sacct command.');
-    }
-    const fields = output.split('|');
-    if (fields.length < 4) {
-        throw new Error('Failed to get job status. Unexpected output format from sacct command. Output: ' + output);
-    }
     /*
     FAILED|1:0|None|120
     CANCELLED by 1001|0:0|None|0
     RUNNING|0:0|None|345
     TIMEOUT|0:0|None|3600
     */
-    const [state = '', , , elapsedRaw = ''] = fields;
+    const [state = '', , , elapsedRaw = ''] = output.split('|');
     // ElapsedRaw is Slurm's authoritative run-time in whole seconds (no timezone/clock guessing).
     const elapsedSeconds = /^\d+$/.test(elapsedRaw.trim()) ? parseInt(elapsedRaw.trim(), 10) : 0;
 

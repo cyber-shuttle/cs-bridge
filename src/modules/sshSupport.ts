@@ -87,14 +87,10 @@ export class SshManager {
         return SshManager.instance;
     }
 
-    private readHostsFile(filePath: string, source: 'user' | 'system'): SshHost[] {
-        try {
-            if (!fs.existsSync(filePath)) { return []; }
-            const text = fs.readFileSync(filePath, 'utf-8');
-            return parseHostsFromConfigText(text, source);
-        }
+    private readHostsFile(filePath: string, source: SshHost['source']): SshHost[] {
+        try { return parseHostsFromConfigText(fs.readFileSync(filePath, 'utf-8'), source); }
         catch (err) {
-            logger.error(`Error reading SSH config ${filePath}:`, err);
+            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') { logger.error(`Error reading SSH config ${filePath}:`, err); }
             return [];
         }
     }
@@ -355,7 +351,6 @@ export function sessionPublicKey(sessionId: string): string {
     const keyPath = sessionKeyPath(sessionId);
     const keygen = (...args: string[]) => execFileSync('ssh-keygen', args, { encoding: 'utf-8', stdio: 'pipe' }).trim();
     if (!hasSessionKey(sessionId)) {
-        fs.mkdirSync(CS_SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
         keygen('-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', keyPath);
         fs.unlinkSync(`${keyPath}.pub`);
     }

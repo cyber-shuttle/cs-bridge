@@ -72,8 +72,10 @@ export const devTunnels = {
     relayClient: (management: TunnelManagementHttpClient, session: SlurmSession) => new DevTunnelRelayClient(new TunnelRelayTunnelClient(management), session.connectionInfo?.controlPort ?? 0),
     tunnelRef: devTunnelRef,
     ensureTunnel: ensureDevTunnel,
-    withLinkspan: ({ id, devtunnel, connectionInfo: ci }, call) => call(`https://${devtunnel?.id}-${ci?.controlPort}.${devtunnel?.cluster}.devtunnels.ms/api/v1`,
-        { 'X-Tunnel-Authorization': `tunnel ${live.connectTokens.get(id)}` }),
+    withLinkspan: ({ id, devtunnel, connectionInfo: ci }, call) => {
+        if (!devtunnel || !ci) { throw new Error('The session has no Dev Tunnel to reach Linkspan through.'); }
+        return call(`https://${devtunnel.id}-${ci.controlPort}.${devtunnel.cluster}.devtunnels.ms/api/v1`, { 'X-Tunnel-Authorization': `tunnel ${live.connectTokens.get(id)}` });
+    },
     deleteTunnel: deleteDevTunnel,
 } satisfies Tunnels;
 

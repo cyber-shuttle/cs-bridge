@@ -27,9 +27,9 @@ test('parseSacctStatus returns UNKNOWN for an unrecognized state and 0 elapsed f
     assert.deepEqual(parseSacctStatus('SOMETHING_ELSE|0:0|None|n/a'), { status: SlurmJobStatus.UNKNOWN, elapsedSeconds: 0 });
 });
 
-test('parseSacctStatus throws on empty or malformed output', () => {
-    assert.throws(() => parseSacctStatus(''), /No output from sacct/);
-    assert.throws(() => parseSacctStatus('FAILED|1:0'), /Unexpected output format/);
+test('parseSacctStatus reads no row yet as UNKNOWN, so accounting lag never looks like an unreachable host', () => {
+    assert.deepEqual(parseSacctStatus(''), { status: SlurmJobStatus.UNKNOWN, elapsedSeconds: 0 });
+    assert.deepEqual(parseSacctStatus('FAILED|1:0'), { status: SlurmJobStatus.FAILED, elapsedSeconds: 0 });
 });
 
 test('parsePartitionLine strips the default-partition marker and parses "24+" CPUs', () => {

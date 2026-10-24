@@ -166,9 +166,9 @@ export class SlurmBackend implements Backend {
         live.connecting.add(session.id);
         const transport = this.transports.transportFor(session);
         try {
-            await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
+            const ci = await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
             if (!hasSessionKey(session.id)) { throw new Error('SSH private key not found for session'); }
-            await connectSessionToTunnel(transport, session, () => void this.reconnect(session.id));
+            await connectSessionToTunnel(transport, session, ci, () => void this.reconnect(session.id));
             // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets no local port.
             if (isTerminal(statusOf(session))) { throw new Error('the job ended'); }
             await syncSshConfig();

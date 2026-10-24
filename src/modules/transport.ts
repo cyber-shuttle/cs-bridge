@@ -2,7 +2,7 @@
 // A Transport is its tunnel clients plus the launch and the run's release. transportFor reads the record's `transport`,
 // and nothing outside this module branches on it. Delete removes both transports' tunnels, since a record keeps whatever
 // either one's earlier runs left behind.
-import { SlurmSession } from '../models';
+import { ConnectionInfo, SlurmSession } from '../models';
 import { Logger, errMsg } from '../logger';
 import { Plane } from '../plane';
 import { live, patch, updateSession } from '../extensionStore';
@@ -127,19 +127,20 @@ const activeTunnelClients = new Map<string, TunnelRelayClient>();
 
 // Step 1: the session's sshd. Linkspan answers a repeat with the running one, so asking each time self-heals a port a
 // Linkspan restart changed.
-export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Promise<void> {
+export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Promise<ConnectionInfo> {
     await t.ensureTunnel(session); // refreshes the tunnel and its connect token
     const ci = session.connectionInfo ??= { sshPort: 0, controlPort: 0 };
 
     // Best-effort: if Linkspan stalls (a flaky tunnel) once its sshd is known, proceed with that port.
     try { ci.sshPort = (await t.withLinkspan(session, (baseUrl, headers) => ensureSshServer(baseUrl, headers, sessionPublicKey(session.id)))).bind_port; }
     catch (err) {
-        if (ci.sshPort) { return; }
+        if (ci.sshPort) { return ci; }
         throw err;
     }
 
     updateSession(session);
     logger.info(`SSH server for session ${session.id} is on port ${ci.sshPort}, reached through ${t.label} ${t.tunnelRef(session)?.tunnelId}.`);
+    return ci;
 }
 
 export function hasTunnelClient(sessionId: string): boolean {
@@ -150,14 +151,9 @@ export function hasTunnelClient(sessionId: string): boolean {
 // the authoritative liveness signal for a connected session.
 export const isTunnelClientConnected = (sessionId: string): boolean => live.connected.has(sessionId);
 
-export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, onDevTunnelLost: () => void): Promise<number> {
+export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, ci: ConnectionInfo, onDevTunnelLost: () => void): Promise<void> {
     logger.info(`Connecting session ${session.id} to its ${t.label}...`);
 
-    if (!session.connectionInfo) {
-        throw new Error(`Session ${session.id} does not have connection info.`);
-    }
-
-    const { sshPort } = session.connectionInfo;
     const ref = t.tunnelRef(session);
     const mgmtClient = t.management();
 
@@ -199,18 +195,16 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
             enableReconnect: true,
             keepAliveIntervalInSeconds: 15, // probe the upstream WebSocket so a half-open Dev Tunnel is detected and reconnected fast (default 0 = off)
         });
-        localPort = await forwardedLocalPort(client, sshPort);
+        localPort = await forwardedLocalPort(client, ci.sshPort);
     }
     catch (err) {
         await disposeTunnelClient(session.id);
         throw err;
     }
 
-    session.connectionInfo.localPort = localPort;
-    updateSession(session);
+    patch(session, { connectionInfo: { ...ci, localPort } });
     live.connected.add(session.id);
     logger.info(`${t.label} connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
-    return localPort;
 }
 
 // Frees the local port only. Never deletes the remote sshd or tunnel (job-scoped, reaped by Linkspan) — that would break reattach.
