@@ -58,24 +58,14 @@ export class SshManager {
 
     private constructor(private readonly extensionUri: vscode.Uri) {
         if (process.platform !== 'win32') { CS_SSH_CONTROL_DIR = privateControlDir(); }
-
-        if (!fs.existsSync(CS_SSH_KEYS_DIR)) {
-            fs.mkdirSync(CS_SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
-        }
+        fs.mkdirSync(CS_SSH_KEYS_DIR, { recursive: true, mode: 0o700 });
     }
 
     public static initInstance(extensionUri: vscode.Uri, storageDir: string): SshManager {
         CS_SSH_CONFIG_PATH = path.join(storageDir, 'ssh_config');
         CS_SSH_KEYS_DIR = path.join(storageDir, 'ssh_keys');
-        if (!SshManager.instance) {
-            SshManager.instance = new SshManager(extensionUri);
-        }
-
+        SshManager.instance ??= new SshManager(extensionUri);
         // Include'd above the user's global entries so a per-session SSH host wins via SSH first-match.
-        if (!fs.existsSync(CS_SSH_CONFIG_PATH)) {
-            fs.mkdirSync(path.dirname(CS_SSH_CONFIG_PATH), { recursive: true, mode: 0o700 });
-            fs.writeFileSync(CS_SSH_CONFIG_PATH, '', { mode: 0o600 });
-        }
         SshManager.instance.ensureSshInclude(CS_SSH_CONFIG_PATH);
         return SshManager.instance;
     }
@@ -132,10 +122,7 @@ export class SshManager {
     }
 
     public disposeAll(): void {
-        for (const shell of this.shells.values()) {
-            shell.alive = false; try { shell.proc.kill(); }
-            catch { /* already gone */ }
-        }
+        for (const shell of this.shells.values()) { shell.alive = false; shell.proc.kill(); }
         this.shells.clear();
     }
 
@@ -177,7 +164,7 @@ export class SshManager {
         const askpassSh = path.join(this.extensionUri.fsPath, 'scripts', 'askpass.sh');
         try { fs.chmodSync(askpassSh, 0o755); }
         catch { /* vsix ships +x */ }
-        const direct = /OpenSSH_for_Windows/.test(spawnSync('ssh', ['-V'], { encoding: 'utf-8' }).stderr ?? '');
+        const direct = /OpenSSH_for_Windows/.test(spawnSync('ssh', ['-V'], { encoding: 'utf-8' }).stderr);
         return {
             SSH_ASKPASS: direct ? `"${process.execPath}" "${askpassJs}"` : askpassSh,
             SSH_ASKPASS_REQUIRE: 'force',
@@ -282,8 +269,8 @@ export class SshManager {
                 if (!file.startsWith('prompt-') || handled.has(file)) { continue; }
                 handled.add(file);
                 try {
-                    const { id, prompt } = JSON.parse(fs.readFileSync(path.join(shell.askpassDir, file), 'utf-8'));
-                    const password = await this.promptAuth(alias, String(prompt));
+                    const { id, prompt } = JSON.parse(fs.readFileSync(path.join(shell.askpassDir, file), 'utf-8')) as { id: string; prompt: string };
+                    const password = await this.promptAuth(alias, prompt);
                     if (password !== undefined) {
                         fs.writeFileSync(path.join(shell.askpassDir, `response-${id}`), password, 'utf-8');
                     }
@@ -303,9 +290,7 @@ export class SshManager {
         const includeLine = `Include "${targetPath}"`;
 
         try {
-            if (!fs.existsSync(sshDir)) {
-                fs.mkdirSync(sshDir, { mode: 0o700 });
-            }
+            fs.mkdirSync(sshDir, { recursive: true, mode: 0o700 });
             lockedUpdateTextFile(sshConfigPath, cur => (includeIsEffective(cur, includeLine) ? null : `${includeLine}\n${cur}`), 0o600);
         }
         catch (err) {
@@ -319,10 +304,7 @@ export class SshManager {
 export async function syncSshConfig(): Promise<void> {
     const sessions = getAllSessions();
     const text = renderSshConfig(sessions, sshKeyPath);
-    if (fs.readFileSync(CS_SSH_CONFIG_PATH, 'utf-8') !== text) {
-        fs.writeFileSync(`${CS_SSH_CONFIG_PATH}.tmp`, text, { mode: 0o600 });
-        fs.renameSync(`${CS_SSH_CONFIG_PATH}.tmp`, CS_SSH_CONFIG_PATH);
-    }
+    lockedUpdateTextFile(CS_SSH_CONFIG_PATH, cur => (cur === text ? null : text), 0o600);
     try {
         const cfg = vscode.workspace.getConfiguration('remote.SSH');
         const current = cfg.get<Record<string, string>>('serverInstallPath') ?? {};
