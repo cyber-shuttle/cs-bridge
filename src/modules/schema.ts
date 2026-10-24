@@ -60,7 +60,7 @@ function statsV1(s?: V0Stats): RunStats | undefined {
     return { ...rest, requestedMemory: rest.requestedMemory ?? reqMem, elapsedSeconds: rest.elapsedSeconds ?? elapsedSec, memoryEfficiencyPct: rest.memoryEfficiencyPct ?? memEfficiencyPct };
 }
 
-function runsFileV1(f: V0RunsFile): RunsFile {
+function runsFileV1(f: V0RunsFile): Partial<RunsFile> {
     return {
         runs: f.runs?.map(r => ({
             sessionId: r.sessionId ?? '', alias: r.alias ?? r.cluster ?? '', jobId: r.jobId ?? '', account: r.account ?? slurmAccount(r.allocation),

@@ -147,7 +147,8 @@ export interface Run {
     samples?: UsageSample[];
 }
 
-export interface RunsFile { runs?: Run[]; samples?: UsageSample[]; stats?: RunStats }
+// On disk any field may be absent; runStore reads a file as this shape.
+export interface RunsFile { runs: Run[]; samples: UsageSample[]; stats?: RunStats }
 
 export interface StatsState {
     runs: Run[];
