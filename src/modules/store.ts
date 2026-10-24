@@ -14,9 +14,9 @@ export interface Files {
 }
 
 export class JsonDir<T extends object> {
-    private readonly records = new Map<string, { value: T; text: string }>(); // text as last read or landed
+    private readonly records = new Map<string, { value: T; text?: string }>(); // text as last read or landed; none before a first write lands
     private readonly unsaved = new Map<string, Promise<void>>(); // each record's last queued write, until it starts
-    private readonly pending = new Map<string, Partial<T>>(); // fields patched since the record's last write began
+    private readonly pending = new Map<string, Partial<T>>(); // fields changed since the record's last write began; undefined marks a cleared one
     private readonly listeners = new Set<() => void>();
     private queue = Promise.resolve();
 
@@ -36,41 +36,54 @@ export class JsonDir<T extends object> {
     values(): T[] { return [...this.records.values()].map(r => r.value); }
     entries(): [string, T][] { return [...this.records].map(([id, r]) => [id, r.value]); }
 
-    set(id: string, value: T): void {
-        const text = JSON.stringify(value, null, 2);
-        const record = { value, text };
+    // A whole-record write: every field is held, so it wins over another window's changes.
+    set(id: string, value: T): Promise<void> {
+        const prev = this.records.get(id);
+        const record = { value, text: prev?.text };
         this.records.set(id, record);
-        this.pending.delete(id); // a whole-record write supersedes queued patches
-        this.save(id, record, { ...value }, () => this.files.write(this.path(id), text));
+        const cleared = Object.keys(prev?.value ?? {}).filter(key => !(key in value)).map(key => [key, undefined]);
+        this.pending.set(id, { ...Object.fromEntries(cleared), ...value });
         this.emit();
+        return this.write(id, record);
     }
 
-    // A field write. The write carries every field patched since the last one began and lands on the record as
+    // A field write. The write carries every field changed since the last one began and lands on the record as
     // another window last wrote it: the fields that window changed since this one last read the file come in, unless
-    // patched here since that read. A record deleted elsewhere stays deleted.
+    // changed here since that read. A record deleted elsewhere stays deleted.
     patch(id: string, fields: Partial<T>): Promise<void> {
         const record = this.records.get(id);
         if (!record) { return this.queue; }
         Object.assign(record.value, fields);
-        const queued = getOrSet(this.pending, id, () => ({}));
-        Object.assign(queued, fields);
+        Object.assign(getOrSet(this.pending, id, () => ({})), fields);
         this.emit();
-        return this.save(id, record, queued, async () => {
-            if (!this.pending.has(id) || this.records.get(id) !== record) { return; } // taken by an earlier write, or superseded by a set
+        return this.write(id, record);
+    }
+
+    // A write that fails puts its fields back in the queue, while the record it wrote is still the one in memory.
+    private write(id: string, record: { value: T; text?: string }): Promise<void> {
+        return this.enqueueWrite(id, async () => {
+            const queued = this.pending.get(id);
+            if (!queued || this.records.get(id) !== record) { return; } // taken by an earlier write, or superseded by a set
             this.pending.delete(id);
-            const text = await this.files.read(this.path(id));
-            if (text === undefined) {
-                this.records.delete(id);
-                this.emit();
-                return;
+            try {
+                const text = await this.files.read(this.path(id));
+                if (text === undefined && record.text !== undefined) {
+                    this.records.delete(id);
+                    this.emit();
+                    return;
+                }
+                if (text !== undefined && record.text !== undefined && text !== record.text) {
+                    this.takeTheirs(record.value, parseJson<T>(text), parseJson<T>(record.text), { ...queued, ...this.pending.get(id) });
+                    this.emit();
+                }
+                const next = JSON.stringify(record.value, null, 2);
+                await this.files.write(this.path(id), next);
+                record.text = next;
             }
-            if (text !== record.text) {
-                this.takeTheirs(record.value, parseJson<T>(text), parseJson<T>(record.text), { ...queued, ...this.pending.get(id) });
-                this.emit();
+            catch (err) {
+                if (this.records.get(id) === record) { this.pending.set(id, { ...queued, ...this.pending.get(id) }); }
+                throw err;
             }
-            const next = JSON.stringify(record.value, null, 2);
-            await this.files.write(this.path(id), next);
-            record.text = next;
         });
     }
 
@@ -92,22 +105,15 @@ export class JsonDir<T extends object> {
     }
 
     // Runs after this window's earlier writes land, so unchanged text is one of them; a record with a write still queued
-    // waits for that write's event. Fields a failed write left queued stay on top and go out with the next write.
+    // waits for that write's event. Fields a failed write left queued go out now, merged the way a patch merges.
     reload(id: string): Promise<void> {
         return this.enqueue(async () => {
             const text = await this.files.read(this.path(id));
             const record = this.records.get(id);
             if (this.unsaved.has(id) || text === record?.text) { return; }
-            if (text === undefined) {
-                this.records.delete(id);
-                this.pending.delete(id);
-            }
-            else {
-                const value = this.merge(record?.value, parseJson<T>(text));
-                this.records.set(id, { value, text });
-                const held = this.pending.get(id);
-                if (held) { Object.assign(value, held); void this.patch(id, {}); }
-            }
+            if (record && this.pending.has(id)) { void this.write(id, record); return; }
+            if (text === undefined) { this.records.delete(id); }
+            else { this.records.set(id, { value: this.merge(record?.value, parseJson<T>(text)), text }); }
             this.emit();
         });
     }
@@ -118,14 +124,6 @@ export class JsonDir<T extends object> {
     }
 
     private path(id: string) { return `${this.dir}/${id}.json`; }
-
-    // A write that fails puts its fields back in the queue, while the record it wrote is still the one in memory.
-    private save(id: string, record: { value: T }, fields: Partial<T>, op: () => Promise<void>): Promise<void> {
-        return this.enqueueWrite(id, () => op().catch((err: unknown) => {
-            if (this.records.get(id) === record) { this.pending.set(id, { ...fields, ...this.pending.get(id) }); }
-            throw err;
-        }));
-    }
 
     private enqueueWrite(id: string, op: () => Promise<void>): Promise<void> {
         const write: Promise<void> = this.enqueue(() => { if (this.unsaved.get(id) === write) { this.unsaved.delete(id); } return op(); });

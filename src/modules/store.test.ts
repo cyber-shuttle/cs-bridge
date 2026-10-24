@@ -81,7 +81,7 @@ test('JsonDir keeps its own write made while a reload reads', async () => {
     const dir = new JsonDir<Rec>(files, 'recs', err => assert.fail(String(err)));
     await dir.load();
     const read = files.read;
-    files.read = (name) => { dir.set('a', { n: 2 }); return read(name); };
+    files.read = (name) => { files.read = read; dir.set('a', { n: 2 }); return read(name); }; // once, as the write reads too
     await dir.reload('a');
     assert.deepEqual(dir.get('a'), { n: 2 });
 });
@@ -121,4 +121,25 @@ test('JsonDir keeps the fields of a failed write queued and lands them with the 
     assert.deepEqual(dir.get('a'), { n: 2 }, 'nothing is queued once the fields landed');
     await dir.patch('a', { k: 9 });
     assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 2, k: 9 });
+});
+
+test('JsonDir retries a failed whole-record write without reviving what it cleared, and keeps a new record', async () => {
+    const files = memoryFiles();
+    await files.write('recs/a.json', JSON.stringify({ n: 1, m: 7 }));
+    const errors: unknown[] = [];
+    const dir = new JsonDir<Rec>(files, 'recs', err => errors.push(err), (cur, next) => (cur ? replaceFields(cur, next) : next));
+    await dir.load();
+    const write = files.write;
+    const failOnce = () => { files.write = async () => { files.write = write; throw new Error('disk full'); }; };
+    failOnce();
+    dir.set('a', { n: 1 });
+    await dir.patch('a', { k: 9 });
+    assert.deepEqual(JSON.parse(must(files.texts.get('recs/a.json'))), { n: 1, k: 9 });
+
+    failOnce();
+    dir.set('b', { n: 1 });
+    await dir.patch('b', { k: 2 });
+    assert.deepEqual(dir.get('b'), { n: 1, k: 2 });
+    assert.deepEqual(JSON.parse(must(files.texts.get('recs/b.json'))), { n: 1, k: 2 });
+    assert.equal(errors.length, 2);
 });
