@@ -190,18 +190,22 @@
 		"lint": "eslint src",
 		"lint:fix": "eslint src --fix",
 		"test": "bun test --preload ./scripts/vscodeMock.js src",
+		"test:host": "bun run build && node scripts/hostTest.js",
 		"package": "bunx @vscode/vsce package --no-dependencies",
 		"dev": "bun run package && code --install-extension $npm_package_name-$npm_package_version.vsix"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
 		"@stylistic/eslint-plugin": "^5.10.0",
+		"@types/mocha": "10.0.10",
 		"@types/node": "^22.20.4",
 		"@types/shell-quote": "^1.7.5",
 		"@types/vscode": "~1.101.0",
 		"@vscode/codicons": "^0.0.45",
+		"@vscode/test-electron": "3.1.0",
 		"esbuild": "^0.28.1",
 		"eslint": "^10.11.0",
+		"mocha": "11.7.1",
 		"typescript": "~6.0.3",
 		"typescript-eslint": "^8.71.0",
 		"websocket": "^1.0.35"

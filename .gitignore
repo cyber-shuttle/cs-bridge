@@ -5,3 +5,4 @@ out/
 *.vsix
 /docs/plans
 /CLAUDE.md
+.vscode-test/

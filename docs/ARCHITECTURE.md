@@ -133,10 +133,13 @@ Four layers, and nothing reaches past its neighbour.
   (`tunnelSupport`), their cs-plane counterparts **(experimental)** (`linkTunnel`), the transport choice and the
   session-level connect steps (`transport`), EC2 instances **(experimental)** (`ec2`, `aws`), the status domain
   (`sessionMachine`), lifecycle composition
-  (`sessionSupport`), the on-disk stores and their migrations (`schema`). Modules that do not import `vscode`
-  unit-test directly; the ones that do cannot be imported under the test runner at all.
+  (`sessionSupport`), the on-disk stores and their migrations (`schema`). `bun test` preloads `scripts/vscodeMock.js`,
+  so modules that import `vscode` test against that surface; `src/lifecycle.test.ts` drives the real provider and
+  monitor through it.
 - **`src/ui/`** — Preact webviews, one esbuild bundle per view. `logic/` is pure and tested, `components/` renders,
   `platform/vscode.tsx` is the only thing that talks to the webview host (`post()` out, `useWebviewState()` in).
+- **`src/host/`** — the smoke suite `bun run test:host` runs inside a downloaded VS Code: activation, a run torn down
+  from the record alone, a Stop handed between windows, and the summary webview.
 - **`resources/`, `scripts/`** — the activity-bar icons, and the `SSH_ASKPASS` helpers (`askpass.js`, `askpass.sh`).
 
 The testability seam is extraction, not injection: to make `vscode`-coupled logic testable, move the pure or
