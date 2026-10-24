@@ -6,7 +6,8 @@ import type { JsonDir } from './modules/store';
 import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, patch, observe } from './extensionStore';
 import { initRunStore, appendRun } from './modules/runStore';
 import { newSession, isEc2, Run, SlurmJobStatus, SummaryState } from './models';
-import { Backend, Backends, SessionMonitor } from './modules/sessionSupport';
+import { Backend, Backends, SessionMonitor, prepareLaunch } from './modules/sessionSupport';
+import type { Transport } from './modules/transport';
 import { Ec2Backend } from './modules/ec2Session';
 import { Ec2 } from './modules/ec2';
 import { fakeClient } from './modules/fakeEc2Client';
@@ -135,4 +136,30 @@ test('a run that ends on its own is torn down once', async () => {
     await monitor.quiesce(s);
     assert.deepEqual(ended, [s.id]);
     assert.equal(statusOf(s), 'stopped');
+});
+
+test('a teardown that the record write re-enters runs once, and a prepare leaves the record\'s connection info to submit', async () => {
+    const s = running();
+    const ended: string[] = [];
+    const backend: Backend = {
+        label: 'fake',
+        async tick() { },
+        async end(session) { void monitor.endSession(session); await sleep(10); ended.push(session.id); },
+        async stop() { }, async connect() { return true; }, async remove() { }, forget() { },
+    };
+    const monitor: SessionMonitor = new SessionMonitor(new Backends(backend, backend));
+    monitor.startMonitoring(s);
+    await monitor.endSession(s);
+    assert.deepEqual(ended, [s.id]);
+
+    const before = { sshPort: 40, controlPort: 21000 };
+    await patch(s, { connectionInfo: before }); // an old run's, not yet torn down by a fake end
+    const transport: Transport = {
+        label: 't', description: '', management: () => ({ getTunnel: async () => null }), relayClient: () => ({ connect: async () => { }, waitForForwardedPort: async () => { }, dispose: async () => { } }),
+        tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); }, deleteTunnel: async () => { },
+        signedIn: async () => true, prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }), release: async () => { },
+    };
+    const draft = await prepareLaunch(s, transport);
+    assert.deepEqual(s.connectionInfo, before, 'the record keeps the old run until submit');
+    assert.ok(draft.connectionInfo.controlPort >= 20000);
 });
