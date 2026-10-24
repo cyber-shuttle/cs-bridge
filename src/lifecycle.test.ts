@@ -111,6 +111,7 @@ test('an EC2 instance is adopted once, then started, stopped and removed through
     assert.deepEqual(calls, ['start']);
     assert.equal(statusOf(s), 'preparing', 'running, no sshd yet');
     await backend.stop(s);
+    await monitor.endSession(s); // as the provider's runStop does
     assert.deepEqual(calls, ['start', 'stop']);
     assert.equal(statusOf(s), 'stopped');
     await backend.remove(s);

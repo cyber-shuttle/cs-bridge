@@ -11,3 +11,5 @@ esbuild.js
 **/eslint.config.mjs
 **/*.map
 scripts/vscodeMock.*
+bun.lock
+lefthook.yml

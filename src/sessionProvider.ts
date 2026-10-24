@@ -70,7 +70,9 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             const status = statusOf(s);
             // The owner carries out a Stop asked anywhere; without a beating owner, this window takes it.
             if (status === 'stopping') { if (claim(s)) { this.runStop(s); } continue; }
-            if (isTerminal(status) || owns(s)) { continue; }
+            // A run ended by the clock while no window had its loop (the walltime passed with VS Code closed) is still torn down.
+            if (isTerminal(status)) { if (s.connectionInfo && claim(s)) { void this.monitor.endSession(s).finally(() => this.settle(s)); } continue; }
+            if (owns(s)) { continue; }
             this.monitor.startMonitoring(s);
             // A session just taken over gets its connection back; startup never forces a sign-in.
             if (owns(s) && s.connectionInfo?.sshPort && (isEc2(s) || await this.transports.transportFor(s).signedIn())) { void this.backends.use(s, (b, s) => b.connect(s)); }
@@ -282,9 +284,10 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         requestStop(session); // the record change runs the stop in the owner window
     }
 
-    // A stop the backend could not send leaves the session as it was.
+    // A stop the backend could not send leaves the session as it was; one it sent is followed by the run's teardown.
     private runStop(session: SlurmSession): void {
-        this.runSessionTask(session, 'stop', () => this.backends.use(session, (b, s) => b.stop(s)), 'The session is still running.', setError);
+        this.runSessionTask(session, 'stop', async () => { await this.backends.use(session, (b, s) => b.stop(s)); await this.monitor.endSession(session); },
+            'The session is still running.', (s, detail) => { patch(s, { desired: 'running' }); setError(s, detail); });
     }
 
     private launchDraft() {

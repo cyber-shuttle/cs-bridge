@@ -1,7 +1,7 @@
 import { createContext } from 'preact';
 import { useContext } from 'preact/hooks';
 import type { CSSProperties, VNode } from 'preact';
-import { SAMPLE_HISTORY_LEN, type SessionsMessage, type ViewSession } from '@/models';
+import { type SessionsMessage, type ViewSession } from '@/models';
 import { cardModel, type SessionAction } from '@/ui/logic/session';
 import { isReachable } from '@/modules/sessionMachine';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button, Spinner, Chip } from '@/ui/components/base';
@@ -51,7 +51,7 @@ function ResourceStats({ session }: { session: ViewSession }) {
             <Stack key={g.label} gap={1} style={{ minWidth: '44px', alignItems: 'flex-start' }}>
                 <Text size={11}>{g.text}</Text>
                 {drawable(g)
-                    ? <Sparkline lines={g.lines} slots={SAMPLE_HISTORY_LEN} title={graphTitle(g)} />
+                    ? <Sparkline lines={g.lines} title={graphTitle(g)} />
                     : <div style={{ height: '14px' }} />}
             </Stack>
         ))}
