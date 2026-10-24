@@ -98,7 +98,7 @@ export function includeIsEffective(configText: string, includeLine: string): boo
     return false;
 }
 
-export function parseHostsFromConfigText(text: string): SshHost[] {
+export function parseHostsFromConfigText(text: string, source: SshHost['source']): SshHost[] {
     const config = parse(text);
     const hosts: SshHost[] = [];
     for (const line of config) {
@@ -110,7 +110,7 @@ export function parseHostsFromConfigText(text: string): SshHost[] {
         const raw = Array.isArray(section.value) ? section.value[0] : section.value;
         const alias = typeof raw === 'string' ? raw.trim().split(/\s+/)[0] : '';
         if (!alias || alias.includes('*') || alias.includes('?')) { continue; }
-        const host: SshHost = { alias };
+        const host: SshHost = { alias, source };
         const extraDirectives: string[] = [];
         for (const child of section.config) {
             if (child.type !== LineType.DIRECTIVE) { continue; }

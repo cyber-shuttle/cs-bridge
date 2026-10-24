@@ -91,7 +91,7 @@ export class SshManager {
         try {
             if (!fs.existsSync(filePath)) { return []; }
             const text = fs.readFileSync(filePath, 'utf-8');
-            return parseHostsFromConfigText(text).map(h => ({ ...h, source }));
+            return parseHostsFromConfigText(text, source);
         }
         catch (err) {
             logger.error(`Error reading SSH config ${filePath}:`, err);

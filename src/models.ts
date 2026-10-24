@@ -63,7 +63,7 @@ export interface SshHost {
     hostname?: string;
     user?: string;
     extraDirectives?: string[]; // "Key Value" ssh_config lines other than HostName/User
-    source?: 'user' | 'system'; // user is editable, system is read-only
+    source: 'user' | 'system'; // user is editable, system is read-only
 }
 
 export interface SlurmDiscovery {

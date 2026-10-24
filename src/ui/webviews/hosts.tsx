@@ -5,9 +5,9 @@ import type { HostsState, SshHost } from '@/models';
 import { post, useWebviewState } from '@/ui/platform/vscode';
 import { Row, Stack, Text, Icon, Button } from '@/ui/components/base';
 
-const SOURCE_ICON: Record<string, string> = { user: 'account', system: 'settings-gear' };
-const SOURCE_TITLE: Record<string, string> = { user: 'User SSH config (~/.ssh/config)', system: 'System SSH config (read-only)' };
-const SOURCE_ORDER: Record<string, number> = { user: 0, system: 1 };
+const SOURCE_ICON: Record<SshHost['source'], string> = { user: 'account', system: 'settings-gear' };
+const SOURCE_TITLE: Record<SshHost['source'], string> = { user: 'User SSH config (~/.ssh/config)', system: 'System SSH config (read-only)' };
+const SOURCE_ORDER: Record<SshHost['source'], number> = { user: 0, system: 1 };
 
 function DetailRow({ label, children }: { label: string; children: ComponentChildren }) {
     return (
@@ -20,12 +20,12 @@ function DetailRow({ label, children }: { label: string; children: ComponentChil
 
 function HostItem({ host }: { host: SshHost }) {
     const [open, setOpen] = useState(false);
-    const src = host.source ?? 'system';
+    const src = host.source;
     return (
         <Stack>
             <Row gap={4} pad="3px 0" style={{ cursor: 'pointer' }} onClick={() => setOpen(!open)}>
                 <Icon name={open ? 'chevron-down' : 'chevron-right'} />
-                <Icon name={SOURCE_ICON[src] ?? 'remote'} title={SOURCE_TITLE[src]} />
+                <Icon name={SOURCE_ICON[src]} title={SOURCE_TITLE[src]} />
                 <Text weight={600} ellipsis>{host.alias}</Text>
             </Row>
             {open ? (
@@ -48,7 +48,7 @@ function HostItem({ host }: { host: SshHost }) {
 }
 
 function HostList({ state }: { state: HostsState }) {
-    const hosts = [...state.sshHosts].sort((a, b) => (SOURCE_ORDER[a.source ?? 'system'] ?? 9) - (SOURCE_ORDER[b.source ?? 'system'] ?? 9));
+    const hosts = [...state.sshHosts].sort((a, b) => SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source]);
     if (hosts.length === 0) { return <Text muted style={{ margin: '4px 0' }}>No SSH hosts yet — use + above.</Text>; }
     return <>{hosts.map(host => <HostItem key={host.alias} host={host} />)}</>;
 }
