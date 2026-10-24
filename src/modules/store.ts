@@ -1,4 +1,5 @@
 // Records live in extension storage through Files: a folder on desktop, IndexedDB in the browser. A JsonDir keeps a
+import { parseJson } from './json';
 // directory in memory, so reads are synchronous; writes, and reloads of other windows' writes that storage.ts's
 // watcher reports, run in order behind them, and the last write to a record wins. schema.json versions the layout;
 // desktop's steps below 2 import ~/.cybershuttle.
@@ -60,7 +61,7 @@ export class JsonDir<T> {
             }
             else {
                 let next: T;
-                try { next = JSON.parse(text) as T; }
+                try { next = parseJson<T>(text); }
                 catch { return; }
                 this.texts.set(id, text);
                 this.items.set(id, this.merge(this.items.get(id), next));
@@ -96,7 +97,7 @@ export const SCHEMA_VERSION = 3;
 // steps[n] takes the store from version n to n + 1.
 export async function migrate(files: Files, steps: Steps): Promise<void> {
     const schema = await files.read('schema.json');
-    let version = schema ? (JSON.parse(schema) as { version: number }).version : 0;
+    let version = schema ? parseJson<{ version: number }>(schema).version : 0;
     if (version > SCHEMA_VERSION) {
         throw new Error(`CS Bridge storage is at schema ${version}, newer than this CS Bridge reads (${SCHEMA_VERSION}); update CS Bridge.`);
     }

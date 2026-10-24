@@ -7,6 +7,7 @@ import { execFileSync, spawn, spawnSync, ChildProcessWithoutNullStreams } from '
 import * as crypto from 'crypto';
 import { Logger, errMsg } from '../logger';
 import { errnoCode, lockedUpdateTextFile } from './fsSupport';
+import { parseJson } from './json';
 import { getAllSessions } from '../extensionStore';
 import { buildShellCommand, extractCommandResult, READY_MARKER, renderAuthHtml } from './sshShell';
 import { USER_SSH_CONFIG_PATH, SYSTEM_SSH_CONFIG_PATH, mergeHostsByPriority, parseHostsFromConfigText, renderSshConfig, renderServerInstallPaths, sessionKeyName, includeIsEffective } from './sshHostsStore';
@@ -269,7 +270,7 @@ export class SshManager {
                 if (!file.startsWith('prompt-') || handled.has(file)) { continue; }
                 handled.add(file);
                 try {
-                    const { id, prompt } = JSON.parse(fs.readFileSync(path.join(shell.askpassDir, file), 'utf-8')) as { id: string; prompt: string };
+                    const { id, prompt } = parseJson<{ id: string; prompt: string }>(fs.readFileSync(path.join(shell.askpassDir, file), 'utf-8'));
                     const password = await this.promptAuth(alias, prompt);
                     if (password !== undefined) {
                         fs.writeFileSync(path.join(shell.askpassDir, `response-${id}`), password, 'utf-8');

@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { parseJson } from './json';
 
 export const errnoCode = (err: unknown): unknown => (err instanceof Error && 'code' in err ? err.code : undefined);
 
@@ -38,7 +39,7 @@ export function release(filepath: string): void {
 }
 
 export function readJson<T>(file: string): T | undefined {
-    try { return JSON.parse(fs.readFileSync(file, 'utf-8')) as T; }
+    try { return parseJson<T>(fs.readFileSync(file, 'utf-8')); }
     catch { return undefined; }
 }
 

@@ -49,3 +49,8 @@ test('an error keeps cs-plane\'s code and message', async (t) => {
         { idToken: 'id', expiresAt: Date.now() + 3_600_000 });
     await assert.rejects(client.sessionAccess('s1'), (err: PlaneError) => err.code === 'session_access_unavailable' && err.message === 'the session is queued');
 });
+
+test('a 204 with no body, as cs-plane answers a delete, resolves', async (t) => {
+    const { client } = await plane(t, () => ({ status: 204, body: undefined }), { idToken: 'id', expiresAt: Date.now() + 3_600_000 });
+    assert.equal(await client.deleteSession('s1'), null);
+});

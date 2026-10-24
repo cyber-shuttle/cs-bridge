@@ -4,6 +4,7 @@
 // to redeem it.
 import type * as vscode from 'vscode';
 import { SlurmSession } from './models';
+import { parseJson } from './modules/json';
 
 export const PLANE_URL = 'https://jupyterapi.cybershuttle.org/api/v1';
 export const CREDENTIAL_KEY = 'csbridge.plane.credential';
@@ -44,7 +45,7 @@ export class Plane {
         if (!credential) { return null; }
         const payload = credential.idToken.split('.')[1];
         if (!payload) { throw new Error('The CyberShuttle id token is malformed.'); }
-        const { email = '' } = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { email?: string };
+        const { email = '' } = parseJson<{ email?: string }>(Buffer.from(payload, 'base64url').toString());
         return email;
     }
 
@@ -86,15 +87,20 @@ export class Plane {
         return credential ? this.secrets.store(CREDENTIAL_KEY, JSON.stringify(credential)) : this.secrets.delete(CREDENTIAL_KEY);
     }
 
-    private async load() { return this.credential ??= JSON.parse(await this.secrets.get(CREDENTIAL_KEY) ?? 'null') as Credential | null; }
+    private async load() {
+        const stored = await this.secrets.get(CREDENTIAL_KEY);
+        return this.credential ??= stored ? parseJson<Credential>(stored) : null;
+    }
 
     // T is cs-plane's documented response shape; the body is trusted as such, as every wire client here does.
     private async request<T>(path: string, method: string, body?: unknown, token?: string): Promise<T> {
         const headers = { 'Content-Type': 'application/json', ...token && { Authorization: `Bearer ${token}` } };
         const response = await this.fetchImpl(`${PLANE_URL}/${path}`, { method, headers, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
-        const value = await response.json().catch(() => { }) as (T & { error?: { code?: string; message?: string } }) | undefined;
-        if (!response.ok) { throw new PlaneError(response.status, value?.error?.message ?? `cs-plane returned ${response.status}.`, value?.error?.code); }
-        return value as T;
+        let value: (T & { error?: { code?: string; message?: string } }) | undefined;
+        try { value = parseJson((await response.text()) || 'null'); } // 204 carries no body
+        catch { /* an error page from a proxy */ }
+        if (!response.ok || value === undefined) { throw new PlaneError(response.status, value?.error?.message ?? `cs-plane returned ${response.status}.`, value?.error?.code); }
+        return value;
     }
 }
 
