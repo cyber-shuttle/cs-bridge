@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 
+export const errnoCode = (err: unknown): unknown => (err instanceof Error && 'code' in err ? err.code : undefined);
+
 function isPidAlive(pid: number): boolean {
     // signal 0 is the POSIX null-signal probe - doesn't actually send anything; throws ESRCH if pid is gone.
     try { process.kill(pid, 0); return true; }
@@ -16,7 +18,7 @@ export function lock(filepath: string): void {
             return;
         }
         catch (err) {
-            if ((err as NodeJS.ErrnoException).code !== 'EEXIST') { throw err; }
+            if (errnoCode(err) !== 'EEXIST') { throw err; }
             let owner = NaN;
             try { owner = parseInt(fs.readFileSync(lockPath, 'utf-8').trim(), 10); }
             catch { /* lock vanished */ }

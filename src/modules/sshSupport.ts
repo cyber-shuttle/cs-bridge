@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { execFileSync, spawn, spawnSync, ChildProcessWithoutNullStreams } from 'child_process';
 import * as crypto from 'crypto';
 import { Logger, errMsg } from '../logger';
-import { lockedUpdateTextFile } from './fsSupport';
+import { errnoCode, lockedUpdateTextFile } from './fsSupport';
 import { getAllSessions } from '../extensionStore';
 import { buildShellCommand, extractCommandResult, READY_MARKER, renderAuthHtml } from './sshShell';
 import { USER_SSH_CONFIG_PATH, SYSTEM_SSH_CONFIG_PATH, mergeHostsByPriority, parseHostsFromConfigText, renderSshConfig, renderServerInstallPaths, sessionKeyName, includeIsEffective } from './sshHostsStore';
@@ -80,7 +80,7 @@ export class SshManager {
     private readHostsFile(filePath: string, source: SshHost['source']): SshHost[] {
         try { return parseHostsFromConfigText(fs.readFileSync(filePath, 'utf-8'), source); }
         catch (err) {
-            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') { logger.error(`Error reading SSH config ${filePath}:`, err); }
+            if (errnoCode(err) !== 'ENOENT') { logger.error(`Error reading SSH config ${filePath}:`, err); }
             return [];
         }
     }
