@@ -113,6 +113,11 @@ export function claim(session: SlurmSession): boolean {
 
 export const owns = (session: SlurmSession): boolean => session.owner === windowId;
 
+// Releasing with the loop lets another window claim at once rather than after this one's beat lapses.
+export function disown(session: SlurmSession): void {
+    if (owns(session)) { patch(session, { owner: undefined }); }
+}
+
 export function detachWindow(): Promise<void> | undefined {
     clearInterval(beat);
     return windows?.delete(windowId);

@@ -1,7 +1,7 @@
-import { Ec2Session, UsageSample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession, isEc2 } from '../models';
+import { ConnectionInfo, Ec2Session, UsageSample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession, isEc2 } from '../models';
 import { Logger, errMsg } from './../logger';
 import { PlaneError } from '../plane';
-import { getSession, patch, setError, observe, statusOf, live, claim, owns } from '../extensionStore';
+import { getSession, patch, setError, observe, statusOf, live, claim, owns, disown } from '../extensionStore';
 import { recordSessionRun, sacctStats } from '../sessionRunSupport';
 import { SshManager, hasSessionKey, syncSshConfig } from './sshSupport';
 import { getSampleViaSrun, getSlurmJobStatus } from './slurmSupport';
@@ -102,6 +102,7 @@ export class SessionMonitor {
         clearInterval(loop.timer);
         this.loops.delete(sessionId);
         live.unreachable.delete(sessionId);
+        disown(loop.session);
         this.backends.use(loop.session, b => b.forget(sessionId));
         logger.info(sessionLine(loop.session.name, `monitoring stopped.`));
     }
@@ -136,7 +137,7 @@ export class SlurmBackend implements Backend {
         if (!await linkspanIsUpToDate(session, run, logger)) {
             await installLinkspan(session, run, logger);
         }
-        await submitJobToSlurm(session, run, logger, draft);
+        patch(session, { jobId: await submitJobToSlurm(session, run, logger, draft), submittedAt: Date.now() });
         this.monitor().startMonitoring(session);
     }
 
@@ -313,8 +314,8 @@ export async function prepareLaunch(session: SlurmSession, transport: Transport)
     // Fresh connection info with this run's control port pinned before transport.prepare: that call is what puts the port
     // on the Dev Tunnel, and the job's Dev Tunnel host has to find it already there.
     // Trade-off: random high port; ~1/12000 collision on a shared compute node (Linkspan log.Fatals if taken, session then fails) — probe a free port on the node if it ever bites.
-    const ci = session.connectionInfo = { sshPort: 0, controlPort: 20000 + Math.floor(Math.random() * 12000) };
-    resetLive(session.id); // clear the prior run's live samples + stats, keep the run history
+    const ci: ConnectionInfo = { sshPort: 0, controlPort: 20000 + Math.floor(Math.random() * 12000) };
+    resetLive(session.id);
 
     const launch = await transport.prepare(session, ci);
 
@@ -322,6 +323,6 @@ export async function prepareLaunch(session: SlurmSession, transport: Transport)
     try { script = buildSlurmScript(session, launch, ci.controlPort); }
     catch (err) { throw new Error(`Failed to generate Slurm script: ${errMsg(err)}`, { cause: err }); }
 
-    setError(session, '');
+    patch(session, { connectionInfo: ci, errorMessage: '' });
     return { script, sbatchEnv: launch.sbatchEnv };
 }

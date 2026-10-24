@@ -38,7 +38,7 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
         const run = runSnapshot ? undefined : readAllRuns().find(r => isSameRun(r, s));
         const samples = runSnapshot ? runSnapshot.samples : readRecentSamples(s.id);
         const stats = runSnapshot ? runSnapshot.stats : (run?.stats ?? readSessionStats(s.id));
-        const state: SummaryState = { session: { ...s, status: statusOf(s), samples }, stats };
+        const state: SummaryState = { session: { ...s, status: statusOf(s), samples }, stats, pending: !runSnapshot && !run };
         void panel.webview.postMessage({ command: 'state', state });
     };
     const msgSub = panel.webview.onDidReceiveMessage((m: WebviewMessage) => { if (m.command === 'ready') { post(); } });
