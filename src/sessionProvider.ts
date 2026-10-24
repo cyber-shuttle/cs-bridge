@@ -325,7 +325,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     private async prepareLaunchSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'prepare launch');
-        if (!session || live.busy.has(session.id)) { return; } // a second Start while one prepares is a no-op
+        if (!session || live.busy.has(session.id) || live.connecting.has(session.id)) { return; } // a Start during a prepare or a connect is a no-op
         live.busy.add(session.id);
         try { await this.quiesce(session); }
         finally { live.busy.delete(session.id); }

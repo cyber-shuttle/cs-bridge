@@ -100,7 +100,7 @@ interface Provider<S extends ViewSession = ViewSession> {
 const HPC: Provider = {
     kind: 'HPC',
     theme: 'info',
-    chips: s => [s.account, s.partition],
+    chips: s => [s.account, s.partition].filter(Boolean), // no chip for the empty account
     booting: 'Starting Linkspan…',
     running: (s, now) => `${fmtTime(remainingMs(s, now))} left`,
 };
