@@ -43,10 +43,9 @@ export class Backends {
 
 // One independent poll loop per active session. No shared lock: each loop mutates
 // only its own session and updateSession is synchronous, so ticks never race.
+interface Loop { session: SlurmSession; timer: ReturnType<typeof setInterval>; ticking: boolean }
 export class SessionMonitor {
-    private sessions = new Map<string, SlurmSession>();
-    private tickers = new Map<string, ReturnType<typeof setInterval>>();
-    private ticking = new Set<string>(); // per-session reentrancy guard: a slow tick must not overlap its next fire
+    private loops = new Map<string, Loop>();
 
     constructor(private readonly backends: Backends) { }
 
@@ -56,10 +55,12 @@ export class SessionMonitor {
         await this.backends.use(session, (b, s) => b.end(s));
     }
 
+    // A slow tick must not overlap its next fire.
     private async tick(sessionId: string): Promise<void> {
-        const session = this.sessions.get(sessionId);
-        if (!session || this.ticking.has(sessionId)) { return; }
-        this.ticking.add(sessionId);
+        const loop = this.loops.get(sessionId);
+        if (!loop || loop.ticking) { return; }
+        loop.ticking = true;
+        const { session } = loop;
         const label = this.backends.use(session, b => b.label);
         try {
             if (!owns(session)) {
@@ -83,36 +84,30 @@ export class SessionMonitor {
             setError(session, `${label} unreachable: ${errMsg(error)}`);
         }
         finally {
-            this.ticking.delete(sessionId);
+            loop.ticking = false;
         }
     }
 
-    // Begin an independent poll loop for one active session (no-op if already running or not yet launched). The first
-    // poll fires now so status isn't stale for a full interval; the rest run on the interval.
+    // No-op if already running or not yet launched. The first poll fires now so status isn't stale for a full interval.
     public startMonitoring(session: SlurmSession): void {
-        if (!session.jobId || this.tickers.has(session.id) || !claim(session)) { return; }
-        this.sessions.set(session.id, session);
-        this.tickers.set(session.id, setInterval(() => void this.tick(session.id), POLLING_INTERVAL_MS));
+        if (!session.jobId || this.loops.has(session.id) || !claim(session)) { return; }
+        this.loops.set(session.id, { session, timer: setInterval(() => void this.tick(session.id), POLLING_INTERVAL_MS), ticking: false });
         logger.info(sessionLine(session.name, `monitoring started (JobId=${session.jobId})`));
         void this.tick(session.id);
     }
 
-    // Stop and forget one session's loop.
     public stopMonitoring(sessionId: string): void {
-        const session = this.sessions.get(sessionId);
-        const ticker = this.tickers.get(sessionId);
-        if (ticker) { clearInterval(ticker); }
-        this.tickers.delete(sessionId);
-        this.sessions.delete(sessionId);
-        this.ticking.delete(sessionId);
+        const loop = this.loops.get(sessionId);
+        if (!loop) { return; }
+        clearInterval(loop.timer);
+        this.loops.delete(sessionId);
         live.unreachable.delete(sessionId);
-        if (session) { this.backends.use(session, b => b.forget(sessionId)); }
-        logger.info(sessionLine(session?.name ?? sessionId, `monitoring stopped.`));
+        this.backends.use(loop.session, b => b.forget(sessionId));
+        logger.info(sessionLine(loop.session.name, `monitoring stopped.`));
     }
 
-    // Tear down every loop (window close).
     public dispose(): void {
-        for (const id of [...this.tickers.keys()]) { this.stopMonitoring(id); }
+        for (const id of [...this.loops.keys()]) { this.stopMonitoring(id); }
     }
 }
 
@@ -153,12 +148,17 @@ export class SlurmBackend implements Backend {
             if (!session.jobId) { this.warn(session, `has no job ID; marking stopped without scancel.`); return; }
             const stopCommand = `scancel ${session.jobId}`;
             this.log(session, `sending stop command: ${stopCommand}`);
-            // scancel accepted is the job's end, as sacct will report it; refused, sacct says whether it had ended anyway.
-            let refused: unknown;
-            observe(session, await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand).then(() => SlurmJobStatus.CANCELLED,
-                (err) => { refused = err; return getSlurmJobStatus(session).then(r => r.status, () => SlurmJobStatus.UNKNOWN); }));
-            if (!isTerminal(statusOf(session))) { throw new Error(`failed to send stop command: ${errMsg(refused)}`); }
-            this.log(session, refused ? `job already ended` : `stop command sent successfully`);
+            try {
+                await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand);
+                observe(session, SlurmJobStatus.CANCELLED);
+                this.log(session, `stop command sent successfully`);
+            }
+            catch (err) {
+                // Refused: sacct says whether the job had ended anyway.
+                observe(session, await getSlurmJobStatus(session).then(r => r.status, () => SlurmJobStatus.UNKNOWN));
+                if (!isTerminal(statusOf(session))) { throw new Error(`failed to send stop command: ${errMsg(err)}`, { cause: err }); }
+                this.log(session, `job already ended`);
+            }
         }
         finally { await this.monitor().endSession(session); }
     }
