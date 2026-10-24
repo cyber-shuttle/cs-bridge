@@ -47,7 +47,7 @@ Local VS Code                              Remote HPC cluster
    --export=ALL`, so it never lands on the cluster filesystem. The parsed job id is kept on the session record and the
    provider's draft of the script is dropped (`slurmLaunch.ts`).
 6. **Poll.** `SessionMonitor` runs one `setInterval` per active session — no central loop. Before the job runs it
-   polls `sacct` and applies `computeStatusTransition`; once it runs it pings Linkspan over the Dev Tunnel and
+   polls `sacct` and records the reading; once it runs it pings Linkspan over the Dev Tunnel and
    falls back to a `sacct` cross-check only after repeated health failures (`sessionSupport.ts`, `sessionMachine.ts`).
 7. **Remote sshd.** `ensureRemoteSession` asks Linkspan for an SSH server that accepts the session's public key,
    named by a `ref` derived from that key, so Linkspan answers a repeat with the server already running. The session
