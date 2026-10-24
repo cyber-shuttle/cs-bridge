@@ -1,5 +1,6 @@
 // Field names match cs-plane's wire types (Session, Resources, Run, RunStats, UsageSample). A persisted shape change
 // here needs a SCHEMA_VERSION bump (modules/store.ts) and a step passed to migrate.
+import { uuidv7 } from 'uuidv7';
 
 // As cs-plane's Resources: gpuType is a GRES type, or 'gpu' for any GPU.
 export interface Resources {
@@ -49,6 +50,13 @@ export interface Ec2Spec {
     image: string;
     user: string;
     ip: string;
+}
+
+// A record not yet started. The id is a uuidv7, so sorting by id is creation order; the name is the creation time,
+// whose last six digits alias the SSH host (csHostAlias).
+export function newSession(fields: Pick<SlurmSession, 'alias' | 'account' | 'partition' | 'rootFolder' | 'resources'> & Partial<SlurmSession>): SlurmSession {
+    const now = Date.now();
+    return { id: uuidv7(), name: `${now}`, desired: 'running', jobId: '', submittedAt: now, errorMessage: '', transport: 'devtunnel', ...fields };
 }
 
 // sshPort > 0 means Step 1 is up: Linkspan serves the session's sshd.

@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 import { enabled } from './features';
-import { uuidv7 } from 'uuidv7';
 import { errMsg } from './logger';
-import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage } from './models';
+import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage, newSession } from './models';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSessionPrivateKey, hasSessionKey, SshManager, openSshWindow, syncSshConfig } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
@@ -16,7 +15,7 @@ import { validateSlurmConfig, LaunchDraft } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
 import { isTerminal, isDeletable, isStoppable, isReachable } from './modules/sessionMachine';
 import { AwsClient } from './modules/aws';
-import { Ec2Backend } from './modules/ec2Session';
+import { Ec2Backend, ec2Session } from './modules/ec2Session';
 
 // A session's user-driven steps, by backend: the Slurm job (this module and sessionSupport) or an EC2 instance.
 interface Lifecycle {
@@ -132,23 +131,15 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     };
 
     private createSession(data: Extract<SessionsMessage, { command: 'addSession' }>): void {
-        const now = Date.now();
         const { alias } = data;
         const runtime = this.hostRuntime.get(alias);
-        const session: SlurmSession = {
-            id: uuidv7(), // time-ordered, so sorting by id is creation order
-            name: `${now}`,
-            desired: 'running',
+        const session = newSession({
             alias,
             account: slurmAccount(data.account),
             partition: data.partition,
             rootFolder: runtime?.phase === 'ready' ? runtime.info.homeDir ?? '' : '',
             resources: data.resources,
-            jobId: '',
-            submittedAt: now,
-            errorMessage: '',
-            transport: 'devtunnel',
-        };
+        });
         void this.validateThenPersist(session, () => {
             addSession(session);
             this.draftAlias = null;
@@ -191,7 +182,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     }
 
     public createCloudVm(ec2: Ec2Spec): void {
-        addSession(this.ec2.newSession(ec2));
+        addSession(ec2Session(ec2));
         void vscode.commands.executeCommand('csbridge.sessionsView.focus');
     }
 
@@ -257,8 +248,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
                         if (live.windowAlive) { this.opening.delete(s.id); }
                         return { ...s, status: statusOf(s), ...live, opening: this.opening.has(s.id), samples: readRecentSamples(s.id) };
                     })
-                    // newest first (uuidv7 ids are time-ordered)
-                    .sort((a, b) => b.id.localeCompare(a.id)),
+                    .sort((a, b) => b.id.localeCompare(a.id)), // newest first
                 draftAlias: this.draftAlias,
                 hostRuntime: Object.fromEntries(this.hostRuntime),
                 preview: this.preview(),
