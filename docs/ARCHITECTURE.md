@@ -159,7 +159,7 @@ through the session's `Backend`; `SessionProvider` owns user actions and every d
 
 `SshManager` holds one persistent `ssh … bash -l` per SSH host and multiplexes every remote command over it, framing
 each call with a random marker to demux stdout, stderr and exit code (`sshSupport.ts`, `sshShell.ts`). A command
-resolves to its stdout; a non-zero exit, or a shell that could not connect, rejects with `RemoteCommandError`, so no
+resolves to its stdout; a non-zero exit, or a shell that could not connect, rejects with an `Error` naming the exit, so no
 caller inspects an exit code. A per-SSH-host
 serial queue keeps one command in flight; a dropped shell reconnects lazily on the next command. This in-process
 multiplexing is what makes Windows work, where OpenSSH has no Unix-socket ControlMaster; on Unix a ControlMaster

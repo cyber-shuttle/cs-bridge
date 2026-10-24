@@ -30,7 +30,6 @@ export abstract class WebviewProvider<M extends WebviewMessage = { command: 'rea
             msgSub.dispose();
             visSub.dispose();
         });
-        this.onResolved();
         webview.html = renderHtml(webview, this.extensionUri, this.viewKind);
     }
 
@@ -41,7 +40,6 @@ export abstract class WebviewProvider<M extends WebviewMessage = { command: 'rea
     }
 
     protected pushState(): void { }
-    protected onResolved(): void { }
 
     protected showError(message: string, error: unknown): void {
         this.logger.error(message, error);

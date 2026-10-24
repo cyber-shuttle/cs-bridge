@@ -141,25 +141,21 @@ export class SlurmBackend implements Backend {
         this.monitor().startMonitoring(session);
     }
 
-    // The teardown runs whether or not scancel was accepted; the caller marks a refused stop as the failure it is.
+    // A refused scancel with the job still running leaves the session running, so Stop can be asked again.
     async stop(session: SlurmSession): Promise<void> {
-        this.log(session, `stopping`);
+        const stopCommand = `scancel ${session.jobId}`;
+        this.log(session, `sending stop command: ${stopCommand}`);
         try {
-            const stopCommand = `scancel ${session.jobId}`;
-            this.log(session, `sending stop command: ${stopCommand}`);
-            try {
-                await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand);
-                observe(session, SlurmJobStatus.CANCELLED);
-                this.log(session, `stop command sent successfully`);
-            }
-            catch (err) {
-                // Refused: sacct says whether the job had ended anyway.
-                observe(session, await getSlurmJobStatus(session).then(r => r.status, () => SlurmJobStatus.UNKNOWN));
-                if (!isTerminal(statusOf(session))) { throw new Error(`failed to send stop command: ${errMsg(err)}`, { cause: err }); }
-                this.log(session, `job already ended`);
-            }
+            await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand);
+            observe(session, SlurmJobStatus.CANCELLED);
+            this.log(session, `stop command sent successfully`);
         }
-        finally { await this.monitor().endSession(session); }
+        catch (err) {
+            observe(session, await getSlurmJobStatus(session).then(r => r.status, () => SlurmJobStatus.UNKNOWN)); // it may have ended anyway
+            if (!isTerminal(statusOf(session))) { patch(session, { desired: 'running' }); throw new Error(`failed to send stop command: ${errMsg(err)}`, { cause: err }); }
+            this.log(session, `job already ended`);
+        }
+        await this.monitor().endSession(session);
     }
 
     // Step 2: (re)build the in-process connection from the persisted refs. No window — reattach and connect share this.
