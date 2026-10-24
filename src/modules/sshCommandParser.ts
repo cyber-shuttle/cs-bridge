@@ -78,15 +78,9 @@ export function parseHostToken(token: string): { hostname: string; username?: st
         return { hostname: url.hostname, username: url.username || undefined, port: url.port || undefined };
     }
     const atIndex = token.lastIndexOf('@');
-    if (atIndex === -1) { return { hostname: token }; }
-    let host = token.slice(atIndex + 1);
-    let user = token.slice(0, atIndex);
-    const userColonIndex = user.indexOf(':');
-    if (userColonIndex !== -1) { user = user.slice(0, userColonIndex); }
-    let port: string | undefined;
-    const hostColonIndex = host.indexOf(':');
-    if (hostColonIndex !== -1) { port = host.slice(hostColonIndex + 1); host = host.slice(0, hostColonIndex); }
-    return { hostname: host, username: user, port };
+    const [hostname = '', port] = token.slice(atIndex + 1).split(':', 2);
+    const username = atIndex === -1 ? undefined : token.slice(0, atIndex).split(':', 1)[0];
+    return { hostname, ...username && { username }, ...port && { port } };
 }
 
 export function sshCommandToConfig(command: string): SshConfigEntry {

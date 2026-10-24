@@ -1,6 +1,6 @@
 import { UsageSample, SlurmDiscovery, SlurmJobStatus, SlurmSession, nonEmpty } from '../models';
 import { SshManager } from './sshSupport';
-import { parseJson } from './json';
+import { parseSample } from './linkspanSupport';
 import { parseAccounts, parsePartitionLine, parseSacctStatus } from './slurmParse';
 
 type Job = Pick<SlurmSession, 'alias' | 'jobId'>;
@@ -15,7 +15,7 @@ export async function getSlurmJobStatus({ alias, jobId }: Job): Promise<{ status
 export async function getSampleViaSrun({ alias, jobId }: Job, controlPort: number): Promise<UsageSample> {
     const command = `srun --jobid=${jobId} --overlap --quiet --input none `
         + `curl -sf --max-time 4 http://127.0.0.1:${controlPort}/api/v1/usage`;
-    return parseJson<UsageSample>(await SshManager.getInstance().runRemoteCommand(alias, command, { batch: true }));
+    return parseSample(await SshManager.getInstance().runRemoteCommand(alias, command, { batch: true }));
 }
 
 // Everything the session form needs, or an error the form shows with Retry: a host that answers for accounts but not

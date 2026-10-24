@@ -115,7 +115,7 @@ export class CsBridgeMenu {
         const host = SshManager.getInstance().getMergedHosts().find(h => h.alias === alias);
         if (!host) { throw new Error(`SSH host ${alias} is no longer configured.`); }
         return ask('Edit SSH Host: Alias', 'Press Enter to keep this alias, or type a new one', alias, newAlias => () =>
-            ask('Edit SSH Host: Destination', '[user@]hostname', [host.user, host.hostname].filter(Boolean).join('@'), (destination) => {
+            ask('Edit SSH Host: Destination', '[user@]hostname[:port]', [host.user, host.hostname].filter(Boolean).join('@'), (destination) => {
                 const { hostname, username, port } = parseHostToken(destination);
                 this.sshHosts.saveSshHost({ Host: newAlias, HostName: hostname, ...username && { User: username }, ...port && { Port: port } }, alias);
             }));

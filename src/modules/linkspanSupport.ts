@@ -11,20 +11,12 @@ const POST_TIMEOUT_MS = 30_000; // starting the sshd can take a while, and a sta
 
 interface SshServerInfo { bind_port: number; id: string }
 
-// GET and require a shape-checked JSON body — the Dev Tunnel edge answers 200 with an HTML page once Linkspan is gone,
-// so a valid body (not resp.ok) is the real liveness signal.
-async function get<T>(baseUrl: string, headers: Record<string, string>, path: string, valid: (json: unknown) => json is T): Promise<T> {
-    const resp = await fetch(baseUrl + path, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
-    const body = await resp.text();
-    let json: unknown;
-    try { json = parseJson(body); }
-    catch { /* not JSON: the edge's interstitial page */ }
-    if (!resp.ok || !valid(json)) { throw new Error(`Linkspan ${path} unhealthy (status=${resp.status}): ${body.slice(0, 200)}`); }
+// Every field of a UsageSample is optional, so any JSON object is one.
+export function parseSample(body: string): UsageSample {
+    const json = parseJson<unknown>(body);
+    if (typeof json !== 'object' || json === null || Array.isArray(json)) { throw new Error(`Linkspan /usage answered no object: ${body.slice(0, 200)}`); }
     return json;
 }
-
-// Every field of a UsageSample is optional, so any JSON object is one.
-const isRecord = (j: unknown): j is Record<string, unknown> => typeof j === 'object' && j !== null && !Array.isArray(j);
 
 async function post(baseUrl: string, headers: Record<string, string>, path: string, body: unknown): Promise<Response> {
     const resp = await fetch(baseUrl + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(POST_TIMEOUT_MS) });
@@ -32,9 +24,14 @@ async function post(baseUrl: string, headers: Record<string, string>, path: stri
     return resp;
 }
 
-// GET /usage — Linkspan's live sample; a valid body also confirms Linkspan is up.
+// GET /usage — Linkspan's live sample; a valid body also confirms Linkspan is up. The Dev Tunnel edge answers 200 with
+// an HTML page once Linkspan is gone, so the body's shape, not resp.ok, is the liveness signal.
 export async function getSample(baseUrl: string, headers: Record<string, string>): Promise<UsageSample> {
-    return get(baseUrl, headers, '/usage', (j): j is UsageSample => isRecord(j));
+    const resp = await fetch(`${baseUrl}/usage`, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const body = await resp.text();
+    try { if (resp.ok) { return parseSample(body); } }
+    catch { /* not JSON: the edge's interstitial page */ }
+    throw new Error(`Linkspan /usage unhealthy (status=${resp.status}): ${body.slice(0, 200)}`);
 }
 
 // POST /vscode/sessions — the sshd for our public key; a ref naming the key, in cs-plane's StartSSH format, makes it idempotent.
