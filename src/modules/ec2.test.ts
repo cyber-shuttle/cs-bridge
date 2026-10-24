@@ -41,7 +41,8 @@ test('concurrent first launches in a region share one key pair and create the mi
     const dir = mkdtempSync(join(tmpdir(), 'ec2-'));
     const ec2 = new Ec2(() => client, name => join(dir, name), 'm');
     const image = '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64';
-    await Promise.all([ec2.launch(image, 't3.micro', 'r1', 'a'), ec2.launch(image, 't3.micro', 'r1', 'b')]);
+    const spec = { image, type: 't3.micro', region: 'r1', user: 'ec2-user' };
+    await Promise.all([ec2.launch(spec, 'a'), ec2.launch(spec, 'b')]);
     assert.equal(created, 1);
     assert.equal(vpcs, 1);
 });

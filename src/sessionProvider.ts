@@ -230,7 +230,9 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private openOrFocusWindow(session: SlurmSession): void {
         const { windowFolder } = windowState(session);
         if (windowFolder) { void vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(windowFolder), { forceNewWindow: false }); return; }
+        if (this.opening.has(session.id)) { return; } // the window is on its way
         this.opening.add(session.id);
+        void this.pushState();
         setTimeout(() => { if (this.opening.delete(session.id)) { void this.pushState(); } }, 60_000);
         // The per-session SSH host's alias VS Code runs `ssh` against and shows as the "[SSH: …]" label.
         void openSshWindow(csHostAlias(session), session.rootFolder);
