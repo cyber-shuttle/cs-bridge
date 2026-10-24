@@ -151,7 +151,8 @@ export async function ensureRemoteSession(t: Tunnels, session: SlurmSession): Pr
 // the authoritative liveness signal for a connected session.
 export const isTunnelClientConnected = (sessionId: string): boolean => live.connected.has(sessionId);
 
-export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, ci: ConnectionInfo, onDevTunnelLost: () => void): Promise<void> {
+// Resolves to the local port the sshd is forwarded to; the caller records it once it knows the run still wants it.
+export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, ci: ConnectionInfo, onDevTunnelLost: () => void): Promise<number> {
     logger.info(`Connecting session ${session.id} to its ${t.label}...`);
 
     const ref = t.tunnelRef(session);
@@ -185,9 +186,9 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
         keepAliveIntervalInSeconds: 15, // probe the upstream WebSocket so a half-open Dev Tunnel is detected and reconnected fast (default 0 = off)
     });
     const localPort = await forwardedLocalPort(client, ci.sshPort);
-    patch(session, { connectionInfo: { ...ci, localPort } });
     live.connected.add(session.id);
     logger.info(`${t.label} connected for session ${session.id}. SSH available at 127.0.0.1:${localPort}`);
+    return localPort;
 }
 
 // Frees the local port only. The remote sshd dies with the job; the tunnel outlives it and the next launch replaces it.
