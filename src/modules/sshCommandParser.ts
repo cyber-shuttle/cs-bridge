@@ -16,6 +16,7 @@ const OPTSTRING = ':1246ab:c:e:fgi:kl:m:no:p:qstvxAB:CD:E:F:GI:J:KL:MNO:PQ:R:S:T
 // Flag -> ssh_config directive (Remote-SSH 0.123.0). Flags in OPTSTRING but absent here are consumed by getopt without
 // producing a directive. A flag is either a switch or takes an argument, as OPTSTRING's colons say.
 type Config = Record<string, string>;
+const CHECKED_KEYS = ['HostName', 'Port', 'User'];
 const SWITCHES: Record<string, (c: Config) => void> = {
     1: (c) => { c.Protocol = '1'; },
     2: (c) => { c.Protocol = '2'; },
@@ -49,7 +50,8 @@ const WITH_ARG: Record<string, (c: Config, arg: string) => void> = {
     o: (c, a) => {
         const idx = a.indexOf('=');
         if (idx === -1) { throw new CommandParseError(`Argument missing for option ${a}`); }
-        c[a.slice(0, idx)] = a.slice(idx + 1);
+        const key = a.slice(0, idx);
+        c[CHECKED_KEYS.find(k => k.toLowerCase() === key.toLowerCase()) ?? key] = a.slice(idx + 1); // keywords are case-insensitive; these are read back by name
     },
     p: (c, a) => { c.Port = a; },
     R: (c, a) => { c.RemoteForward = a; },
