@@ -107,7 +107,7 @@ activation, whose first call lists the account's regions. Sign-in also adopts ev
 | Start | `RunInstances` with `resolve:ssm:` for the image's latest AMI, or `StartInstances` for a stopped one; the first launch in a region creates the default VPC if the account lacks one, one AWS-generated key pair saved beside the session SSH keys, and one security group opening port 22 |
 | Poll | `DescribeInstances` every 5 s through `computeEc2Transition`; `preparing` holds until port 22 accepts a connection, which sets `connectionInfo.sshPort` and reaches `ready_to_connect` |
 | Connect | writes the per-session SSH host (public IP, port 22, the image's user, the region's key) and opens the window in the user's home |
-| Stop | waits out a pending boot, `StopInstances`, then `stopping` holds until the poll sees `stopped`; a reload resumes it like a Slurm stop |
+| Stop | waits out a pending boot, `StopInstances`, then holds the task until the instance reads `stopped`; a reload resumes it like a Slurm stop |
 | Delete | `TerminateInstances`; an instance terminated outside CS Bridge fails its session |
 
 Instances carry a `CS-Bridge-User` tag naming the image's login user, which is also the filter that adopts them.
