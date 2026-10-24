@@ -45,7 +45,7 @@ test('migrate brings every ~/.cybershuttle layout into the store, reruns idempot
 
     assert.deepEqual(record('schema.json'), { version: SCHEMA_VERSION });
     assert.deepEqual(record(`sessions/${UUID}.json`), {
-        id: UUID, name: 'n', status: 'ready_to_connect', alias: 'anvil', account: '', partition: 'gpu', rootFolder: '/home/u',
+        id: UUID, name: 'n', desired: 'running', observed: { state: 'running', at: 1 }, alias: 'anvil', account: '', partition: 'gpu', rootFolder: '/home/u',
         resources: { cores: 2, memoryMb: 4096, wallMinutes: 30, gpuType: 'a100', gpuCount: 2 },
         jobId: '9', submittedAt: 1, errorMessage: '', transport: 'devtunnel', devtunnel: { id: 't', cluster: 'usw' },
         connectionInfo: { sshPort: 40, controlPort: 25000 },
@@ -57,7 +57,7 @@ test('migrate brings every ~/.cybershuttle layout into the store, reruns idempot
     const reissued = [...files.texts.keys()].filter(n => n.startsWith('sessions/')).map(record).find(s => s.id !== UUID);
     assert.match(reissued.id, /^00000000-06a4-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/); // 1700 ms, as submitted
     assert.deepEqual({ ...reissued, id: undefined }, {
-        id: undefined, name: '1700', status: 'not_started', alias: 'delta', account: 'acct', partition: 'cpu', rootFolder: '',
+        id: undefined, name: '1700', desired: 'running', alias: 'delta', account: 'acct', partition: 'cpu', rootFolder: '',
         resources: { cores: 4, memoryMb: 8192, wallMinutes: 90 }, jobId: '', submittedAt: 1700, errorMessage: '', transport: 'devtunnel',
     });
     assert.ok(files.texts.has(`runs/${reissued.id}.json`));

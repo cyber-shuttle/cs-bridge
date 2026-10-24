@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { SlurmSession, ViewSession } from '@/models';
+import type { ViewSession } from '@/models';
 import { fmtTime, remainingMs, elapsedRunMs, elapsedLabel, dotColor, sessionActions } from './session';
 
 test('fmtTime shows h+m above an hour, m+s below', () => {
@@ -33,7 +33,7 @@ test('elapsedRunMs is elapsed-since-start, capped at the wall limit, 0 before st
     assert.equal(elapsedRunMs({ resources: hour, startedAt: 5_000 }, 4_000), 0); // clamps a clock momentarily behind startedAt
 });
 
-function sess(status: SlurmSession['status'], extra: Partial<ViewSession> = {}) {
+function sess(status: ViewSession['status'], extra: Partial<ViewSession> = {}) {
     return { status, ...extra } as ViewSession;
 }
 

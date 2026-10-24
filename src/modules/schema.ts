@@ -1,21 +1,23 @@
-// legacySteps gives store.migrate desktop's steps 0 and 1. Version 0 is every ~/.cybershuttle up to 0.2.0; version 1
+// legacySteps gives store.migrate desktop's steps 0 to 2. Version 0 is every ~/.cybershuttle up to 0.2.0; version 1
 // renamed its fields to cs-plane's; version 2 moves the records and SSH keys into extension storage and clears
-// its own entries from ~/.cybershuttle. Each step runs under a lock and is idempotent, so a crash or a second window
-// reruns it cleanly.
+// its own entries from ~/.cybershuttle; version 3 derives the status it stored. Each step runs under a lock and is
+// idempotent, so a crash or a second window reruns it cleanly.
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { UUID } from 'uuidv7';
-import { Run, RunStats, RunsFile, SessionStatus, SlurmSession, UsageSample, persistableConnectionInfo } from '../models';
+import { Run, RunStats, RunsFile, SessionStatus, SlurmJobStatus, SlurmSession, UsageSample, persistableConnectionInfo } from '../models';
 import { deleteFile, jsonFiles, lock, readJson, release, writeJson } from './fsSupport';
 import { Files, Steps } from './store';
 import { gpuTypeOf, slurmAccount } from './slurmParse';
 
 export const CS_HOME = path.join(os.homedir(), '.cybershuttle');
 
+type V2Session = Omit<SlurmSession, 'desired' | 'observed' | 'failure'> & { status: SessionStatus };
+
 // Pre-schema fields, plus the current ones: a rerun of an interrupted step meets records it already migrated.
-interface V0Session extends Partial<Omit<SlurmSession, 'status' | 'connectionInfo'>> {
+interface V0Session extends Partial<Omit<V2Session, 'status' | 'connectionInfo'>> {
     id: string;
     status: SessionStatus | 'awaiting_input';
     cluster?: string; queue?: string; allocation?: string; cpus?: number; memory?: string; wallTime?: string;
@@ -36,7 +38,7 @@ function gpu(gpuClass = '') {
     return count ? { gpuType: gpuTypeOf(type), gpuCount: Number(count) } : {};
 }
 
-function sessionV1(r: V0Session): SlurmSession {
+function sessionV1(r: V0Session): V2Session {
     const ci = r.connectionInfo ?? {};
     const cluster = r.devtunnel?.cluster ?? r.tunnelCluster ?? ci.region ?? '';
     return {
@@ -133,6 +135,29 @@ async function v1ToV2(home: string, files: Files, storageDir: string): Promise<v
     catch { /* not empty */ }
 }
 
+// connected and connecting become ready_to_connect, as after any reload.
+const OBSERVED_BY_STATUS: Partial<Record<SessionStatus, SlurmJobStatus>> = {
+    queued: SlurmJobStatus.QUEUED, preparing: SlurmJobStatus.RUNNING, ready_to_connect: SlurmJobStatus.RUNNING,
+    connecting: SlurmJobStatus.RUNNING, connected: SlurmJobStatus.RUNNING, stopped: SlurmJobStatus.CANCELLED,
+};
+export function sessionV3({ status, ...r }: V2Session): SlurmSession {
+    const state = OBSERVED_BY_STATUS[status];
+    return {
+        ...r,
+        desired: status === 'stopped' || status === 'stopping' ? 'stopped' : 'running',
+        ...state && { observed: { state, at: r.submittedAt } },
+        ...status === 'failed' && { failure: r.errorMessage || 'Failed' },
+    };
+}
+
+async function v2ToV3(files: Files): Promise<void> {
+    for (const name of (await files.list('sessions')).filter(n => n.endsWith('.json'))) {
+        const record = JSON.parse((await files.read(`sessions/${name}`))!) as V2Session & Partial<SlurmSession>;
+        if (record.desired) { continue; } // a rerun after a crash
+        await files.write(`sessions/${name}`, JSON.stringify(sessionV3(record), null, 2));
+    }
+}
+
 // The lock lives in extension storage, since step 1 may remove ~/.cybershuttle.
 export function legacySteps(files: Files, storageDir: string, home = CS_HOME): Steps {
     const locked = (step: () => Promise<void> | void) => async () => {
@@ -142,5 +167,5 @@ export function legacySteps(files: Files, storageDir: string, home = CS_HOME): S
         try { await step(); }
         finally { release(key); }
     };
-    return { 0: locked(() => v0ToV1(home)), 1: locked(() => v1ToV2(home, files, storageDir)) };
+    return { 0: locked(() => v0ToV1(home)), 1: locked(() => v1ToV2(home, files, storageDir)), 2: locked(() => v2ToV3(files)) };
 }

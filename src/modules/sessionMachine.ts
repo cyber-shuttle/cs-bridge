@@ -9,72 +9,45 @@ export function isWallTimeExpired(session: Pick<SlurmSession, 'resources' | 'sta
     return session.startedAt !== undefined && total > 0 && now >= session.startedAt + total;
 }
 
-export interface StatusTransition {
-    next?: Status;
-    stopMonitoring?: boolean;
-    error?: string;
-}
-
 // Session-status categories — the single source of truth shared by the provider, monitor, and webview UI.
 const TERMINAL: Status[] = ['stopped', 'failed'];
 // 'stopping' is excluded so Stop neither shows nor re-triggers while a stop is already in flight.
 const STOPPABLE: Status[] = ['submitting', 'queued', 'preparing', 'ready_to_connect', 'connecting', 'connected', 'unreachable'];
 const REACHABLE: Status[] = ['ready_to_connect', 'connecting', 'connected'];
-// The reachable set plus the bring-up that precedes it, so a new reachable status joins both.
-const CONNECT_PHASE: Status[] = ['preparing', ...REACHABLE];
-// Non-reachable statuses the monitor polls; an infra failure downgrades these (never a reachable one) to 'unreachable'.
-const MONITORABLE_OFFLINE: Status[] = ['submitting', 'queued', 'preparing', 'unreachable'];
 
 export const isTerminal = (status: Status): boolean => TERMINAL.includes(status);
 export const isDeletable = (status: Status): boolean => isTerminal(status) || status === 'not_started';
 export const isStoppable = (status: Status): boolean => STOPPABLE.includes(status);
 export const isReachable = (status: Status): boolean => REACHABLE.includes(status);
 
-export const unreachableStatus = (status: Status): Status | undefined =>
-    MONITORABLE_OFFLINE.includes(status) ? 'unreachable' : undefined;
-
-// RUNNING-while-'preparing' is handled by the monitor instead (side effect: SessionMonitor.prepareRemote).
-export function computeStatusTransition(current: Status, slurm: SlurmJobStatus): StatusTransition {
-    // A stopping session is tearing down; a still-live RUNNING/QUEUED reading (scancel/accounting lag) must not revive it.
-    if (current === 'stopping' && (slurm === SlurmJobStatus.RUNNING || slurm === SlurmJobStatus.QUEUED)) { return {}; }
-    switch (slurm) {
-        case SlurmJobStatus.RUNNING:
-            // Promote a freshly-running job to 'preparing'; never pull a connect-phase session back (would thrash reattach).
-            return CONNECT_PHASE.includes(current) ? {} : { next: 'preparing' };
-        case SlurmJobStatus.COMPLETED:
-            // Completed collapses into 'stopped' — the job is gone, the session can be started again, same as a walltime stop.
-            return { next: 'stopped', stopMonitoring: true };
-        case SlurmJobStatus.FAILED:
-        case SlurmJobStatus.OUT_OF_MEMORY:
-            return { next: 'failed', stopMonitoring: true, error: `Job ended with status: ${slurm}` };
-        case SlurmJobStatus.QUEUED:
-            return { next: 'queued' };
-        case SlurmJobStatus.TIMEOUT:
-        case SlurmJobStatus.CANCELLED:
-            // Walltime reached or cancelled — the job is gone but the session can be started again.
-            return { next: 'stopped', stopMonitoring: true };
-        case SlurmJobStatus.UNKNOWN:
-        default:
-            return {};
-    }
+export interface LiveFacts {
+    launching: boolean;
+    connecting: boolean;
+    connected: boolean;
+    unreachable: boolean; // the last poll failed to reach the backend
 }
 
-// The EC2 counterpart, over DescribeInstances state names. Running-while-'preparing' is left to the backend's port
-// probe, which promotes to ready_to_connect.
-export function computeEc2Transition(current: Status, state: string): StatusTransition {
-    if (current === 'stopping' && (state === 'running' || state === 'pending')) { return {}; }
-    switch (state) {
-        case 'pending':
-        case 'running':
-            return CONNECT_PHASE.includes(current) ? {} : { next: 'preparing' };
-        case 'stopping':
-            return current === 'stopping' ? {} : { next: 'stopping' };
-        case 'stopped':
-            return { next: 'stopped', stopMonitoring: true };
-        case 'shutting-down':
-        case 'terminated':
-            return { next: 'failed', stopMonitoring: true, error: 'Instance terminated outside CS Bridge' };
-        default:
-            return {};
-    }
+type Facts = Pick<SlurmSession, 'desired' | 'observed' | 'failure' | 'jobId' | 'startedAt' | 'resources' | 'connectionInfo'>;
+const ENDED: SlurmJobStatus[] = [SlurmJobStatus.COMPLETED, SlurmJobStatus.CANCELLED, SlurmJobStatus.TIMEOUT];
+const DIED: SlurmJobStatus[] = [SlurmJobStatus.FAILED, SlurmJobStatus.OUT_OF_MEMORY];
+
+// Derived, not stored, so no writer has a status another writer must guard against.
+export function deriveStatus(s: Facts, live: LiveFacts, now: number): Status {
+    if (s.failure) { return 'failed'; }
+    if (!s.jobId) { return live.launching ? 'submitting' : 'not_started'; }
+    const state = s.observed?.state ?? SlurmJobStatus.UNKNOWN;
+    if (DIED.includes(state)) { return 'failed'; }
+    if (ENDED.includes(state) || isWallTimeExpired(s, now)) { return 'stopped'; }
+    if (s.desired === 'stopped') { return 'stopping'; }
+    const sshUp = (s.connectionInfo?.sshPort ?? 0) > 0;
+    if (live.unreachable && !sshUp) { return 'unreachable'; }
+    if (state !== SlurmJobStatus.RUNNING) { return 'queued'; }
+    if (!sshUp) { return 'preparing'; }
+    return live.connected ? 'connected' : live.connecting ? 'connecting' : 'ready_to_connect';
 }
+
+const EC2_OBSERVED: Readonly<Record<string, SlurmJobStatus>> = {
+    'pending': SlurmJobStatus.RUNNING, 'running': SlurmJobStatus.RUNNING, 'stopping': SlurmJobStatus.RUNNING,
+    'stopped': SlurmJobStatus.CANCELLED, 'shutting-down': SlurmJobStatus.FAILED, 'terminated': SlurmJobStatus.FAILED,
+};
+export const observedEc2 = (state: string): SlurmJobStatus => EC2_OBSERVED[state] ?? SlurmJobStatus.UNKNOWN;

@@ -125,7 +125,6 @@ test('submitJobToSlurm feeds sbatch the script and sbatchEnv, recording the job 
     assert.equal(readFileSync(join(home, 'token'), 'utf-8'), 'tok\'en');
     assert.equal(readFileSync(join(home, 'args'), 'utf-8').trim(), '--export=ALL');
     assert.equal(s.jobId, '4242');
-    assert.equal(s.status, undefined, 'status belongs to setStatus, not the submit step');
     assert.ok((s.submittedAt ?? 0) > 0);
 
     await assert.rejects(() => submitJobToSlurm(session(), host().run, noopLog), /missing job script/);

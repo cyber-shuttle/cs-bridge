@@ -12,7 +12,7 @@ export interface Resources {
 
 // Lifecycle: not_started → submitting → queued → preparing (job + Step-1 sshd) →
 // ready_to_connect → connecting → connected; unreachable on a dropped connection or cluster outage; stopping → stopped/failed.
-// Job end (completed or walltime killed) → stopped (can be started again).
+// Job end (completed or walltime killed) → stopped (can be started again). Derived, never stored: sessionMachine.deriveStatus.
 export type SessionStatus =
     | 'not_started' | 'submitting' | 'queued' | 'preparing'
     | 'ready_to_connect' | 'connecting' | 'connected'
@@ -22,7 +22,9 @@ export type SessionStatus =
 export interface SlurmSession {
     id: string;
     name: string;
-    status: SessionStatus;
+    desired: 'running' | 'stopped';
+    observed?: { state: SlurmJobStatus; at: number }; // the backend's last reading; EC2 states map onto the Slurm vocabulary
+    failure?: string;
     alias: string; // the SSH host the job is submitted from
     account: string; // '' submits without --account
     partition: string;
@@ -104,7 +106,7 @@ export enum SlurmJobStatus {
     UNKNOWN = 'unknown',
 }
 
-export type ViewSession = SlurmSession & { isCurrent: boolean; windowAlive: boolean; opening?: boolean; samples?: UsageSample[] };
+export type ViewSession = SlurmSession & { status: SessionStatus; isCurrent?: boolean; windowAlive?: boolean; opening?: boolean; samples?: UsageSample[] };
 
 export const SAMPLE_HISTORY_LEN = 20; // rolling live-sample window, also the sparkline slot count
 export const POLLING_INTERVAL_MS = 5000;
@@ -152,7 +154,7 @@ export interface StatsState {
 }
 
 export interface SummaryState {
-    session: SlurmSession;
+    session: ViewSession;
     samples?: UsageSample[]; // live sample history (sparklines)
     stats?: RunStats; // sacct accounting; absent → the webview shows a "fetching…" spinner
 }

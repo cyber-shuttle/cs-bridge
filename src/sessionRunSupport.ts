@@ -1,6 +1,7 @@
 import { SshManager } from './modules/sshSupport';
 import { parseSacctUtil } from './modules/slurmParse';
 import { readSessionRuns, readRecentSamples, readSessionStats, appendRun, isSameRun } from './modules/runStore';
+import { statusOf } from './extensionStore';
 import { RunStats, Run, SlurmSession } from './models';
 
 const SACCT = 'sacct -P -n --units=K --format=JobID,AllocCPUs,ReqMem,ElapsedRaw,CPUTimeRAW,MaxRSS,TotalCPU -j';
@@ -12,8 +13,8 @@ export async function recordSessionRun(session: SlurmSession): Promise<void> {
     if (!session.jobId) { return; }
     if (readSessionRuns(session.id).some(r => isSameRun(r, session))) { return; }
     const stats = await fetchStats(session) ?? readSessionStats(session.id); // fall back to the last in-run copy if the end query came back empty
-    const { id: sessionId, alias, jobId, account, partition, status: finalState } = session;
-    const record: Run = { sessionId, alias, jobId, account, partition, endedAt: Date.now(), finalState, stats, samples: readRecentSamples(session.id) };
+    const { id: sessionId, alias, jobId, account, partition } = session;
+    const record: Run = { sessionId, alias, jobId, account, partition, endedAt: Date.now(), finalState: statusOf(session), stats, samples: readRecentSamples(session.id) };
     appendRun(record);
 }
 
