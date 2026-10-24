@@ -76,10 +76,13 @@ export interface SshHost {
     source: 'user' | 'system'; // user is editable, system is read-only
 }
 
+export type NonEmpty<T> = readonly [T, ...T[]];
+export const nonEmpty = <T>(xs: readonly T[]): xs is NonEmpty<T> => xs.length > 0;
+
 export interface SlurmDiscovery {
     alias: string;
     accounts: string[];
-    partitions: SlurmPartitionInfo[]; // never empty: a host without partitions fails discovery
+    partitions: NonEmpty<SlurmPartitionInfo>; // a host without partitions fails discovery
     homeDir: string;
 }
 

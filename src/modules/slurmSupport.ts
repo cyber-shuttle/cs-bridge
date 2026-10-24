@@ -1,4 +1,4 @@
-import { UsageSample, SlurmDiscovery, SlurmJobStatus, SlurmSession } from '../models';
+import { UsageSample, SlurmDiscovery, SlurmJobStatus, SlurmSession, nonEmpty } from '../models';
 import { SshManager } from './sshSupport';
 import { parseAccounts, parsePartitionLine, parseSacctStatus } from './slurmParse';
 
@@ -31,7 +31,7 @@ export async function getSlurmDiscovery(alias: string): Promise<SlurmDiscovery> 
     cpu-amd|128|515000+|(null)
     */
     const partitions = (await run('sinfo -h -o "%P|%c|%m|%G"')).split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(parsePartitionLine);
-    if (!partitions.length) { throw new Error(`sinfo lists no partitions on ${alias}`); }
+    if (!nonEmpty(partitions)) { throw new Error(`sinfo lists no partitions on ${alias}`); }
     const homeDir = (await run('echo $HOME')).trim();
     if (!homeDir) { throw new Error(`$HOME is unset on ${alias}`); }
     return { alias, accounts, partitions, homeDir };
