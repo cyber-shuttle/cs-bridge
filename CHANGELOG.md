@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Starting a stopped session again showed it queued since its first run; the card now counts from the new submit.
+
 ### Changed
 
 - One window drives each live session: it alone polls the job and holds the relay, and a closed window's sessions
