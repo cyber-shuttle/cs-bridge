@@ -325,12 +325,15 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     private async prepareLaunchSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'prepare launch');
-        if (!session || live.busy.has(session.id) || !this.drive(session)) { return; } // a second Start while one prepares is a no-op
+        if (!session || live.busy.has(session.id)) { return; } // a second Start while one prepares is a no-op
+        live.busy.add(session.id);
+        try { await this.quiesce(session); }
+        finally { live.busy.delete(session.id); }
+        if (!this.drive(session)) { return; }
+        // An EC2 session has no job script to preview, so Start submits at once.
+        if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
         live.busy.add(session.id);
         try {
-            await this.quiesce(session);
-            // An EC2 session has no job script to preview, so Start submits at once; the launch task takes over the hold.
-            if (isEc2(session)) { live.busy.delete(session.id); this.submit(session, () => this.ec2.start(session)); return; }
             await this.release(session); // the previous run's, before a transport switch hides it
             patch(session, { transport: configuredTransport() });
             const draft = await prepareLaunch(session, this.transports.transportFor(session));
