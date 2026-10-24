@@ -47,7 +47,7 @@ test('a Stop asked by another window is claimed only once that window stops beat
 
 test('a tick that outlives its loop writes nothing, and a teardown is awaited by quiesce', async () => {
     const s = running();
-    let release!: () => void;
+    let release = () => { };
     const ended: string[] = [];
     const backend: Backend = {
         label: 'fake',
@@ -60,8 +60,7 @@ test('a tick that outlives its loop writes nothing, and a teardown is awaited by
         async stop() { }, async connect() { return true; }, async remove() { }, forget() { },
     };
     const monitor = new SessionMonitor(new Backends(backend, backend));
-    monitor.startMonitoring(s);
-    await sleep(5); // the first tick is in flight
+    monitor.startMonitoring(s); // the first tick is in flight
     const quiesced = monitor.quiesce(s);
     release();
     await quiesced;

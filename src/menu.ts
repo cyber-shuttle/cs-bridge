@@ -37,18 +37,19 @@ export class CsBridgeMenu {
         const pick = vscode.window.createQuickPick<Item>();
         const stack: Build[] = [];
         let page: Page;
-        const render = (build: Build) => {
+        const render = (build: Build): boolean => {
             try { page = build(); }
-            catch (err) { fail(err); pick.hide(); return; }
+            catch (err) { fail(err); return false; }
             Object.assign(pick, {
                 title: page.title, placeholder: page.placeholder, items: page.items, ignoreFocusOut: !!page.input,
                 buttons: stack.length > 1 ? [vscode.QuickInputButtons.Back] : [],
             });
             nested(stack.length > 1);
+            return true;
         };
-        const show = (build: Build) => { render(build); pick.value = page.input ? page.input.value : ''; };
-        const go = (build: Build) => { stack.push(build); show(build); };
-        pick.onDidTriggerButton(() => { stack.pop(); const top = stack.at(-1); if (top) { show(top); } });
+        const show = (build: Build): boolean => { if (!render(build)) { return false; } pick.value = page.input ? page.input.value : ''; return true; };
+        const go = (build: Build) => { stack.push(build); if (!show(build)) { pick.hide(); } };
+        pick.onDidTriggerButton(() => { stack.pop(); const top = stack.at(-1); if (top && !show(top)) { pick.hide(); } });
         pick.onDidAccept(() => {
             if (page.input) {
                 const value = pick.value.trim();
@@ -63,8 +64,9 @@ export class CsBridgeMenu {
             (async () => item?.run?.())().catch(fail).finally(() => this.refreshAccounts());
         });
         pick.onDidHide(() => { stack.length = 0; nested(false); pick.dispose(); });
-        pick.show(); // first, so a page that fails to build hides and disposes it
-        go(start);
+        stack.push(start);
+        if (!show(start)) { pick.dispose(); return; } // never shown, so onDidHide will not dispose it
+        pick.show();
         void this.refreshAccounts().then(() => { if (stack.at(-1) === this.root) { render(this.root); } });
     }
 
