@@ -2,11 +2,7 @@ import { render, type ComponentType } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import type { WebviewMessage } from '@/models';
 
-declare function acquireVsCodeApi(): {
-    postMessage(message: unknown): void;
-    getState(): unknown;
-    setState(state: unknown): void;
-};
+declare function acquireVsCodeApi(): { postMessage(message: WebviewMessage): void };
 
 const vscode = acquireVsCodeApi();
 
@@ -22,10 +18,7 @@ export function mount(Root: ComponentType): void {
 export function useWebviewState<T>(): T | null {
     const [state, setState] = useState<T | null>(null);
     useEffect(() => {
-        const onMsg = (e: MessageEvent) => {
-            const msg = e.data as { command: 'state'; state: T };
-            if (msg.command === 'state') { setState(msg.state); }
-        };
+        const onMsg = (e: MessageEvent<{ command: 'state'; state: T }>) => { if (e.data.command === 'state') { setState(e.data.state); } };
         window.addEventListener('message', onMsg);
         post({ command: 'ready' });
         return () => window.removeEventListener('message', onMsg);
