@@ -34,7 +34,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
 
     // Every tagged instance without a record becomes one, so a VM launched from another machine is never lost.
     async adopt(): Promise<void> {
-        const { ec2, regions } = this.aws.require();
+        const { ec2, regions } = await this.aws.ready();
         // A launch in flight elsewhere has tagged its instance with the record's alias before it records the id.
         const known = new Set(getAllSessions().flatMap(s => [s.jobId, csHostAlias(s)]));
         for (const region of regions) {
@@ -51,7 +51,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
     }
 
     async start(session: Ec2Session): Promise<void> {
-        const { ec2 } = this.aws.require();
+        const { ec2 } = await this.aws.ready();
         const spec = session.ec2;
         // An instance AWS no longer has, or is terminating, is replaced by a fresh launch.
         const existing = session.jobId ? await ec2.describe(spec.region, session.jobId) : undefined;
@@ -69,8 +69,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
         const { region } = session.ec2;
         let sent = false;
         try {
-            await this.aws.restored;
-            const { ec2 } = this.aws.require();
+            const { ec2 } = await this.aws.ready();
             for (;;) {
                 // Once the stop is sent, an unreachable API only delays the reading.
                 const read = await ec2.describe(region, session.jobId).then(instance => ({ instance }), (err) => { if (sent) { return undefined; } throw err; });
@@ -94,7 +93,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
     }
 
     async remove(session: Ec2Session): Promise<void> {
-        const { ec2 } = this.aws.require();
+        const { ec2 } = await this.aws.ready();
         if (session.jobId && await ec2.describe(session.ec2.region, session.jobId)) { await ec2.act('terminate', session.ec2.region, session.jobId); }
     }
 

@@ -16,7 +16,7 @@ export class JsonDir<T extends object> {
     private readonly items = new Map<string, T>();
     private readonly texts = new Map<string, string>(); // each record's text as last read or written
     private readonly unsaved = new Map<string, Promise<void>>(); // each record's last queued write, until it starts
-    private readonly pending = new Map<string, Partial<T>>(); // fields patched since the last write began
+    private readonly pending = new Map<string, Partial<T>>(); // fields patched since the record's last write began
     private readonly listeners = new Set<() => void>();
     private queue = Promise.resolve();
 
@@ -44,35 +44,45 @@ export class JsonDir<T extends object> {
         this.emit();
     }
 
-    // The fields land on the record as another window last wrote it, so two windows' patches to different fields both
-    // survive. Every field patched since the last write went out rides each write until the record's writes drain.
-    patch(id: string, fields: Partial<T>): void {
+    // A field write. The write carries every field patched since the last one began and lands on the record as
+    // another window last wrote it: the fields that window changed since this one last read the file come in, unless
+    // patched here too. A record deleted elsewhere stays deleted.
+    patch(id: string, fields: Partial<T>): Promise<void> {
         const cur = this.items.get(id);
-        if (!cur) { return; }
+        if (!cur) { return this.queue; }
         Object.assign(cur, fields);
         Object.assign(getOrSet(this.pending, id, () => ({})), fields);
         this.emit();
-        this.save(id, async () => {
-            const queued = this.pending.get(id);
-            if (!queued) { return; }
-            const text = await this.files.read(this.path(id));
-            let record = cur;
-            if (text !== undefined && text !== this.texts.get(id)) {
-                let theirs: T | undefined;
-                try { theirs = parseJson<T>(text); }
+        return this.save(id, async () => {
+            const queued = this.pending.get(id), record = this.items.get(id);
+            if (!queued || !record) { return; }
+            this.pending.delete(id);
+            if (record !== cur) { Object.assign(record, queued); }
+            const base = this.texts.get(id), text = await this.files.read(this.path(id));
+            if (text === undefined) {
+                this.items.delete(id);
+                this.texts.delete(id);
+                this.emit();
+                return;
+            }
+            if (text !== base) {
+                try { this.takeTheirs(record, parseJson<T>(text), base === undefined ? undefined : parseJson<T>(base), queued); this.emit(); }
                 catch { /* another window mid-write; its reload follows */ }
-                if (theirs) {
-                    record = this.merge(cur, theirs);
-                    this.items.set(id, record);
-                    Object.assign(record, queued);
-                    this.emit();
-                }
             }
             const next = JSON.stringify(record, null, 2);
             this.texts.set(id, next);
             await this.files.write(this.path(id), next);
-            if (!this.unsaved.has(id)) { this.pending.delete(id); }
         });
+    }
+
+    private takeTheirs(record: T, theirs: T, base: T | undefined, queued: Partial<T>): void {
+        for (const key of new Set([...Object.keys(theirs), ...(base ? Object.keys(base) : [])])) {
+            if (key in queued) { continue; }
+            const value = Reflect.get(theirs, key);
+            if (base && JSON.stringify(value) === JSON.stringify(Reflect.get(base, key))) { continue; }
+            if (value === undefined) { Reflect.deleteProperty(record, key); }
+            else { Reflect.set(record, key, value); }
+        }
     }
 
     delete(id: string): Promise<void> {

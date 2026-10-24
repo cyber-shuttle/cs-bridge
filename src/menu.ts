@@ -66,7 +66,7 @@ export class CsBridgeMenu {
     }
 
     private async refreshAccounts() {
-        try { [this.email, this.microsoft] = await Promise.all([this.plane.identity(), getMicrosoftAccountLabel()]); }
+        try { [this.email, this.microsoft] = await Promise.all([this.plane.identity(), getMicrosoftAccountLabel(), this.aws.restored]); }
         catch (err) { Logger.getInstance().warn(`Menu account refresh failed: ${errMsg(err)}`); }
     }
 

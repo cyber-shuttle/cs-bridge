@@ -43,8 +43,8 @@ export function addSession(session: SlurmSession) {
     sessions.set(session.id, session);
 }
 
-export function patch(session: SlurmSession, fields: Partial<SlurmSession>): void {
-    sessions.patch(session.id, fields);
+export function patch(session: SlurmSession, fields: Partial<SlurmSession>): Promise<void> {
+    return sessions.patch(session.id, fields);
 }
 
 // Written only on change: the monitor says it every tick.
@@ -86,9 +86,9 @@ export function observe(session: SlurmSession, state: SlurmJobStatus): void {
     if (session.observed?.state !== state) { patch(session, { observed: { state, at: Date.now() } }); }
 }
 
-export const fail = (session: SlurmSession, message: string): void => patch(session, { failure: message, errorMessage: message });
+export const fail = (session: SlurmSession, message: string): void => void patch(session, { failure: message, errorMessage: message });
 // The owner window carries the stop out when the record reaches it.
-export const requestStop = (session: SlurmSession): void => patch(session, { desired: 'stopped', errorMessage: '' });
+export const requestStop = (session: SlurmSession): Promise<void> => patch(session, { desired: 'stopped', errorMessage: '' });
 
 export function deleteSession(sessionId: string) {
     sessions.delete(sessionId);

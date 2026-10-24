@@ -71,7 +71,7 @@ export class RemoteSessionController implements vscode.Disposable {
 
         this.torndown = true; // claim now so the 1s render tick can't race the reload
         this.stopItem.text = '$(loading~spin) Stopping…';
-        requestStop(session);
+        await requestStop(session); // on disk before the reload
         await this.endToLocal();
     }
 
