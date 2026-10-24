@@ -3,27 +3,19 @@ import { enabled } from './features';
 import { errMsg } from './logger';
 import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage, newSession } from './models';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
-import { deleteSessionPrivateKey, hasSessionKey, SshManager, openSshWindow, syncSshConfig } from './modules/sshSupport';
+import { deleteSessionPrivateKey, SshManager, openSshWindow } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
 import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, onWindowsChange, windowState, statusOf, fail, live, claim, owns } from './extensionStore';
 import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
-import { stopSession, SessionMonitor, launchSession, prepareLaunch } from './modules/sessionSupport';
-import { Transports, connectSessionToTunnel, disposeAllTunnelClients, disposeTunnelClient, ensureRemoteSession } from './modules/transport';
+import { Backend, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
+import { Transports, disposeAllTunnelClients, disposeTunnelClient } from './modules/transport';
 import { validateSlurmConfig, LaunchDraft } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
-import { isTerminal, isDeletable, isStoppable, isReachable } from './modules/sessionMachine';
+import { isTerminal, isDeletable, isStoppable } from './modules/sessionMachine';
 import { AwsClient } from './modules/aws';
 import { Ec2Backend, ec2Session } from './modules/ec2Session';
-
-// A session's user-driven steps, by backend: the Slurm job (this module and sessionSupport) or an EC2 instance.
-interface Lifecycle {
-    start(session: SlurmSession, draft: LaunchDraft | undefined): Promise<void>;
-    stop(session: SlurmSession): Promise<void>;
-    connect(session: SlurmSession): Promise<boolean>;
-    remove(session: SlurmSession): Promise<void>;
-}
 
 function openSessionWindow(session: SlurmSession, forceNew: boolean): void {
     const { windowFolder } = windowState(session);
@@ -42,24 +34,20 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private readonly shared: vscode.Disposable[] = [];
     private readonly opening = new Set<string>();
     private readonly monitor: SessionMonitor;
+    private readonly slurm: SlurmBackend;
     private readonly ec2: Ec2Backend;
     private sharedReady = false;
-    private readonly slurm: Lifecycle = {
-        start: (s, draft) => launchSession(s, this.monitor, draft),
-        stop: s => stopSession(s, this.monitor),
-        connect: s => this.connectTransport(s),
-        remove: s => this.transports.remove(s),
-    };
 
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
     constructor(extensionUri: vscode.Uri, private readonly transports: Transports, aws: AwsClient, private readonly remoteSessionId?: string) {
         super(extensionUri);
+        this.slurm = new SlurmBackend(transports, () => this.monitor);
         this.ec2 = new Ec2Backend(aws, () => this.monitor);
-        this.monitor = new SessionMonitor(transports.transportFor, this.ec2);
+        this.monitor = new SessionMonitor(s => this.backendFor(s));
         this.shared.push(aws.onDidSignIn(() => this.ec2.adopt().catch(err => this.logger.error('Adopting EC2 instances failed:', err))));
     }
 
-    private lifecycle(session: SlurmSession): Lifecycle { return session.ec2 ? this.ec2 : this.slurm; }
+    private backendFor(session: SlurmSession): Backend { return session.ec2 ? this.ec2 : this.slurm; }
 
     private release(session: SlurmSession | undefined) { return session && this.transports.transportFor(session).release(session); }
 
@@ -101,7 +89,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             if (!s.jobId || isTerminal(status) || owns(s)) { continue; }
             this.monitor.startMonitoring(s);
             // A session just taken over gets its connection back; startup never forces a sign-in.
-            if (owns(s) && s.connectionInfo?.sshPort && (s.ec2 || await this.transports.transportFor(s).signedIn())) { void this.lifecycle(s).connect(s); }
+            if (owns(s) && s.connectionInfo?.sshPort && (s.ec2 || await this.transports.transportFor(s).signedIn())) { void this.backendFor(s).connect(s); }
         }
     }
 
@@ -172,7 +160,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         if (!confirmed) { return; }
 
         await disposeTunnelClient(sessionId);
-        try { await this.lifecycle(session).remove(session); }
+        try { await this.backendFor(session).remove(session); }
         catch (err) {
             vscode.window.showErrorMessage(`Failed to delete session: ${errMsg(err)}`);
             return;
@@ -262,44 +250,6 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         }
     }
 
-    // Step 2 core: (re)build the in-process connection from the persisted refs. No window — reattach and connect share this.
-    private async connectTransport(session: SlurmSession): Promise<boolean> {
-        if (live.connecting.has(session.id)) {
-            this.logger.info(`Connect already in progress for session ${session.id}; ignoring re-entrant request`);
-            return false;
-        }
-        live.connecting.add(session.id);
-        const transport = this.transports.transportFor(session);
-        try {
-            await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
-            if (!hasSessionKey(session.id)) { throw new Error('SSH private key not found for session'); }
-            await connectSessionToTunnel(transport, session, () => void this.reconnectDevTunnel(session.id));
-            // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets no local port.
-            if (isTerminal(statusOf(session))) { throw new Error('the job ended'); }
-            await syncSshConfig();
-            return true;
-        }
-        catch (error) {
-            this.logger.error(`Error connecting the ${transport.label} for session ${session.id}:`, error);
-            await disposeTunnelClient(session.id);
-            if (session.connectionInfo) { session.connectionInfo.localPort = undefined; }
-            setError(session, `Failed to connect ${transport.label}: ${errMsg(error)}`);
-            return false;
-        }
-        finally {
-            live.connecting.delete(session.id);
-        }
-    }
-
-    // Auto-recover a half-open Dev Tunnel: rebuild Step 2 (connectTransport disposes the dead client, reconnects, rewrites the
-    // ssh_config port) while the session is still reachable and within its walltime. Its own guard blocks re-entry.
-    private async reconnectDevTunnel(sessionId: string): Promise<void> {
-        const session = getSession(sessionId);
-        if (!session || !isReachable(statusOf(session))) { return; }
-        this.logger.warn(`Session ${session.id}: Dev Tunnel half-open — rebuilding it.`);
-        await this.connectTransport(session);
-    }
-
     // 'opening' holds the session's spinner until the new window's heartbeat appears (60s fallback).
     private openOrFocusWindow(session: SlurmSession): void {
         if (windowState(session).windowAlive) { return openSessionWindow(session, false); }
@@ -318,7 +268,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             return;
         }
         claim(session);
-        if (await this.lifecycle(session).connect(session)) { this.openOrFocusWindow(session); }
+        if (await this.backendFor(session).connect(session)) { this.openOrFocusWindow(session); }
     }
 
     private async stopSessionExecution(sessionId: string) {
@@ -340,7 +290,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     // The real stop, shared by the sidebar Stop and activation resuming an unfinished one.
     private runStop(session: SlurmSession): void {
-        this.runSessionTask(session, 'stop', () => this.lifecycle(session).stop(session),
+        this.runSessionTask(session, 'stop', () => this.backendFor(session).stop(session),
             session.ec2 ? 'Please check the AWS console to ensure the instance has stopped.' : 'Please check the cluster to ensure the job has stopped and clean up any resources if necessary.');
     }
 
@@ -353,7 +303,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         patch(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '', startedAt: undefined, submittedAt: Date.now(), ...!session.ec2 && { jobId: '' } });
         claim(session);
         live.launching.add(session.id);
-        this.runSessionTask(session, 'launch', () => this.lifecycle(session).start(session, draft).finally(() => live.launching.delete(session.id)),
+        this.runSessionTask(session, 'launch', () => this.backendFor(session).start(session, draft).finally(() => live.launching.delete(session.id)),
             session.ec2 ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.');
     }
 

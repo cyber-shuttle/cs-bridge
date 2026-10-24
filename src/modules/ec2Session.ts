@@ -24,8 +24,12 @@ export const ec2Session = (ec2: Ec2Spec, fields: Partial<SlurmSession> = {}): Sl
     newSession({ alias: `aws-${ec2.region}`, account: '', partition: '', rootFolder: `/home/${ec2.user}`, resources: { cores: 0, memoryMb: 0, wallMinutes: 0 }, ec2, ...fields });
 
 export class Ec2Backend implements Backend {
+    readonly label = 'AWS';
+
     // The monitor is built with this backend, so it arrives lazily.
     constructor(private readonly aws: AwsClient, private readonly monitor: () => SessionMonitor) { }
+
+    forget(): void { }
 
     // Every tagged instance without a record becomes one, so a VM launched from another machine is never lost.
     async adopt(): Promise<void> {
