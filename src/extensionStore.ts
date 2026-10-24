@@ -18,7 +18,7 @@ const isBeating = (w: WindowBeat) => Date.now() - w.at < 90_000;
 let beat: ReturnType<typeof setInterval> | undefined;
 const windowId = Math.random().toString(36).slice(2);
 
-export async function initSessionStore(files: Files, onError: (err: unknown) => void) {
+export async function initSessionStore(files: Files, onError: (err: unknown) => void): Promise<[JsonDir<SlurmSession>, JsonDir<WindowBeat>]> {
     // Keeps the object the monitor and an in-flight step hold. A field another window cleared is absent from its JSON.
     sessions = new JsonDir<SlurmSession>(files, 'sessions', onError, (cur, next) => (cur ? replaceFields(cur, next) : next));
     windows = new JsonDir<WindowBeat>(files, 'windows', onError);
