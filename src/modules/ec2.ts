@@ -19,8 +19,8 @@ const ACTIONS = {
     stop: (c: EC2Client, ids: Ids) => c.send(new StopInstancesCommand(ids)),
     terminate: (c: EC2Client, ids: Ids) => c.send(new TerminateInstancesCommand(ids)),
 };
-export type InstanceAction = keyof typeof ACTIONS;
-export interface Ec2Instance { id: string; name?: string; state: InstanceStateName; type: string; ip?: string; user: string }
+type InstanceAction = keyof typeof ACTIONS;
+interface Ec2Instance { id: string; name?: string; state: InstanceStateName; type: string; ip?: string; user: string }
 const LIVE_FILTERS = [
     { Name: 'tag-key', Values: [USER_TAG] },
     { Name: 'instance-state-name', Values: ['pending', 'running', 'shutting-down', 'stopping', 'stopped'] },

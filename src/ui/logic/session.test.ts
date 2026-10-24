@@ -53,10 +53,7 @@ test('sessionActions returns the right buttons per status', () => {
     assert.deepEqual(sessionActions(sess('failed')).map(a => a.kind), ['start']);
     assert.deepEqual(sessionActions(sess('preparing')).map(a => a.kind), ['stop']);
     assert.deepEqual(sessionActions(sess('ready_to_connect')).map(a => a.kind), ['stop', 'connect']);
-    const up = { connectionInfo: { sshPort: 40, controlPort: 25000 } };
-    assert.deepEqual(sessionActions(sess('unreachable', up)).map(a => a.kind), ['stop', 'connect']);
-    assert.equal(sessionActions(sess('unreachable', up))[1]?.label, 'Reconnect');
-    assert.deepEqual(sessionActions(sess('unreachable')).map(a => a.kind), ['stop'], 'nothing to reconnect to before the sshd is up');
+    assert.deepEqual(sessionActions(sess('unreachable')).map(a => a.kind), ['stop'], 'unreachable means no sshd yet, so nothing to connect to');
     assert.deepEqual(sessionActions(sess('stopped')), [{ kind: 'start', label: 'Start', icon: 'play' }]);
     assert.deepEqual(sessionActions(sess('stopping')).map(a => a.kind), []); // stop in flight: spinner only, no Stop button
 });

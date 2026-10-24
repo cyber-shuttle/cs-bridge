@@ -178,8 +178,8 @@ run in order on that directory's queue; a patch lands its fields on the record a
 closes; a remote window's names its session and the folder URI it has open, which Switch focuses. A live session has one
 owner window (`owner`), claimed while no beating window holds it and released when its loop ends: the owner alone
 monitors it, holds its relay, connects it and carries out a Stop asked from any window, and a window that loses the claim
-stops on its next tick. A record holds only what every window shares; this window's connect token and connection are
-`extensionStore.live`.
+stops on its next tick. A record holds only what every window shares; this window's connection state is
+`extensionStore.live`, and its Dev Tunnel connect token stays in `tunnelSupport.ts`.
 
 Field names match cs-plane's wire types: a session is `alias`, `account`, `partition`, `rootFolder` and `resources`
 (`cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`); a run is `Run` with `RunStats` and `samples`.

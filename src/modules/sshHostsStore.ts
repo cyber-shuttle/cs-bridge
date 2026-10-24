@@ -12,8 +12,8 @@ export const SYSTEM_SSH_CONFIG_PATH = process.platform === 'win32'
     ? path.join(process.env.ALLUSERSPROFILE || process.env.PROGRAMDATA || 'C:\\ProgramData', 'ssh', 'ssh_config')
     : '/etc/ssh/ssh_config';
 
-// SSH client directives that let a session ride out brief Dev Tunnel stalls, but give up within ~45s (15×3) on a
-// dead-ended connection so a replacement ssh -D doesn't overlap the old one and re-saturate the Dev Tunnel.
+// SSH client directives that let a session ride out brief tunnel stalls, but give up within ~45s (15×3) on a
+// dead-ended connection so a replacement ssh -D doesn't overlap the old one and re-saturate the tunnel.
 export const SSH_RESILIENCE_OPTIONS: ReadonlyArray<readonly [string, string]> = [
     ['ServerAliveInterval', '15'],
     ['ServerAliveCountMax', '3'],
@@ -45,7 +45,7 @@ export function renderSshConfig(sessions: SlurmSession[], keyPath: (name: string
 
 // Pins each Slurm session's server to node-local /tmp, not $HOME/.vscode-server: on HPC $HOME is a shared network fs
 // where stalls miss the ptyHost heartbeat and one account's sessions fight over a single tree.
-export const SERVER_INSTALL_ROOT = '/tmp/cs-vscode/';
+const SERVER_INSTALL_ROOT = '/tmp/cs-vscode/';
 export function renderServerInstallPaths(sessions: SlurmSession[], current: Record<string, string>): Record<string, string> {
     const ours = Object.fromEntries(sessions.filter(s => !isEc2(s) && s.connectionInfo?.localPort).map(s => [csHostAlias(s), `${SERVER_INSTALL_ROOT}${s.id}`]));
     return { ...Object.fromEntries(Object.entries(current).filter(([, dir]) => !dir.startsWith(SERVER_INSTALL_ROOT))), ...ours };

@@ -1,7 +1,7 @@
 import { ConnectionInfo, SlurmSession } from '../models';
 import * as vscode from 'vscode';
 import { Logger } from '../logger';
-import { live, patch } from '../extensionStore';
+import { patch } from '../extensionStore';
 import { TunnelManagementHttpClient, ManagementApiVersions } from '@microsoft/dev-tunnels-management';
 import { TunnelRelayTunnelClient, TunnelConnectionOptions } from '@microsoft/dev-tunnels-connections';
 import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
@@ -12,6 +12,7 @@ const DEV_TUNNELS_APP_ID = '46da2f7e-b5ef-422a-88d4-2a7f9de6a0b2';
 const DEV_TUNNELS_SCOPE = `${DEV_TUNNELS_APP_ID}/.default`;
 
 const logger = Logger.getInstance();
+const connectTokens = new Map<string, string>(); // this window's, per session
 
 function buildTunnelManagementClient(): TunnelManagementHttpClient {
     return new TunnelManagementHttpClient(
@@ -35,7 +36,7 @@ export async function ensureDevTunnel(session: SlurmSession, ci: ConnectionInfo)
     const devtunnel = { id: tunnel.tunnelId, cluster: tunnel.clusterId };
     patch(session, { devtunnel });
     const connectToken = tunnel.accessTokens?.[TunnelAccessScopes.Connect];
-    if (connectToken) { live.connectTokens.set(session.id, connectToken); }
+    if (connectToken) { connectTokens.set(session.id, connectToken); }
 
     // Nothing reaches the job on a port the Dev Tunnel does not carry, and a failure here is the session's failure.
     if (ci.controlPort && !tunnel.ports?.some(p => p.portNumber === ci.controlPort)) {
@@ -72,7 +73,7 @@ export const devTunnels = {
     ensureTunnel: async (session, ci) => { await ensureDevTunnel(session, ci); },
     withLinkspan: ({ id, devtunnel }, ci, call) => {
         if (!devtunnel) { throw new Error('The session has no Dev Tunnel to reach Linkspan through.'); }
-        return call(`https://${devtunnel.id}-${ci.controlPort}.${devtunnel.cluster}.devtunnels.ms/api/v1`, { 'X-Tunnel-Authorization': `tunnel ${live.connectTokens.get(id)}` });
+        return call(`https://${devtunnel.id}-${ci.controlPort}.${devtunnel.cluster}.devtunnels.ms/api/v1`, { 'X-Tunnel-Authorization': `tunnel ${connectTokens.get(id)}` });
     },
     deleteTunnel: deleteDevTunnel,
 } satisfies Tunnels;
