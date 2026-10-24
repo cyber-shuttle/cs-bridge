@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import { Logger, errMsg } from './logger';
 import { Plane } from './plane';
-import { SlurmSession, EC2_IMAGES, EC2_TYPES } from './models';
+import { SlurmSession, SshHost, EC2_IMAGES, EC2_TYPES } from './models';
 import { SessionProvider } from './sessionProvider';
 import { AwsClient } from './modules/aws';
 import { SshHostProvider } from './sshHostProvider';
@@ -21,6 +21,7 @@ const ask = (title: string, placeholder: string, value: string, submit: (value: 
 
 const fail = (err: unknown) => void vscode.window.showErrorMessage(`CS Bridge: ${errMsg(err)}`);
 const nested = (value: boolean) => void vscode.commands.executeCommand('setContext', 'csbridge.menuNested', value);
+const destination = ({ user, hostname }: SshHost): string => [user, hostname].filter(Boolean).join('@');
 
 export class CsBridgeMenu {
     private email: string | null = null;
@@ -100,7 +101,7 @@ export class CsBridgeMenu {
             title: 'Create New SSH Session',
             placeholder: merged.length ? 'Select an SSH host to configure a session on' : 'No SSH hosts configured yet — add one with Add SSH Host.',
             items: merged.map(h => ({
-                label: h.alias, description: h.hostname && `${h.user ? h.user + '@' : ''}${h.hostname}`,
+                label: h.alias, description: destination(h),
                 run: () => this.sessions.startSessionDraft(h.alias),
             })),
         };
@@ -115,9 +116,9 @@ export class CsBridgeMenu {
         const host = SshManager.getInstance().getMergedHosts().find(h => h.alias === alias);
         if (!host) { throw new Error(`SSH host ${alias} is no longer configured.`); }
         return ask('Edit SSH Host: Alias', 'Press Enter to keep this alias, or type a new one', alias, newAlias => () =>
-            ask('Edit SSH Host: Destination', '[user@]hostname[:port]', [host.user, host.hostname].filter(Boolean).join('@'), (destination) => {
-                const { hostname, username, port } = parseHostToken(destination);
-                this.sshHosts.saveSshHost({ Host: newAlias, HostName: hostname, ...username && { User: username }, ...port && { Port: port } }, alias);
+            ask('Edit SSH Host: Destination', '[user@]hostname', destination(host), (dest) => {
+                const { hostname, username } = parseHostToken(dest);
+                this.sshHosts.saveSshHost({ Host: newAlias, HostName: hostname, ...username && { User: username } }, alias);
             }));
     };
 

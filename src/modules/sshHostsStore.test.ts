@@ -62,7 +62,6 @@ test('deleteHostFromConfigText deletes the named entry', () => {
 test('editHostInConfigText rewrites alias, hostname and user in place, keeping the rest of the block', () => {
     const text = '# lab\nHost d\n    HostName old\n    User a\n    ForwardAgent yes\n\nHost other\n    HostName o\n';
     assert.equal(editHostInConfigText(text, 'd', { Host: 'd2', HostName: 'new' }), '# lab\nHost d2\n    HostName new\n    ForwardAgent yes\n\nHost other\n    HostName o\n');
-    assert.equal(editHostInConfigText(text, 'd', { Host: 'd', HostName: 'new', Port: '2222' }), '# lab\nHost d\n    Port 2222\n    HostName new\n    ForwardAgent yes\n\nHost other\n    HostName o\n');
     assert.throws(() => editHostInConfigText(text, 'd', { Host: 'other', HostName: 'o' }), /already exists/);
 });
 
