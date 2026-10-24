@@ -12,16 +12,19 @@ const vscode = acquireVsCodeApi();
 
 export const post = (msg: WebviewMessage) => vscode.postMessage(msg);
 
-// The CSP shell renderHtml serves has exactly one #root.
-export const mount = (Root: ComponentType) => render(<Root />, document.getElementById('root')!);
+export function mount(Root: ComponentType): void {
+    const root = document.getElementById('root');
+    if (!root) { throw new Error('The webview shell has no #root.'); }
+    render(<Root />, root);
+}
 
 // Posts `ready` once on mount, then re-renders on each `state` message the extension pushes.
 export function useWebviewState<T>(): T | null {
     const [state, setState] = useState<T | null>(null);
     useEffect(() => {
         const onMsg = (e: MessageEvent) => {
-            const msg = e.data as { command?: string; state?: T };
-            if (msg.command === 'state' && msg.state) { setState(msg.state); }
+            const msg = e.data as { command: 'state'; state: T };
+            if (msg.command === 'state') { setState(msg.state); }
         };
         window.addEventListener('message', onMsg);
         post({ command: 'ready' });

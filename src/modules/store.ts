@@ -78,7 +78,7 @@ export class JsonDir<T> {
 
     private save(id: string, op: () => Promise<void>): Promise<void> {
         this.unsaved.set(id, (this.unsaved.get(id) ?? 0) + 1);
-        return this.enqueue(() => { this.unsaved.set(id, this.unsaved.get(id)! - 1); return op(); });
+        return this.enqueue(() => { this.unsaved.set(id, (this.unsaved.get(id) ?? 1) - 1); return op(); });
     }
 
     private enqueue(op: () => Promise<void>): Promise<void> {

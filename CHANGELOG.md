@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A freshly submitted job no longer flashes "SSH host unreachable" while Slurm accounting has no row for it yet.
 - An EC2 launch that returns no instance id fails outright instead of leaving a running instance recorded as never
   started.
+- An SSH host whose partitions or home directory cannot be read fails discovery with Retry instead of offering a session
+  form that could only submit a job that fails.
 
 ### Fixed
 

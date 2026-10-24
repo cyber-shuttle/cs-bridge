@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { parse, LineType, type Directive, type Section } from 'ssh-config';
+import { parse, LineType, type Directive } from 'ssh-config';
 import { SlurmSession, SshHost } from '../models';
 import { keyName } from './ec2';
 import { SshConfigEntry } from './sshCommandParser';
@@ -74,15 +74,7 @@ export function buildSshConfigBlock(
 }
 
 // ssh-config models a directive value as a plain string or, for multi-token directives, an array of tokens.
-type DirectiveValue = string | { val: string }[];
-interface SshConfigDirective {
-    type: LineType;
-    param: string;
-    value: DirectiveValue;
-    config: SshConfigDirective[];
-}
-
-const directiveText = (value: DirectiveValue): string =>
+const directiveText = (value: Directive['value']): string =>
     Array.isArray(value) ? value.map(t => t.val).join(' ') : value;
 
 // An Include only applies globally when it is uncommented and precedes the first Host/Match block;
@@ -101,12 +93,9 @@ export function includeIsEffective(configText: string, includeLine: string): boo
 export function parseHostsFromConfigText(text: string, source: SshHost['source']): SshHost[] {
     const config = parse(text);
     const hosts: SshHost[] = [];
-    for (const line of config) {
-        if (line.type !== LineType.DIRECTIVE) { continue; }
+    for (const section of config) {
         // Keep Host sections only: they carry a `config` array, Match sections also carry `criteria`.
-        if (!('config' in line) || 'criteria' in line) { continue; }
-        const section = line as unknown as SshConfigDirective;
-        if (section.param !== 'Host') { continue; }
+        if (!('config' in section) || 'criteria' in section || section.param !== 'Host') { continue; }
         const raw = Array.isArray(section.value) ? section.value[0] : section.value;
         const alias = typeof raw === 'string' ? raw.trim().split(/\s+/)[0] : '';
         if (!alias || alias.includes('*') || alias.includes('?')) { continue; }
@@ -140,13 +129,15 @@ export function deleteHostFromConfigText(text: string, alias: string): string {
 
 export function editHostInConfigText(text: string, alias: string, edit: SshConfigEntry): string {
     const config = parse(text);
-    const section = config.find({ Host: alias }) as Section | undefined;
+    const found = config.find({ Host: alias });
+    const section = found && 'config' in found ? found : undefined;
     if (!section) { throw new Error(`SSH host ${alias} is not in ~/.ssh/config.`); }
     if (edit.Host !== alias && config.find({ Host: edit.Host })) { throw new Error(`SSH host ${edit.Host} already exists.`); }
     section.value = edit.Host;
     for (const [param, value] of [['User', edit.User], ['HostName', edit.HostName]] as const) {
         const i = section.config.findIndex(line => 'param' in line && line.param === param);
-        const line = (section.config[i] ?? { type: LineType.DIRECTIVE, before: section.config[0]?.before ?? '    ', after: '\n', separator: ' ', param }) as Directive;
+        const existing = section.config[i];
+        const line: Directive = existing && 'param' in existing ? existing : { type: LineType.DIRECTIVE, before: section.config[0]?.before ?? '    ', after: '\n', separator: ' ', param, value: '' };
         if (i >= 0) { section.config.splice(i, 1); }
         if (value) { section.config.splice(Math.max(i, 0), 0, { ...line, value }); }
     }
@@ -163,13 +154,13 @@ export function mergeHostsByPriority(...lists: SshHost[][]): SshHost[] {
 
 export function addHostToConfigFile(filePath: string, entry: SshConfigEntry): void {
     fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-    lockedUpdateTextFile(filePath, text => addHostToConfigText(text ?? '', entry), 0o600);
+    lockedUpdateTextFile(filePath, text => addHostToConfigText(text, entry), 0o600);
 }
 
 export function editHostInConfigFile(filePath: string, alias: string, edit: SshConfigEntry): void {
-    lockedUpdateTextFile(filePath, text => editHostInConfigText(text ?? '', alias, edit), 0o600);
+    lockedUpdateTextFile(filePath, text => editHostInConfigText(text, alias, edit), 0o600);
 }
 
 export function deleteHostFromConfigFile(filePath: string, alias: string): void {
-    lockedUpdateTextFile(filePath, text => (text === undefined ? null : deleteHostFromConfigText(text, alias)), 0o600);
+    lockedUpdateTextFile(filePath, (text, exists) => (exists ? deleteHostFromConfigText(text, alias) : null), 0o600);
 }

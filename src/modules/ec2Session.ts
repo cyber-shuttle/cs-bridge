@@ -38,7 +38,7 @@ export class Ec2Backend implements Backend {
         const known = new Set(getAllSessions().flatMap(s => [s.jobId, csHostAlias(s)]));
         for (const region of this.aws.regions ?? []) {
             const found = await ec2.list(region).catch((err) => { logger.error(`EC2 list of ${region} failed:`, err); return []; });
-            for (const i of found.filter(i => !known.has(i.id) && !known.has(i.name) && i.state !== 'shutting-down')) {
+            for (const i of found.filter(i => !known.has(i.id) && !(i.name && known.has(i.name)) && i.state !== 'shutting-down')) {
                 // Named by the instance id, so its last six characters alias the SSH host.
                 const session = ec2Session({ region, type: i.type, image: '', user: i.user, ip: i.ip },
                     { name: i.id, jobId: i.id, desired: i.state === 'stopped' ? 'stopped' : 'running', observed: { state: observedEc2(i.state), at: Date.now() } });
@@ -54,7 +54,7 @@ export class Ec2Backend implements Backend {
         const spec = session.ec2!;
         const jobId = session.jobId || await ec2.launch(spec.image, spec.type, spec.region, csHostAlias(session));
         if (session.jobId) { await ec2.act('start', spec.region, jobId); }
-        patch(session, { jobId, ec2: { ...spec, ip: '' }, connectionInfo: undefined });
+        patch(session, { jobId, ec2: { ...spec, ip: undefined }, connectionInfo: undefined });
         observe(session, SlurmJobStatus.RUNNING);
         this.monitor().startMonitoring(session);
     }

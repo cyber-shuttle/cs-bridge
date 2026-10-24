@@ -6,7 +6,7 @@ import { TunnelManagementHttpClient, ManagementApiVersions } from '@microsoft/de
 import { TunnelRelayTunnelClient, TunnelConnectionOptions } from '@microsoft/dev-tunnels-connections';
 import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
 import { ForwardRelayClient, forwardedLocalPort } from './linkTunnel';
-import type { Tunnels } from './transport';
+import type { TunnelRef, Tunnels } from './transport';
 
 const DEV_TUNNELS_APP_ID = '46da2f7e-b5ef-422a-88d4-2a7f9de6a0b2';
 const DEV_TUNNELS_SCOPE = `${DEV_TUNNELS_APP_ID}/.default`;
@@ -21,18 +21,20 @@ function buildTunnelManagementClient(): TunnelManagementHttpClient {
     );
 }
 
-const devTunnelRef = ({ devtunnel }: SlurmSession): Tunnel | undefined => devtunnel && { tunnelId: devtunnel.id, clusterId: devtunnel.cluster };
+const devTunnelRef = ({ devtunnel }: SlurmSession): TunnelRef | undefined => devtunnel && { tunnelId: devtunnel.id, clusterId: devtunnel.cluster };
 
-// Makes the Dev Tunnel carry the control port, the only port it needs, and returns the host token: we keep the Entra
-// bearer local and register the port ourselves, so the node only ever holds a token scoped to hosting this Dev Tunnel.
-export async function ensureDevTunnel(session: SlurmSession): Promise<string> {
+// Makes the Dev Tunnel carry the control port, the only port it needs, and returns its ref with the host token: we keep
+// the Entra bearer local and register the port ourselves, so the node only ever holds a token scoped to hosting this Dev Tunnel.
+export async function ensureDevTunnel(session: SlurmSession): Promise<{ devtunnel: { id: string; cluster: string }; hostToken: string }> {
     const mgmt = buildTunnelManagementClient();
     const ci = session.connectionInfo ??= { sshPort: 0, controlPort: 0 };
     const opts = { includePorts: true, tokenScopes: [TunnelAccessScopes.Host, TunnelAccessScopes.Connect] };
     const ref = devTunnelRef(session);
     const tunnel = (ref && await mgmt.getTunnel(ref, opts)) ?? await mgmt.createTunnel(ref ?? {}, opts);
+    if (!tunnel.tunnelId || !tunnel.clusterId) { throw new Error('Dev Tunnels returned a tunnel without an id.'); }
 
-    patch(session, { devtunnel: { id: tunnel.tunnelId!, cluster: tunnel.clusterId! } });
+    const devtunnel = { id: tunnel.tunnelId, cluster: tunnel.clusterId };
+    patch(session, { devtunnel });
     const connectToken = tunnel.accessTokens?.[TunnelAccessScopes.Connect];
     if (connectToken) { live.connectTokens.set(session.id, connectToken); }
 
@@ -42,7 +44,7 @@ export async function ensureDevTunnel(session: SlurmSession): Promise<string> {
     }
     const hostToken = tunnel.accessTokens?.[TunnelAccessScopes.Host];
     if (!hostToken) { throw new Error('Dev Tunnel did not return a host token.'); }
-    return hostToken;
+    return { devtunnel, hostToken };
 }
 
 // The SDK forwards only Linkspan's control port; the sshd rides its /api/v1/forward, bridged as for link.

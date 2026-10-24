@@ -5,7 +5,7 @@ import { partitionsForTab, hasTab, cpuOptions, memoryOptions, gpuOptions, resolv
 
 const cpuPart: SlurmPartitionInfo = { name: 'cpu', cpuCount: 3, memoryMb: 8192, gres: [] };
 const gpuPart: SlurmPartitionInfo = { name: 'gpu', cpuCount: 16, memoryMb: 0, gres: [{ name: 'a100', count: 2 }] };
-const info: SlurmDiscovery = { alias: 'h', accounts: ['acct'], partitions: [cpuPart, gpuPart] };
+const info: SlurmDiscovery = { alias: 'h', accounts: ['acct'], partitions: [cpuPart, gpuPart], homeDir: '/home/u' };
 
 test('partitionsForTab splits by presence of gres', () => {
     assert.deepEqual(partitionsForTab(info, 'cpu'), [cpuPart]);

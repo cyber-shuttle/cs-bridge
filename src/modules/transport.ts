@@ -21,8 +21,9 @@ const RECONNECT_AFTER_MISSES = 4;
 
 // A transport's management and relay clients, as this module's session-level steps use them: the Dev Tunnels SDK's
 // (devTunnels) or linkTunnel's mirror of them over cs-plane.
+export type TunnelRef = Tunnel & { tunnelId: string };
 interface TunnelManagement {
-    getTunnel(tunnel: Tunnel, options?: TunnelRequestOptions): Promise<Tunnel | null>;
+    getTunnel(tunnel: TunnelRef, options?: TunnelRequestOptions): Promise<Tunnel | null>;
 }
 
 export interface TunnelRelayClient {
@@ -39,7 +40,7 @@ export interface Tunnels {
     readonly label: string;
     management(): TunnelManagement;
     relayClient(management: TunnelManagement, session: SlurmSession): TunnelRelayClient;
-    tunnelRef(session: SlurmSession): Tunnel | undefined; // the run's tunnel, once prepared
+    tunnelRef(session: SlurmSession): TunnelRef | undefined; // the run's tunnel, once prepared
     ensureTunnel(session: SlurmSession): Promise<unknown>;
     withLinkspan<T>(session: SlurmSession, call: (baseUrl: string, headers: Record<string, string>) => Promise<T>): Promise<T>;
     deleteTunnel(session: SlurmSession): Promise<void>;
@@ -48,7 +49,7 @@ export interface Tunnels {
 export interface Transport extends Tunnels {
     readonly description: string;
     signedIn(): Promise<boolean>; // without prompting
-    prepare(session: SlurmSession): Promise<LinkspanLaunch>; // before sbatch: reserve the run's tunnel
+    prepare(session: SlurmSession, ci: ConnectionInfo): Promise<LinkspanLaunch>; // before sbatch: reserve the run's tunnel on its control port
     release(session: SlurmSession): Promise<void>; // end the run's remote hold and its tokens
 }
 
@@ -59,7 +60,10 @@ const devTunnel = {
     async prepare(session) {
         // Fresh launch: drop the prior run's Dev Tunnel so its ports don't accumulate toward Microsoft's PortsPerTunnel (10) cap.
         await deleteDevTunnel(session);
-        try { return devTunnelLaunch(session, await ensureDevTunnel(session)); }
+        try {
+            const { devtunnel, hostToken } = await ensureDevTunnel(session);
+            return devTunnelLaunch(devtunnel, hostToken);
+        }
         catch (err) { throw new Error(`Failed to create Dev Tunnel: ${errMsg(err)}`, { cause: err }); }
     },
     release: async () => { },
@@ -81,7 +85,9 @@ class Link implements Transport {
     withLinkspan: Tunnels['withLinkspan'] = async (session, call) => {
         const client = this.relayClient();
         try {
-            await client.connect(await this.management().getTunnel({ tunnelId: session.planeId }));
+            const ref = this.tunnelRef(session);
+            if (!ref) { throw new Error(`Session ${session.id} has no cs-plane session to reach Linkspan through.`); }
+            await client.connect(await this.management().getTunnel(ref));
             return await call(`http://127.0.0.1:${await forwardedLocalPort(client, session.connectionInfo?.controlPort ?? 0)}/api/v1`, {});
         }
         finally { await client.dispose(); }
@@ -89,11 +95,11 @@ class Link implements Transport {
 
     signedIn = () => this.plane.signedIn();
 
-    async prepare(session: SlurmSession) {
+    async prepare(session: SlurmSession, ci: ConnectionInfo) {
         try {
             const { tunnelId, port, link } = await this.management().attachTunnel(session);
             session.planeId = tunnelId;
-            session.connectionInfo!.controlPort = port;
+            ci.controlPort = port;
             return linkLaunch(link.url, link.token);
         }
         catch (err) { throw new Error(`Failed to attach the cs-plane session: ${errMsg(err)}`, { cause: err }); }
@@ -151,19 +157,10 @@ export async function connectSessionToTunnel(t: Tunnels, session: SlurmSession, 
     logger.info(`Connecting session ${session.id} to its ${t.label}...`);
 
     const ref = t.tunnelRef(session);
+    if (!ref) { throw new Error(`Session ${session.id} has no ${t.label} prepared.`); }
     const mgmtClient = t.management();
-
-    const tunnel = ref && await mgmtClient.getTunnel(
-        ref,
-        {
-            includePorts: true,
-            tokenScopes: [TunnelAccessScopes.Connect],
-        },
-    );
-
-    if (!tunnel) {
-        throw new Error(`${t.label} ${ref?.tunnelId ?? ''} not found.`);
-    }
+    const tunnel = await mgmtClient.getTunnel(ref, { includePorts: true, tokenScopes: [TunnelAccessScopes.Connect] });
+    if (!tunnel) { throw new Error(`${t.label} ${ref.tunnelId} not found.`); }
 
     logger.info(`Fetched ${t.label} ${tunnel.tunnelId}: ${tunnel.endpoints?.length ?? 0} endpoints, ${tunnel.ports?.length ?? 0} ports`);
 

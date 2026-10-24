@@ -62,7 +62,7 @@ test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan in
         partition: 'gpu', resources: { cores: 4, memoryMb: 8192, wallMinutes: 1500, gpuType: 'a100', gpuCount: 2 },
         devtunnel: { id: 'tid', cluster: 'use' }, connectionInfo: { controlPort: 25000, sshPort: 0 },
     });
-    const script = buildSlurmScript(session, devTunnelLaunch(session, 'tok'));
+    const script = buildSlurmScript(session, devTunnelLaunch({ id: 'tid', cluster: 'use' }, 'tok'));
     assert.match(script, /^#SBATCH --nodes=1$/m);
     assert.match(script, /^#SBATCH --cpus-per-task=4$/m);
     assert.match(script, /^#SBATCH --mem=8192M$/m);
@@ -84,7 +84,7 @@ test('buildSlurmScript launches a link session with its URL and no token', () =>
 function scriptSession(overrides: Partial<SlurmSession> = {}): SlurmSession {
     return { partition: 'cpu', account: 'acct1', resources: { cores: 2, memoryMb: 4096, wallMinutes: 60 }, ...overrides } as SlurmSession;
 }
-const launch = devTunnelLaunch(scriptSession(), 't');
+const launch = devTunnelLaunch({ id: 't', cluster: 'c' }, 't');
 
 test('buildSlurmScript omits the GPU directive when no GPU is selected', () => {
     const session = scriptSession();

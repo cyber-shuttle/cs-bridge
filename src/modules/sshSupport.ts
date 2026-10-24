@@ -268,8 +268,8 @@ export class SshManager {
         panel.webview.html = renderAuthHtml(prompt, nonce);
         return new Promise<string | undefined>((resolve) => {
             const finish = (v?: string) => { resolve(v); panel.dispose(); }; // resolve latches, dispose is idempotent
-            panel.webview.onDidReceiveMessage((m: { type?: string; value?: string }) =>
-                finish(m?.type === 'submit' ? (m.value ?? '') : undefined));
+            panel.webview.onDidReceiveMessage((m: { type: 'submit'; value: string } | { type: 'cancel' }) =>
+                finish(m.type === 'submit' ? m.value : undefined));
             panel.onDidDispose(() => finish(undefined));
         });
     }
@@ -310,10 +310,7 @@ export class SshManager {
             if (!fs.existsSync(sshDir)) {
                 fs.mkdirSync(sshDir, { mode: 0o700 });
             }
-            lockedUpdateTextFile(sshConfigPath, cur =>
-                cur === undefined ? `${includeLine}\n`
-                    : includeIsEffective(cur, includeLine) ? null
-                        : `${includeLine}\n${cur}`, 0o600);
+            lockedUpdateTextFile(sshConfigPath, cur => (includeIsEffective(cur, includeLine) ? null : `${includeLine}\n${cur}`), 0o600);
         }
         catch (err) {
             logger.error(`[ssh] Failed to add Include to ~/.ssh/config: ${errMsg(err)}`);

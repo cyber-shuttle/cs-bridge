@@ -12,23 +12,32 @@ export interface SshConfigEntry {
 // Verbatim getopt option string from Remote-SSH 0.123.0.
 const OPTSTRING = ':1246ab:c:e:fgi:kl:m:no:p:qstvxAB:CD:E:F:GI:J:KL:MNO:PQ:R:S:TVw:W:XYy';
 
-// Flag -> ssh_config directive (Remote-SSH 0.123.0). Flags in OPTSTRING but absent here are consumed by getopt without producing a directive.
-const OPTION_MAP: Record<string, (c: Record<string, string>, arg: string) => void> = {
+// Flag -> ssh_config directive (Remote-SSH 0.123.0). Flags in OPTSTRING but absent here are consumed by getopt without
+// producing a directive. A flag is either a switch or takes an argument, as OPTSTRING's colons say.
+type Config = Record<string, string>;
+const SWITCHES: Record<string, (c: Config) => void> = {
     1: (c) => { c.Protocol = '1'; },
     2: (c) => { c.Protocol = '2'; },
     4: (c) => { c.AddressFamily = 'inet'; },
     6: (c) => { c.AddressFamily = 'inet6'; },
     A: (c) => { c.ForwardAgent = 'yes'; },
-    b: (c, a) => { c.BindAddress = a; },
     C: (c) => { c.Compression = 'yes'; },
+    g: (c) => { c.GatewayPorts = 'yes'; },
+    K: (c) => { c.GSSAPIAuthentication = 'yes'; },
+    k: (c) => { c.GSSAPIDelegateCredentials = 'no'; },
+    M: (c) => { c.ControlMaster = 'yes'; },
+    v: (c) => { c.LogLevel = 'verbose'; },
+    X: (c) => { c.ForwardX11 = 'yes'; },
+    x: (c) => { c.ForwardX11 = 'no'; },
+    Y: (c) => { c.ForwardX11Trusted = 'yes'; },
+};
+const WITH_ARG: Record<string, (c: Config, arg: string) => void> = {
+    b: (c, a) => { c.BindAddress = a; },
     c: (c, a) => { c.Cipher = a; },
     D: (c, a) => { c.DynamicForward = a; },
-    g: (c) => { c.GatewayPorts = 'yes'; },
     I: (c, a) => { c.SmartcardDevice = a; },
     i: (c, a) => { c.IdentityFile = a; },
     J: (c, a) => { c.ProxyJump = a; },
-    K: (c) => { c.GSSAPIAuthentication = 'yes'; },
-    k: (c) => { c.GSSAPIDelegateCredentials = 'no'; },
     L: (c, a) => {
         const localForwardMatch = a.match(/^((.*):?\d+)?:(.+?)?$/);
         if (localForwardMatch) {
@@ -42,7 +51,6 @@ const OPTION_MAP: Record<string, (c: Record<string, string>, arg: string) => voi
         c.LocalForward = `${a.substring(0, idx)} ${a.substring(idx + 1)}`;
     },
     l: (c, a) => { c.User = a; },
-    M: (c) => { c.ControlMaster = 'yes'; },
     m: (c, a) => { c.MACs = a; },
     o: (c, a) => {
         const idx = a.indexOf('=');
@@ -52,22 +60,18 @@ const OPTION_MAP: Record<string, (c: Record<string, string>, arg: string) => voi
     p: (c, a) => { c.Port = a; },
     R: (c, a) => { c.RemoteForward = a; },
     S: (c, a) => { c.ControlPath = a; },
-    v: (c) => { c.LogLevel = 'verbose'; },
     w: (c, a) => { c.TunnelDevice = a; },
-    X: (c) => { c.ForwardX11 = 'yes'; },
-    x: (c) => { c.ForwardX11 = 'no'; },
-    Y: (c) => { c.ForwardX11Trusted = 'yes'; },
 };
 
-function consumeFlags(tokens: string[], config: Record<string, string>): number {
+function consumeFlags(tokens: string[], config: Config): number {
     const parser = new BasicParser(OPTSTRING, tokens, 0);
     for (;;) {
         const opt = parser.getopt();
         if (!opt) { break; }
         if (opt.option === ':') { throw new CommandParseError(`Expected flag -${opt.optopt} to have an argument but it did not`); }
         if (opt.option === '?') { throw new CommandParseError(`Unknown flag ${opt.optopt}`); }
-        const handler = OPTION_MAP[opt.option];
-        if (handler) { handler(config, opt.optarg ?? ''); }
+        if (opt.optarg === undefined) { SWITCHES[opt.option]?.(config); }
+        else { WITH_ARG[opt.option]?.(config, opt.optarg); }
     }
     return parser.optind();
 }
@@ -92,9 +96,9 @@ function parseHostToken(token: string): { hostname: string; username?: string; p
 }
 
 export function sshCommandToConfig(command: string): SshConfigEntry {
-    const tokens = parse(command) as unknown as string[];
+    const tokens = parse(command).filter((t): t is string => typeof t === 'string'); // shell operators and globs are not ssh arguments
     if (tokens[0] === 'ssh') { tokens.shift(); }
-    const config: Record<string, string> = {};
+    const config: Config = {};
     for (let i = 0; i < tokens.length; i++) {
         i += consumeFlags(tokens.slice(i), config);
         const token = tokens[i];

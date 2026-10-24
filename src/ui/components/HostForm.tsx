@@ -4,7 +4,7 @@ import type { SlurmDiscovery, HostRuntime } from '@/models';
 import { partitionsForTab, hasTab, cpuOptions, memoryOptions, gpuOptions, resolvePick, type ResourceTab } from '@/ui/logic/cluster';
 import { Row, Stack, Text, Spinner, Button, SingleSelect } from '@/ui/components/base';
 import { post } from '@/ui/platform/vscode';
-import { gpuTypeOf } from '@/modules/slurmParse';
+import { NO_ACCOUNT, gpuTypeOf } from '@/modules/slurmParse';
 
 interface Props {
     alias: string;
@@ -33,14 +33,12 @@ function Select({ label, value, onChange, options, children }: { label: string; 
 }
 
 function HostFormFields({ alias, info, validating }: { alias: string; info: SlurmDiscovery; validating?: boolean }) {
-    const tabs: ResourceTab[] = (['cpu', 'gpu'] as ResourceTab[]).filter(t => hasTab(info, t));
+    const tabs = (['cpu', 'gpu'] as const).filter(t => hasTab(info, t));
     const initialTab = tabs[0] ?? 'cpu';
-    const initialParts = partitionsForTab(info, initialTab);
-    const initialPart = initialParts[0];
 
     const [tab, setTab] = useState<ResourceTab>(initialTab);
-    const [partName, setPartName] = useState(initialPart?.name ?? '');
-    const [account, setAccount] = useState(info.accounts[0] ?? '');
+    const [partName, setPartName] = useState(partitionsForTab(info, initialTab)[0]?.name);
+    const [account, setAccount] = useState(info.accounts[0] ?? NO_ACCOUNT);
     const [cpuPick, setCpu] = useState('');
     const [memoryPick, setMemory] = useState('');
     const [gpuCountPick, setGpuCount] = useState('');
@@ -61,16 +59,18 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
 
     const switchTab = (t: ResourceTab) => {
         setTab(t);
-        setPartName(partitionsForTab(info, t)[0]?.name ?? '');
+        setPartName(partitionsForTab(info, t)[0]?.name);
     };
 
     const submit = () => {
+        if (!partition) { return; }
         const count = parseInt(gpuCount, 10) || 0;
         post({
             command: 'addSession',
             alias,
-            partition: partName,
+            partition: partition.name,
             account,
+            rootFolder: info.homeDir,
             resources: { cores: Number(cpu), memoryMb: parseInt(memory, 10) * 1024, wallMinutes: Number(wall), ...count && { gpuType: gpuTypeOf(gpuType), gpuCount: count } },
         });
     };
@@ -87,9 +87,8 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
                     )
                 : null}
 
-            {/* '' → (no Slurm account): a cluster may expose no Slurm accounts to pick (buildSlurmScript then omits --account). */}
-            <Select label="Slurm account" value={account} onChange={setAccount} options={[['', '(no Slurm account)'], ...pairs(info.accounts)]} />
-            <Select label="Partition" value={partName} onChange={setPartName}>
+            <Select label="Slurm account" value={account} onChange={setAccount} options={[[NO_ACCOUNT, '(no Slurm account)'], ...pairs(info.accounts)]} />
+            <Select label="Partition" value={partition ? partition.name : NO_ACCOUNT} onChange={setPartName}>
                 {parts.map(p => (
                     <option key={p.name} value={p.name}>
                         {p.name} ({p.cpuCount} CPUs{p.gres[0] ? `, ${p.gres[0].count} GPUs` : ''})
@@ -107,7 +106,7 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
                     )
                 : null}
             <Select label="Walltime" value={wall} onChange={setWall} options={WALL_OPTIONS} />
-            <Button onClick={submit} disabled={validating}>
+            <Button onClick={submit} disabled={validating || !partition}>
                 {validating ? <Row gap={4}><Spinner size={12} /> Validating…</Row> : 'Add'}
             </Button>
         </Stack>

@@ -308,10 +308,10 @@ export async function prepareLaunch(session: SlurmSession, transport: Transport)
     // Fresh connection info with this run's control port pinned before transport.prepare: that call is what puts the port
     // on the Dev Tunnel, and the job's Dev Tunnel host has to find it already there.
     // Trade-off: random high port; ~1/12000 collision on a shared compute node (Linkspan log.Fatals if taken, session then fails) — probe a free port on the node if it ever bites.
-    session.connectionInfo = { sshPort: 0, controlPort: 20000 + Math.floor(Math.random() * 12000) };
+    const ci = session.connectionInfo = { sshPort: 0, controlPort: 20000 + Math.floor(Math.random() * 12000) };
     resetLive(session.id); // clear the prior run's live samples + stats, keep the run history
 
-    const launch = await transport.prepare(session);
+    const launch = await transport.prepare(session, ci);
 
     let script: string;
     try { script = buildSlurmScript(session, launch); }

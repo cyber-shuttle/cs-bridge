@@ -118,16 +118,8 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         deleteSession: ({ sessionId }) => void this.confirmAndDeleteSession(sessionId),
     };
 
-    private createSession(data: Extract<SessionsMessage, { command: 'addSession' }>): void {
-        const { alias } = data;
-        const runtime = this.hostRuntime.get(alias);
-        const session = newSession({
-            alias,
-            account: slurmAccount(data.account),
-            partition: data.partition,
-            rootFolder: runtime?.phase === 'ready' ? runtime.info.homeDir ?? '' : '',
-            resources: data.resources,
-        });
+    private createSession({ alias, account, partition, rootFolder, resources }: Extract<SessionsMessage, { command: 'addSession' }>): void {
+        const session = newSession({ alias, account: slurmAccount(account), partition, rootFolder, resources });
         void this.validateThenPersist(session, () => {
             addSession(session);
             this.draftAlias = null;

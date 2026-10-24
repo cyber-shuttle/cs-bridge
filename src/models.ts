@@ -43,13 +43,13 @@ export interface SlurmSession {
     ec2?: Ec2Spec; // an EC2 session: alias is aws-<region>, jobId the instance id, resources zero, transport unused
 }
 
-// image is '' when adopted from the account rather than launched here.
+// image is '' when adopted from the account rather than launched here; ip is unset until the instance has a public one.
 export interface Ec2Spec {
     region: string;
     type: string;
     image: string;
     user: string;
-    ip: string;
+    ip?: string;
 }
 
 // A record not yet started. The id is a uuidv7, so sorting by id is creation order; the name is the creation time,
@@ -77,8 +77,8 @@ export interface SshHost {
 export interface SlurmDiscovery {
     alias: string;
     accounts: string[];
-    partitions: SlurmPartitionInfo[];
-    homeDir?: string;
+    partitions: SlurmPartitionInfo[]; // never empty: a host without partitions fails discovery
+    homeDir: string;
 }
 
 export interface SlurmPartitionInfo {
@@ -180,7 +180,7 @@ export interface HostsState {
 // What each webview posts to its provider; `ready` is every view's first message.
 export type SessionsMessage =
     | { command: 'ready' | 'dismissDraftSession' | 'dismissPreview' | 'dismissAlert' }
-    | { command: 'addSession'; alias: string; partition: string; account: string; resources: Resources }
+    | { command: 'addSession'; alias: string; partition: string; account: string; rootFolder: string; resources: Resources }
     | { command: 'refreshSlurmDiscovery'; alias: string }
     | { command: 'prepareLaunchSession' | 'launchSession' | 'stopSessionExecution' | 'stopRemoteSession' | 'connectTunnel' | 'deleteSession'; sessionId: string };
 export type HostsMessage = { command: 'ready' } | { command: 'deleteSshHost' | 'openTerminal' | 'editSshHost'; alias: string };
