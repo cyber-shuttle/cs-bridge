@@ -4,7 +4,7 @@ import * as path from 'path';
 import { parse, LineType, type Directive } from 'ssh-config';
 import { SlurmSession, SshHost, isEc2 } from '../models';
 import { keyName } from './ec2';
-import { SshConfigEntry } from './sshCommandParser';
+import { SshConfigEntry, isKeyword } from './sshCommandParser';
 import { lockedUpdateTextFile } from './fsSupport';
 
 export const USER_SSH_CONFIG_PATH = path.join(os.homedir(), '.ssh', 'config');
@@ -72,9 +72,6 @@ export function buildSshConfigBlock(
         ...SSH_RESILIENCE_OPTIONS.map(([key, value]) => `    ${key} ${value}`),
     ].join('\n');
 }
-
-// ssh_config keywords are case-insensitive.
-const isKeyword = (param: string, keyword: string): boolean => param.toLowerCase() === keyword.toLowerCase();
 
 // ssh-config models a directive value as a plain string or, for multi-token directives, an array of tokens.
 const directiveText = (value: Directive['value']): string =>

@@ -42,7 +42,7 @@ type HostShell = {
     ready: Promise<void>;
     alive: boolean;
     connecting: boolean;
-    cancelAuth?: () => void; // closes an auth prompt the shell's exit has made moot
+    openPrompts: Set<() => void>; // closers of the auth prompts up, which the shell's exit makes moot
     current?: Pending;
 };
 
@@ -189,7 +189,7 @@ export class SshManager {
         ], { env, stdio: ['pipe', 'pipe', 'pipe'] });
 
         const ready = Promise.withResolvers<void>();
-        const shell: HostShell = { proc, alive: true, connecting: true, ready: ready.promise };
+        const shell: HostShell = { proc, alive: true, connecting: true, ready: ready.promise, openPrompts: new Set() };
 
         const settle = (p: Pending): void => {
             const result = extractCommandResult(p.rid, p.outBuf, p.errBuf);
@@ -220,7 +220,7 @@ export class SshManager {
         const drop = (onConnect: () => Error): void => {
             shell.alive = false;
             stopPoll();
-            shell.cancelAuth?.();
+            for (const close of shell.openPrompts) { close(); }
             if (askpassDir) {
                 try { fs.rmSync(askpassDir, { recursive: true, force: true }); }
                 catch { /* best-effort */ }
@@ -244,8 +244,8 @@ export class SshManager {
         );
         panel.webview.html = renderAuthHtml(prompt, nonce);
         return new Promise<string | undefined>((resolve) => {
-            const finish = (v?: string) => { resolve(v); panel.dispose(); if (shell.cancelAuth === finish) { shell.cancelAuth = undefined; } }; // resolve latches, dispose is idempotent
-            shell.cancelAuth = finish;
+            const finish = (v?: string) => { resolve(v); panel.dispose(); shell.openPrompts.delete(finish); }; // resolve latches, dispose is idempotent
+            shell.openPrompts.add(finish);
             panel.webview.onDidReceiveMessage((m: { type: 'submit'; value: string } | { type: 'cancel' }) =>
                 finish(m.type === 'submit' ? m.value : undefined));
             panel.onDidDispose(() => finish(undefined));
