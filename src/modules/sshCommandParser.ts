@@ -17,6 +17,9 @@ const OPTSTRING = ':1246ab:c:e:fgi:kl:m:no:p:qstvxAB:CD:E:F:GI:J:KL:MNO:PQ:R:S:T
 // producing a directive. A flag is either a switch or takes an argument, as OPTSTRING's colons say.
 type Config = Record<string, string>;
 const CHECKED_KEYS = ['HostName', 'Port', 'User'];
+
+// ssh_config keywords are case-insensitive.
+export const isKeyword = (param: string, keyword: string): boolean => param.toLowerCase() === keyword.toLowerCase();
 const SWITCHES: Record<string, (c: Config) => void> = {
     1: (c) => { c.Protocol = '1'; },
     2: (c) => { c.Protocol = '2'; },
@@ -51,7 +54,7 @@ const WITH_ARG: Record<string, (c: Config, arg: string) => void> = {
         const idx = a.indexOf('=');
         if (idx === -1) { throw new CommandParseError(`Argument missing for option ${a}`); }
         const key = a.slice(0, idx);
-        c[CHECKED_KEYS.find(k => k.toLowerCase() === key.toLowerCase()) ?? key] = a.slice(idx + 1); // keywords are case-insensitive; these are read back by name
+        c[CHECKED_KEYS.find(k => isKeyword(key, k)) ?? key] = a.slice(idx + 1); // these are read back by name
     },
     p: (c, a) => { c.Port = a; },
     R: (c, a) => { c.RemoteForward = a; },
