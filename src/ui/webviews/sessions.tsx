@@ -4,7 +4,6 @@ import type { SessionsState, HostRuntime } from '@/models';
 import { post, useWebviewState } from '@/ui/platform/vscode';
 import { SessionCard, NowContext } from '@/ui/components/SessionCard';
 import { HostForm } from '@/ui/components/HostForm';
-import { CloudFormCard, CloudInstanceCard } from '@/ui/components/CloudCards';
 import { Row, Stack, Text, Card, Icon, ActionIcon, Button } from '@/ui/components/base';
 
 function ConfigCard({ icon, muted, alias, runtime, onDismiss, validating }: {
@@ -70,9 +69,7 @@ function SessionsView({ state }: { state: SessionsState }) {
         <>
             {state.draftAlias ? <ConfigCard key={state.draftAlias} icon="circle-outline" muted alias={state.draftAlias} runtime={state.hostRuntime[state.draftAlias]} onDismiss={() => post({ command: 'dismissDraftSession' })} validating={state.validating} /> : null}
             {state.sessions.map(s => <SessionCard key={s.id} session={s} />)}
-            {state.cloudForm ? <CloudFormCard regions={state.cloudForm} /> : null}
-            {state.cloudInstances.map(i => <CloudInstanceCard key={i.id} instance={i} />)}
-            {!state.sessions.length && !state.draftAlias && !state.cloudForm && !state.cloudInstances.length
+            {!state.sessions.length && !state.draftAlias
                 ? <Text muted block style={{ margin: '4px', textAlign: 'center' }}>No sessions yet. Click on + to create one.</Text>
                 : null}
             <ScriptPreviewOverlay state={state} />

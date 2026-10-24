@@ -18,7 +18,7 @@ CS Bridge is a VS Code extension for working on high-performance computing (HPC)
 - **Start again** — a finished session can be started again.
 - **Run history** — the Run History view records the CPU and memory efficiency of every run.
 - **No inbound ports** — connections go through a Microsoft Dev Tunnel, so the cluster opens no port.
-- **EC2 instances (experimental)** — launch an instance with your AWS key, then open a terminal or a VS Code window on it from its card.
+- **EC2 instances (experimental)** — launch an instance with your AWS key and work on it as a session: start, stop, connect and delete from its card.
 
 ## Supported Clusters
 
@@ -49,7 +49,7 @@ A cluster is entered through an SSH host, but work runs on compute nodes that Sl
 
 With `csbridge.experimentalFeatures` on, the `csbridge.transport` setting also offers `link` **(experimental)**: after signing in to CyberShuttle from **CS Bridge: Open Menu**, Linkspan opens a WebSocket to cs-plane instead of a Dev Tunnel, and **Connect** forwards SSH through cs-plane.
 
-EC2 instances **(experimental)** skip Slurm and the tunnel: **Sign In to AWS** from **CS Bridge: Open Menu** with an access key, then **Launch EC2 Instance** picks an image, a type and a region. CS Bridge creates a key pair and an SSH security group per region, lists the instances as cards beside the sessions, and each card starts, stops or removes its instance, or opens a terminal or a remote window over plain SSH.
+EC2 instances **(experimental)** skip Slurm and the tunnel: **Sign In to AWS** from **CS Bridge: Open Menu** with an access key, then **Create Cloud VM** picks a region, an instance type and an image. The instance is a session like any other: its card starts, stops, connects and deletes it, and Connect opens a VS Code window on it over plain SSH. CS Bridge creates a key pair and an SSH security group per region, and signing in adopts instances it launched from elsewhere.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/02-sessions.png" alt="Sessions sidebar" width="480">
 
@@ -77,7 +77,7 @@ The full design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - The temp folder holds the ControlMaster sockets.
 - VS Code keeps the Microsoft account token in the operating system keychain.
 - VS Code's SecretStorage keeps the credential of CyberShuttle sign-in **(experimental)**.
-- AWS credentials **(experimental)** stay in memory; the AWS-generated SSH key sits with the session SSH keys.
+- AWS credentials **(experimental)** sit in VS Code's secret storage until **Sign Out of AWS**; the AWS-generated SSH key sits with the session SSH keys.
 
 **Remote**
 
@@ -89,7 +89,7 @@ To reset, remove the `cybershuttle.csbridge` folder in VS Code's `User/globalSto
 
 ## Privacy
 
-CS Bridge collects no analytics. SSH credentials and Dev Tunnel traffic pass only between the user, the cluster and Microsoft Dev Tunnels. AWS credentials **(experimental)** go only to the EC2 API and are forgotten when the window closes. Opt-in analytics is on the [roadmap](#roadmap).
+CS Bridge collects no analytics. SSH credentials and Dev Tunnel traffic pass only between the user, the cluster and Microsoft Dev Tunnels. AWS credentials **(experimental)** go only to the EC2 API. Opt-in analytics is on the [roadmap](#roadmap).
 
 ## FAQ
 

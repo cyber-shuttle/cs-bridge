@@ -3,8 +3,8 @@
 CS Bridge is a Slurm session manager first and a Dev Tunnel client second. Everything runs in the local VS Code
 extension host (`extensionKind: ["ui"]`): it drives the cluster through the OS `ssh` binary, opens a Microsoft
 Dev Tunnel to the compute node, and hands the final attach to VS Code's remote-SSH URI handler. Nothing listens
-for inbound connections on the cluster. EC2 instances **(experimental)** reuse the last step only: the instance is
-reached over plain SSH, with no Slurm, Linkspan or tunnel.
+for inbound connections on the cluster. An EC2 instance **(experimental)** is a session whose backend is the instance
+instead of a Slurm job: it is reached over plain SSH, with no Linkspan or tunnel, and rides the same lifecycle.
 
 ```text
 Local VS Code                              Remote HPC cluster
@@ -92,13 +92,24 @@ run on either, and nothing else branches on `transport`.
 
 ## EC2 instances (experimental)
 
-`aws.ts` holds the sign-in and the poll, `ec2.ts` the API calls with no `vscode` import, so it unit-tests against a
-fake client. Sign-in takes an access key and lists the account's regions, which both validates the key and fixes the
-regions polled every 20 s; the key lives only in the extension host's memory. The first launch in a region creates one
-AWS-generated key pair, saved beside the session SSH keys, and one security group opening port 22. Instances carry a
-`CS-Bridge-User` tag naming the image's login user, which is also the filter that lists them. A terminal or remote
-window writes an `ssh_config` entry through the same `writeSshConfigEntry` as a session, aliased by instance id since
-the Name tag is editable, and then rides `SshManager.openTerminal` or `openSshWindow`.
+An EC2 session is a session record with an `ec2` field (region, instance type, image, login user, public IP); its `alias`
+is `aws-<region>` and `jobId` the instance id, so the store, cross-window sync, window heartbeats, `csHostAlias`, the
+remote-window detection and the card's actions apply unchanged. The lifecycle is the Slurm one with the backend swapped:
+`SessionMonitor` polls an EC2 session through a `Backend` (`tick`, `end`) and `SessionProvider` starts, stops, connects
+and removes through a `Lifecycle`, both implemented by `ec2Session.ts` over `ec2.ts`, the API calls with no `vscode`
+import. `aws.ts` holds the sign-in: an access key in VS Code's secret storage, restored on
+activation, whose first call lists the account's regions. Sign-in also adopts every tagged instance without a record.
+
+| Step | EC2 behaviour |
+|---|---|
+| Create | the menu's **Create Cloud VM** pages pick region, type and image; the record lands `not_started`, with no instance yet |
+| Start | `RunInstances` with `resolve:ssm:` for the image's latest AMI, or `StartInstances` for a stopped one; the first launch in a region creates the default VPC if the account lacks one, one AWS-generated key pair saved beside the session SSH keys, and one security group opening port 22 |
+| Poll | `DescribeInstances` every 5 s through `computeEc2Transition`; `preparing` holds until port 22 accepts a connection, which sets `connectionInfo.sshPort` and reaches `ready_to_connect` |
+| Connect | writes the per-session SSH host (public IP, port 22, the image's user, the region's key) and opens the window in the user's home |
+| Stop | waits out a pending boot, `StopInstances`, then `stopping` holds until the poll sees `stopped`; a reload resumes it like a Slurm stop |
+| Delete | `TerminateInstances`; an instance terminated outside CS Bridge fails its session |
+
+Instances carry a `CS-Bridge-User` tag naming the image's login user, which is also the filter that adopts them.
 
 ## The per-session SSH host
 
@@ -159,7 +170,7 @@ Sessions, run history and window heartbeats are one JSON record per id under `se
 Code's extension storage: a folder on desktop, IndexedDB in the browser. A `JsonDir` (`store.ts`) holds each directory
 in memory, so reads are synchronous; writes, and reloads of other windows' writes from a file watcher (`storage.ts`),
 run in order on that directory's queue, and the last write to a record wins. A window connected to a session rewrites
-its heartbeat until it closes. Of the connection, only `sshPort` and `controlPort` are persisted, the latter so a
+its heartbeat, carrying the folder URI it has open, until it closes; Switch focuses that exact URI. Of the connection, only `sshPort` and `controlPort` are persisted, the latter so a
 reattached session health-pings Linkspan instead of polling the SSH host; secrets and the local port stay in memory. On
 load, `connected` and `connecting` demote to `ready_to_connect` (the connection is gone after a reload).
 

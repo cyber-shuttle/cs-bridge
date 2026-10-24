@@ -2,12 +2,12 @@
 // keyPath(keyName(region)), and one security group opening SSH.
 import * as fs from 'fs';
 import {
-    EC2Client, CreateKeyPairCommand, DeleteKeyPairCommand, DescribeSecurityGroupsCommand, CreateSecurityGroupCommand,
+    EC2Client, CreateKeyPairCommand, DeleteKeyPairCommand, DescribeVpcsCommand, CreateDefaultVpcCommand, DescribeSecurityGroupsCommand, CreateSecurityGroupCommand,
     AuthorizeSecurityGroupIngressCommand, RunInstancesCommand, StartInstancesCommand, StopInstancesCommand,
     TerminateInstancesCommand, DescribeRegionsCommand, paginateDescribeInstances,
     _InstanceType, Instance,
 } from '@aws-sdk/client-ec2';
-import { EC2_DEFAULTS, EC2_IMAGES, type CloudInstance } from '../models';
+import { EC2_DEFAULTS, EC2_IMAGES } from '../models';
 
 // Marks CS Bridge instances, so every listed one has a login user.
 const USER_TAG = 'CS-Bridge-User';
@@ -19,6 +19,11 @@ const ACTIONS = {
     terminate: (c: EC2Client, ids: Ids) => c.send(new TerminateInstancesCommand(ids)),
 };
 export type InstanceAction = keyof typeof ACTIONS;
+export interface Ec2Instance { id: string; name: string; state: string; type: string; ip: string; user: string }
+const LIVE_FILTERS = [
+    { Name: 'tag-key', Values: [USER_TAG] },
+    { Name: 'instance-state-name', Values: ['pending', 'running', 'shutting-down', 'stopping', 'stopped'] },
+];
 
 const tag = (i: Instance, key: string) => i.Tags?.find(t => t.Key === key)?.Value ?? '';
 export const keyName = (region: string) => `cs-aws-generated-key-${region}`;
@@ -37,23 +42,25 @@ export class Ec2 {
         return (Regions ?? []).flatMap(r => r.RegionName ?? []).sort();
     }
 
-    async launch(image: string, type: string, region: string): Promise<void> {
+    // name becomes the Name tag, so the console shows the same label as the VS Code window.
+    async launch(image: string, type: string, region: string, name: string): Promise<string> {
         const user = EC2_IMAGES.find(i => i.ssmParameter === image)?.user;
         if (!user) { throw new Error(`Unknown image ${image}`); }
         const group = await this.prepare(region);
-        await this.client(region).send(new RunInstancesCommand({
+        const { Instances } = await this.client(region).send(new RunInstancesCommand({
             ImageId: `resolve:ssm:${image}`, InstanceType: type as _InstanceType, KeyName: keyName(region), SecurityGroupIds: [group], MinCount: 1, MaxCount: 1,
             TagSpecifications: [{ ResourceType: 'instance', Tags: [
-                { Key: 'Name', Value: `CS-Bridge-${crypto.randomUUID().slice(0, 5)}` },
+                { Key: 'Name', Value: name },
                 { Key: USER_TAG, Value: user },
             ] }],
         }));
+        return Instances?.[0]?.InstanceId ?? '';
     }
 
     // Once per region, so concurrent first launches share one key pair; a failure is retried on the next launch.
     private prepare(region: string): Promise<string> {
         if (!this.prepared.has(region)) {
-            this.prepared.set(region, Promise.all([this.ensureSecurityGroup(region), this.ensureKeyPair(region)]).then(([group]) => group).catch((err) => {
+            this.prepared.set(region, this.ensureDefaultVpc(region).then(() => Promise.all([this.ensureSecurityGroup(region), this.ensureKeyPair(region)])).then(([group]) => group).catch((err) => {
                 this.prepared.delete(region);
                 throw err;
             }));
@@ -70,6 +77,13 @@ export class Ec2 {
         fs.writeFileSync(this.keyPath(KeyName), KeyMaterial ?? '', { mode: 0o600 });
     }
 
+    // The security group and RunInstances land in the default VPC, which a region may lack ("No default VPC for this user").
+    private async ensureDefaultVpc(region: string): Promise<void> {
+        const client = this.client(region);
+        const { Vpcs } = await client.send(new DescribeVpcsCommand({ Filters: [{ Name: 'is-default', Values: ['true'] }] }));
+        if (!Vpcs?.length) { await client.send(new CreateDefaultVpcCommand({})); }
+    }
+
     private async ensureSecurityGroup(region: string): Promise<string> {
         const client = this.client(region);
         const { SecurityGroups } = await client.send(new DescribeSecurityGroupsCommand({ Filters: [{ Name: 'group-name', Values: [SECURITY_GROUP] }] }));
@@ -80,20 +94,22 @@ export class Ec2 {
         return GroupId ?? '';
     }
 
-    act(action: InstanceAction, instance: CloudInstance): Promise<unknown> {
-        return ACTIONS[action](this.client(instance.region), { InstanceIds: [instance.id] });
+    act(action: InstanceAction, region: string, id: string): Promise<unknown> {
+        return ACTIONS[action](this.client(region), { InstanceIds: [id] });
     }
 
-    async list(region: string): Promise<CloudInstance[]> {
-        const instances: CloudInstance[] = [];
-        const filters = [
-            { Name: 'tag-key', Values: [USER_TAG] },
-            { Name: 'instance-state-name', Values: ['pending', 'running', 'shutting-down', 'stopping', 'stopped'] },
-        ];
+    // A terminated instance drops out of DescribeInstances within the hour; absent reads as terminated.
+    async describe(region: string, id: string): Promise<Ec2Instance> {
+        const found = await this.list(region, [{ Name: 'instance-id', Values: [id] }]);
+        return found[0] ?? { id, name: '', state: 'terminated', type: '', ip: '', user: '' };
+    }
+
+    async list(region: string, filters = LIVE_FILTERS): Promise<Ec2Instance[]> {
+        const instances: Ec2Instance[] = [];
         for await (const page of paginateDescribeInstances({ client: this.client(region) }, { Filters: filters })) {
             instances.push(...(page.Reservations ?? []).flatMap(r => r.Instances ?? []).map(i => ({
                 id: i.InstanceId ?? '', name: tag(i, 'Name'), state: i.State?.Name ?? '', type: i.InstanceType ?? '',
-                ip: i.PublicIpAddress ?? '', region, user: tag(i, USER_TAG),
+                ip: i.PublicIpAddress ?? '', user: tag(i, USER_TAG),
             })));
         }
         return instances;

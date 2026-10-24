@@ -8,8 +8,9 @@ const logger = Logger.getInstance();
 let sessions: JsonDir<SlurmSession>;
 
 // A window connected to a session rewrites windows/{windowId}.json until it closes. env.sessionId repeats across
-// browser tabs, and a hidden tab's timers can slow to once a minute.
-interface WindowBeat { sessionId: string; at: number }
+// browser tabs, and a hidden tab's timers can slow to once a minute. folder is the URI the window has open, which
+// Switch focuses: VS Code finds a window only by the exact URI, and the user may have opened another folder there.
+interface WindowBeat { sessionId: string; at: number; folder?: string }
 let windows: JsonDir<WindowBeat>;
 const BEAT_MS = 20_000;
 const isBeating = (w: WindowBeat) => Date.now() - w.at < 90_000;
@@ -27,7 +28,10 @@ export async function initSessionStore(files: Files, onError: (err: unknown) => 
         // The connection is gone after a reload; demote so the UI offers Connect (which reattaches from the persisted refs).
         if (s.status === 'connected' || s.status === 'connecting') { s.status = 'ready_to_connect'; }
     }
-    for (const [id, w] of windows.entries()) { if (!isBeating(w)) { windows.delete(id); } }
+    // A window that died without detaching leaves a beat that lapses with no write to watch.
+    const prune = () => { for (const [id, w] of windows.entries()) { if (!isBeating(w)) { windows.delete(id); } } };
+    prune();
+    setInterval(prune, BEAT_MS);
     logger.info(`Loaded ${sessions.values().length} session(s)`);
     return [sessions, windows];
 }
@@ -59,8 +63,8 @@ export function deleteSession(sessionId: string) {
     deleteRunsFile(sessionId);
 }
 
-export function attachWindow(sessionId: string): void {
-    const write = () => windows.set(windowId, { sessionId, at: Date.now() });
+export function attachWindow(sessionId: string, folder: string): void {
+    const write = () => windows.set(windowId, { sessionId, at: Date.now(), folder });
     write();
     beat = setInterval(write, BEAT_MS);
 }
@@ -70,8 +74,9 @@ export function detachWindow(): Promise<void> | undefined {
     return windows?.delete(windowId);
 }
 
-export function windowState(s: SlurmSession): { isCurrent: boolean; windowAlive: boolean } {
-    return { isCurrent: windows.get(windowId)?.sessionId === s.id, windowAlive: windows.values().some(w => w.sessionId === s.id && isBeating(w)) };
+export function windowState(s: SlurmSession): { isCurrent: boolean; windowAlive: boolean; windowFolder?: string } {
+    const live = windows.values().find(w => w.sessionId === s.id && isBeating(w));
+    return { isCurrent: windows.get(windowId)?.sessionId === s.id, windowAlive: !!live, windowFolder: live?.folder };
 }
 
 // Heartbeats fire it too.

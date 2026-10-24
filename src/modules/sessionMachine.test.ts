@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatusTransition, isTerminal, isDeletable, isStoppable, isReachable, unreachableStatus, isWallTimeExpired } from './sessionMachine';
+import { computeStatusTransition, computeEc2Transition, isTerminal, isDeletable, isStoppable, isReachable, unreachableStatus, isWallTimeExpired } from './sessionMachine';
 import { SlurmJobStatus } from '../models';
 
 test('status-category predicates classify each status correctly', () => {
@@ -100,4 +100,19 @@ test('a stopping session is never resurrected: RUNNING/QUEUED hold, only a termi
     assert.deepEqual(computeStatusTransition('stopping', SlurmJobStatus.UNKNOWN), {});
     assert.deepEqual(computeStatusTransition('stopping', SlurmJobStatus.CANCELLED), { next: 'stopped', stopMonitoring: true });
     assert.deepEqual(computeStatusTransition('stopping', SlurmJobStatus.COMPLETED), { next: 'stopped', stopMonitoring: true });
+});
+
+test('EC2: pending and running promote to preparing, never pull a connect-phase session back', () => {
+    assert.deepEqual(computeEc2Transition('submitting', 'pending'), { next: 'preparing' });
+    assert.deepEqual(computeEc2Transition('unreachable', 'running'), { next: 'preparing' });
+    for (const s of ['preparing', 'ready_to_connect', 'connected', 'connecting'] as const) {
+        assert.deepEqual(computeEc2Transition(s, 'running'), {}, `should not transition from ${s}`);
+    }
+});
+
+test('EC2: a stopping session is not revived by a lagging running reading; stopped and terminated end monitoring', () => {
+    assert.deepEqual(computeEc2Transition('stopping', 'running'), {});
+    assert.deepEqual(computeEc2Transition('connected', 'stopping'), { next: 'stopping' });
+    assert.deepEqual(computeEc2Transition('stopping', 'stopped'), { next: 'stopped', stopMonitoring: true });
+    assert.equal(computeEc2Transition('connected', 'terminated').next, 'failed');
 });

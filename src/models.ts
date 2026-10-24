@@ -37,6 +37,16 @@ export interface SlurmSession {
     planeId?: string; // the cs-plane session each link run attaches
     connectionInfo?: SessionConnectionInfo;
     jobScript?: string; // the previewed run's, cleared once submitted
+    ec2?: Ec2Spec; // an EC2 session: alias is aws-<region>, jobId the instance id, resources zero, transport unused
+}
+
+// image is '' when adopted from the account rather than launched here.
+export interface Ec2Spec {
+    region: string;
+    type: string;
+    image: string;
+    user: string;
+    ip: string;
 }
 
 // sshPort > 0 means Step 1 is up: Linkspan serves the session's sshd.
@@ -161,8 +171,6 @@ export interface SessionsState {
     previewSession: SlurmSession | null;
     validating: boolean;
     alert: { title: string; message: string } | null;
-    cloudInstances: CloudInstance[];
-    cloudForm: string[] | null; // the open launch form's regions
 }
 
 export interface HostsState {
@@ -178,18 +186,6 @@ export interface WebviewMessage {
     account?: string;
     resources?: Resources;
     jobId?: string;
-    instance?: CloudInstance;
-    launch?: { image: string; type: string; region: string };
-}
-
-export interface CloudInstance {
-    id: string;
-    name: string;
-    state: string;
-    type: string;
-    ip: string;
-    region: string;
-    user: string;
 }
 
 // EC2 launch choices; the types run in every region, and each SSM parameter holds the image's latest x86_64 AMI id.
@@ -197,5 +193,7 @@ export const EC2_IMAGES = [
     { label: 'Amazon Linux 2023', ssmParameter: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64', user: 'ec2-user' },
     { label: 'Ubuntu 24.04 LTS', ssmParameter: '/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id', user: 'ubuntu' },
 ];
+export const ec2ImageLabel = ({ image, user }: Pick<Ec2Spec, 'image' | 'user'>): string =>
+    (EC2_IMAGES.find(i => i.ssmParameter === image) ?? EC2_IMAGES.find(i => i.user === user))?.label ?? user;
 export const EC2_TYPES = ['t3.micro', 't3.small', 't3.medium', 't3.large', 't3.xlarge', 't3.2xlarge', 'm5.large', 'm5.xlarge', 'm5.2xlarge', 'm5.4xlarge'];
-export const EC2_DEFAULTS = { type: 't3.medium', region: 'us-east-1' };
+export const EC2_DEFAULTS = { region: 'us-east-1' };
