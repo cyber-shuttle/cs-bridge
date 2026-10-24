@@ -247,10 +247,17 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             return;
         }
         // The record holds one local port, the owner's, so only the owner connects.
+        if (!this.drive(session)) { return; }
         this.monitor.startMonitoring(session);
-        if (!owns(session)) { vscode.window.showInformationMessage('Another window is driving this session; connect from there.'); return; }
         if (await this.backends.use(session, (b, s) => b.connect(s))) { this.openOrFocusWindow(session); }
         this.settle(session);
+    }
+
+    // One window drives a session at a time; another window's launch or connection is still in flight while it beats.
+    private drive(session: SlurmSession): boolean {
+        if (claim(session)) { return true; }
+        vscode.window.showInformationMessage('Another window is driving this session; act from there.');
+        return false;
     }
 
     // A claim outlives its task only as a monitor loop.
@@ -290,7 +297,6 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     // A fresh run: the walltime re-anchors when the new job starts, and a Slurm job id is the run's while an EC2 instance outlives it.
     private submit(session: SlurmSession, start: () => Promise<void>) {
         patch(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '', startedAt: undefined, submittedAt: Date.now(), ...!isEc2(session) && { jobId: '' } });
-        claim(session);
         live.launching.add(session.id);
         this.runSessionTask(session, 'launch', () => start().finally(() => live.launching.delete(session.id)),
             isEc2(session) ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.',
@@ -310,7 +316,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     private async prepareLaunchSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'prepare launch');
-        if (!session) { return; }
+        if (!session || !this.drive(session)) { return; }
         // An EC2 session has no job script to preview, so Start submits at once.
         if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
         try {

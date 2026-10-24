@@ -5,9 +5,9 @@
 import * as net from 'net';
 import { Ec2Session, Ec2Spec, SlurmJobStatus, SlurmSession, newSession } from '../models';
 import { Logger } from '../logger';
-import { addSession, getAllSessions, live, observe, patch, statusOf } from '../extensionStore';
+import { addSession, getAllSessions, live, observe, patch } from '../extensionStore';
 import { AwsClient } from './aws';
-import { isTerminal, observedEc2 } from './sessionMachine';
+import { observedEc2 } from './sessionMachine';
 import { Backend, SessionMonitor } from './sessionSupport';
 import { csHostAlias } from './sshHostsStore';
 import { sleep } from './util';
@@ -44,8 +44,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
                 // Named by the instance id, so its last six characters alias the SSH host.
                 const session = ec2Session({ region, type: i.type, image: '', user: i.user, ip: i.ip },
                     { name: i.id, jobId: i.id, desired: i.state === 'stopped' ? 'stopped' : 'running', observed: { state: observedEc2(i.state), at: Date.now() } });
-                addSession(session);
-                if (!isTerminal(statusOf(session))) { this.monitor().startMonitoring(session); }
+                addSession(session); // the record change starts its monitor through the sweep
                 logger.info(`Adopted EC2 instance ${i.id} in ${region} as session ${session.name}`);
             }
         }

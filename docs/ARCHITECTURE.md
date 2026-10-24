@@ -172,7 +172,7 @@ newline-preserving monospace block is what lets a device-flow QR prompt render, 
 ## Persistence and cross-window state
 
 Sessions, run history and window heartbeats are one JSON record per id under `sessions/`, `runs/` and `windows/` in VS
-Code's extension storage: a folder on desktop, IndexedDB in the browser. A `JsonDir` (`store.ts`) holds each directory
+Code's extension storage, a folder of JSON files. A `JsonDir` (`store.ts`) holds each directory
 in memory, so reads are synchronous; writes, and reloads of other windows' writes from a file watcher (`storage.ts`),
 run in order on that directory's queue; a patch lands its fields on the record as last written. Every window rewrites its heartbeat until it
 closes; a remote window's names its session and the folder URI it has open, which Switch focuses. A live session has one
