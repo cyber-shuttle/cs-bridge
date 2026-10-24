@@ -26,6 +26,11 @@ const LIVE_FILTERS = [
 ];
 
 const tag = (i: Instance, key: string) => i.Tags?.find(t => t.Key === key)?.Value;
+// An answer the API documents as always present.
+function expect<T>(value: T | undefined, what: string): T {
+    if (value === undefined) { throw new Error(`${what} came back empty`); }
+    return value;
+}
 export const keyName = (region: string) => `cs-aws-generated-key-${region}`;
 
 export class Ec2 {
@@ -39,7 +44,7 @@ export class Ec2 {
     // The regions enabled for the account; the first call with the credentials, so it also validates them.
     async regions(): Promise<string[]> {
         const { Regions } = await this.client(EC2_DEFAULTS.region).send(new DescribeRegionsCommand({}));
-        return (Regions ?? []).flatMap(r => r.RegionName ?? []).sort();
+        return expect(Regions, 'DescribeRegions').flatMap(r => (r.RegionName ? [r.RegionName] : [])).sort();
     }
 
     // name becomes the Name tag, so the console shows the same label as the VS Code window.
@@ -54,9 +59,7 @@ export class Ec2 {
                 { Key: USER_TAG, Value: user },
             ] }],
         }));
-        const id = Instances?.[0]?.InstanceId;
-        if (!id) { throw new Error('RunInstances returned no instance id'); }
-        return id;
+        return expect(Instances?.[0]?.InstanceId, 'RunInstances instance id');
     }
 
     // Once per region, so concurrent first launches share one key pair; a failure is retried on the next launch.
@@ -78,8 +81,7 @@ export class Ec2 {
         const client = this.client(region);
         await client.send(new DeleteKeyPairCommand({ KeyName })); // AWS keeps it after a local uninstall
         const { KeyMaterial } = await client.send(new CreateKeyPairCommand({ KeyName, KeyType: 'ed25519' }));
-        if (!KeyMaterial) { throw new Error('CreateKeyPair returned no private key'); }
-        fs.writeFileSync(this.keyPath(KeyName), KeyMaterial, { mode: 0o600 });
+        fs.writeFileSync(this.keyPath(KeyName), expect(KeyMaterial, 'CreateKeyPair private key'), { mode: 0o600 });
     }
 
     // The security group and RunInstances land in the default VPC, which a region may lack ("No default VPC for this user").
@@ -94,8 +96,7 @@ export class Ec2 {
         const { SecurityGroups } = await client.send(new DescribeSecurityGroupsCommand({ Filters: [{ Name: 'group-name', Values: [SECURITY_GROUP] }] }));
         const existing = SecurityGroups?.[0]?.GroupId;
         if (existing) { return existing; }
-        const { GroupId } = await client.send(new CreateSecurityGroupCommand({ GroupName: SECURITY_GROUP, Description: 'CS Bridge SSH access' }));
-        if (!GroupId) { throw new Error('CreateSecurityGroup returned no group id'); }
+        const GroupId = expect((await client.send(new CreateSecurityGroupCommand({ GroupName: SECURITY_GROUP, Description: 'CS Bridge SSH access' }))).GroupId, 'CreateSecurityGroup group id');
         await client.send(new AuthorizeSecurityGroupIngressCommand({ GroupId, IpPermissions: [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '0.0.0.0/0' }] }] }));
         return GroupId;
     }
@@ -113,7 +114,7 @@ export class Ec2 {
     async list(region: string, filters = LIVE_FILTERS): Promise<Ec2Instance[]> {
         const instances: Ec2Instance[] = [];
         for await (const page of paginateDescribeInstances({ client: this.client(region) }, { Filters: filters })) {
-            instances.push(...(page.Reservations ?? []).flatMap(r => r.Instances ?? []).flatMap((i) => {
+            instances.push(...expect(page.Reservations, 'DescribeInstances reservations').flatMap(r => expect(r.Instances, 'DescribeInstances instances')).flatMap((i) => {
                 const id = i.InstanceId, state = i.State?.Name, type = i.InstanceType, user = tag(i, USER_TAG);
                 return id && state && type && user ? [{ id, name: tag(i, 'Name'), state, type, ip: i.PublicIpAddress, user }] : [];
             }));

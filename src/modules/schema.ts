@@ -9,6 +9,7 @@ import { createHash } from 'crypto';
 import { UUID } from 'uuidv7';
 import { Run, RunStats, SessionStatus, SlurmJobStatus, SlurmSession, UsageSample } from '../models';
 import { deleteFile, jsonFiles, lock, readJson, release, writeJson } from './fsSupport';
+import { parseJson } from './json';
 import { Files, Steps } from './store';
 import { gpuTypeOf, slurmAccount } from './slurmParse';
 import type { StoredRunsFile } from './runStore';
@@ -156,7 +157,7 @@ async function v2ToV3(files: Files): Promise<void> {
     for (const name of (await files.list('sessions')).filter(n => n.endsWith('.json'))) {
         const text = await files.read(`sessions/${name}`);
         if (!text) { continue; }
-        const record = JSON.parse(text) as V2Session & Partial<SlurmSession>;
+        const record = parseJson<V2Session & Partial<SlurmSession>>(text);
         if (record.desired) { continue; } // a rerun after a crash
         await files.write(`sessions/${name}`, JSON.stringify(sessionV3(record), null, 2));
     }

@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { EC2Client } from '@aws-sdk/client-ec2';
 import { Ec2 } from './ec2';
 import { sshKeyPath } from './sshSupport';
+import { parseJson } from './json';
 import { errMsg } from '@/logger';
 
 const CREDENTIALS_KEY = 'aws.credentials';
@@ -41,7 +42,7 @@ export class AwsClient implements vscode.Disposable {
     // Signs back in with the stored key; a key that no longer works is dropped so the menu offers Sign In again.
     async restore(): Promise<void> {
         const stored = await this.secrets.get(CREDENTIALS_KEY);
-        if (stored) { await this.connect(JSON.parse(stored) as Credentials); }
+        if (stored) { await this.connect(parseJson<Credentials>(stored)); }
     }
 
     private async connect(credentials: Credentials): Promise<boolean> {

@@ -113,8 +113,7 @@ export class SessionMonitor {
 
 export class SlurmBackend implements Backend {
     readonly label = 'SSH host';
-    private probeFailedCounts = new Map<string, number>();
-    private lastSacctAt = new Map<string, number>(); // throttles the in-run sacct refresh, per session
+    private runs = new Map<string, { probeFails: number; sacctAt?: number }>(); // this window's tallies per session
 
     // The monitor is built with this backend, so it arrives lazily.
     constructor(private readonly transports: Transports, private readonly monitor: () => SessionMonitor) { }
@@ -122,13 +121,13 @@ export class SlurmBackend implements Backend {
     private log(session: SlurmSession, msg: string): void { logger.info(sessionLine(session.name, msg)); }
     private warn(session: SlurmSession, msg: string): void { logger.warn(sessionLine(session.name, msg)); }
 
-    private probeFails(id: string): number { return this.probeFailedCounts.get(id) ?? 0; } // no entry: no failure yet
-    private bumpProbeFails(id: string): number { const n = this.probeFails(id) + 1; this.probeFailedCounts.set(id, n); return n; }
-
-    forget(sessionId: string): void {
-        this.probeFailedCounts.delete(sessionId);
-        this.lastSacctAt.delete(sessionId);
+    private run(id: string) {
+        let run = this.runs.get(id);
+        if (!run) { this.runs.set(id, run = { probeFails: 0 }); }
+        return run;
     }
+
+    forget(sessionId: string): void { this.runs.delete(sessionId); }
 
     async start(session: SlurmSession, draft: LaunchDraft): Promise<void> {
         this.log(session, `initiating launch`);
@@ -219,14 +218,14 @@ export class SlurmBackend implements Backend {
             await this.pingOrCrossCheck(session, async () => {
                 try {
                     const m = await this.pullSample(session);
-                    this.probeFailedCounts.delete(session.id);
+                    this.run(session.id).probeFails = 0;
                     setError(session, ''); // samples go to the per-session runs file, not the record
                     if (m.memBytes !== undefined) { appendSample(session.id, { ...m, atMs: Date.now() }); }
                     void this.refreshStats(session);
                 }
                 catch (err) {
                     if (isReachable(statusOf(session))) {
-                        const attempt = this.bumpProbeFails(session.id);
+                        const attempt = ++this.run(session.id).probeFails;
                         this.warn(session, `healthcheck (usage): failed (attempt ${attempt}/${PROBE_GIVEUP}): ${errMsg(err)}`);
                     }
                 }
@@ -260,7 +259,7 @@ export class SlurmBackend implements Backend {
     private async crossCheckSlurmForDeath(session: SlurmSession): Promise<void> {
         try {
             observe(session, (await getSlurmJobStatus(session)).status);
-            if (!isTerminal(statusOf(session))) { this.probeFailedCounts.delete(session.id); }
+            if (!isTerminal(statusOf(session))) { this.run(session.id).probeFails = 0; }
         }
         catch (err) {
             this.warn(session, `healthcheck (Slurm): unreachable (will retry): ${errMsg(err)}`);
@@ -270,7 +269,7 @@ export class SlurmBackend implements Backend {
     // Probe over the Dev Tunnel until PROBE_GIVEUP consecutive failures, then fall back
     // to an authoritative sacct cross-check. The probe differs by phase.
     private async pingOrCrossCheck(session: SlurmSession, probe: () => Promise<void>): Promise<void> {
-        if (this.probeFails(session.id) < PROBE_GIVEUP) { await probe(); }
+        if (this.run(session.id).probeFails < PROBE_GIVEUP) { await probe(); }
         else { await this.crossCheckSlurmForDeath(session); }
     }
 
@@ -281,14 +280,14 @@ export class SlurmBackend implements Backend {
             const transport = this.transports.transportFor(session);
             await ensureRemoteSession(transport, session); // also refreshes the tunnel
             await transport.withLinkspan(session, getHealth); // a reused sshd port proves nothing; Linkspan must answer
-            this.probeFailedCounts.delete(session.id); // Step 1 up — clear the prepare-failure tally
+            this.run(session.id).probeFails = 0; // Step 1 up — clear the prepare-failure tally
             this.log(session, 'Linkspan is ready to connect.');
             setError(session, ''); // clear any transient-retry warning
         }
         catch (err) {
             // Linkspan not up yet, or a Dev Tunnels API blip: transient rather than job death, so
             // hold 'preparing' and count it toward the sacct cross-check.
-            this.bumpProbeFails(session.id);
+            this.run(session.id).probeFails++;
             if (err instanceof PlaneError && err.code === 'session_access_unavailable') { this.log(session, `waiting for Linkspan's link to cs-plane`); return; }
             this.warn(session, `Linkspan unreachable (will retry): ${errMsg(err)}`);
             setError(session, `Preparing remote session: ${errMsg(err)}`);
@@ -302,9 +301,9 @@ export class SlurmBackend implements Backend {
 
     // Throttled sacct refresh, fire-and-forget from the health path (sacctStats swallows its own errors).
     private async refreshStats(session: SlurmSession): Promise<void> {
-        const now = Date.now(), last = this.lastSacctAt.get(session.id);
-        if (last !== undefined && now - last < SACCT_REFRESH_MS) { return; }
-        this.lastSacctAt.set(session.id, now);
+        const now = Date.now(), run = this.run(session.id);
+        if (run.sacctAt !== undefined && now - run.sacctAt < SACCT_REFRESH_MS) { return; }
+        run.sacctAt = now;
         const m = await sacctStats(session);
         if (m) { writeSessionStats(session.id, m); }
     }
