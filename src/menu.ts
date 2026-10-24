@@ -11,7 +11,7 @@ import { SshHostProvider } from './sshHostProvider';
 import { SshManager } from './modules/sshSupport';
 import { Transports } from './modules/transport';
 import { getMicrosoftAccountLabel, switchDevTunnelAccount } from './modules/tunnelSupport';
-import { enabled } from './features';
+import { configuredTransport, enabled } from './features';
 import { sshCommandToConfig } from './modules/sshCommandParser';
 
 type Page = { title: string; placeholder?: string; items: Item[]; input?: { value: string; submit: (value: string) => Build | void } };
@@ -145,7 +145,7 @@ export class CsBridgeMenu {
     });
 
     private of(transport: SlurmSession['transport']) { return this.transports.transportFor({ transport }); }
-    private current() { return vscode.workspace.getConfiguration('csbridge').get<SlurmSession['transport']>('transport', 'devtunnel'); }
+    private current() { return configuredTransport(); }
 }
 
 async function signIn(plane: Plane) {

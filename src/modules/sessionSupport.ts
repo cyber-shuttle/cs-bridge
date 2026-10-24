@@ -97,6 +97,8 @@ export class SessionMonitor {
         void this.tick(session.id);
     }
 
+    public monitoring(sessionId: string): boolean { return this.loops.has(sessionId); }
+
     public stopMonitoring(sessionId: string): void {
         const loop = this.loops.get(sessionId);
         if (!loop) { return; }

@@ -2,10 +2,7 @@ import * as vscode from 'vscode';
 import { getSession, statusOf, onSessionsChange } from './extensionStore';
 import { renderHtml } from './webviewProvider';
 import { isSameRun, readSessionRuns, readRecentSamples, readSessionStats, onRunsChange } from './modules/runStore';
-import { UsageSample, RunStats, SlurmSession, SummaryState, WebviewMessage } from './models';
-
-// A finished run's fixed snapshot (from the Run History view), shown instead of the live session, which may have been started again.
-interface RunSnapshot { stats?: RunStats; samples: UsageSample[] }
+import { Run, SlurmSession, SummaryState, WebviewMessage } from './models';
 
 const PENDING_KEY = 'csbridge.pendingSummaries';
 // Trade-off: hard cap so a never-consumed baton (e.g. an activation that errors before consuming) can't grow globalState unbounded. Bump if summaries ever legitimately queue deeper than this.
@@ -26,19 +23,24 @@ export async function consumePendingSummary(context: vscode.ExtensionContext, ex
     if (session) { openSummaryPanel(extensionUri, session); }
 }
 
-export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession, runSnapshot?: RunSnapshot): void {
+// A past run (from the Run History view) shows as it ended, while the live session may have been started again.
+export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession, past?: Run): void {
     const panel = vscode.window.createWebviewPanel(
         'csbridge.summary', `Session ${session.name} summary`,
         vscode.ViewColumn.One, { enableScripts: true },
     );
     // Re-read the session each post: it may still be 'stopping' at open and flip to 'stopped' while the tab is up.
     const post = () => {
-        const s = getSession(session.id) ?? session;
-        // Past run from Run History: its fixed snapshot. Live: current samples + latest sacct copy (run record or in-run file).
-        const run = runSnapshot ? undefined : readSessionRuns(s.id).find(r => isSameRun(r, s));
-        const samples = runSnapshot ? runSnapshot.samples : readRecentSamples(s.id);
-        const stats = runSnapshot ? runSnapshot.stats : (run?.stats ?? readSessionStats(s.id));
-        const state: SummaryState = { session: { ...s, status: statusOf(s), samples }, stats, pending: !runSnapshot && !run };
+        const live = getSession(session.id) ?? session;
+        const recorded = past ?? readSessionRuns(live.id).find(r => isSameRun(r, live));
+        const state: SummaryState = {
+            session: past
+                ? { ...live, alias: past.alias, account: past.account, partition: past.partition, jobId: past.jobId, startedAt: past.startedAt, status: past.finalState, samples: past.samples }
+                : { ...live, status: statusOf(live), samples: readRecentSamples(live.id) },
+            stats: recorded ? recorded.stats : readSessionStats(live.id), // the live copy sacct refreshes in-run
+            at: recorded ? recorded.endedAt : Date.now(),
+            pending: !recorded,
+        };
         void panel.webview.postMessage({ command: 'state', state });
     };
     const msgSub = panel.webview.onDidReceiveMessage((m: WebviewMessage) => { if (m.command === 'ready') { post(); } });

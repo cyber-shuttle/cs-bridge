@@ -131,7 +131,6 @@ export class SshManager {
         SshManager.instance?.disposeAll();
     }
 
-    // Per-SSH-host serial queue: chain each command after the previous so one Pending owns the shell's streams at a time.
     private enqueue<T>(alias: string, fn: () => Promise<T>): Promise<T> {
         const prev = this.queues.get(alias) ?? Promise.resolve();
         const next = prev.then(fn, fn);

@@ -23,7 +23,7 @@ function Root() {
     }
 
     const { cores, memoryMb, gpuType, gpuCount = 0 } = s.resources;
-    const usedMs = elapsedRunMs(s, Date.now());
+    const usedMs = elapsedRunMs(s, state.at);
     const limitMs = wallMs(s);
 
     return (
