@@ -154,8 +154,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     public startSessionDraft(alias: string): void {
         this.draftAlias = alias;
         void vscode.commands.executeCommand('csbridge.sessionsView.focus');
-        void this.pushState();
-        this.fetchSlurmDiscovery(alias);
+        this.fetchSlurmDiscovery(alias); // pushes the state either way
     }
 
     private validating = false;
@@ -262,10 +261,8 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         return false;
     }
 
-    // A loop that has not yet noticed its session end (the walltime passes between ticks) would undo what follows.
-    private async quiesce(session: SlurmSession): Promise<void> {
-        if (this.monitor.monitoring(session.id)) { await this.monitor.endSession(session); }
-    }
+    // A loop that has not yet noticed its session end, or a teardown still running, would undo what follows.
+    private quiesce(session: SlurmSession): Promise<void> { return this.monitor.quiesce(session); }
 
     // A claim outlives its task only as a monitor loop.
     private settle(session: SlurmSession): void {
