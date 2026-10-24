@@ -70,8 +70,8 @@ export const devTunnels = {
     relayClient: (management: TunnelManagementHttpClient, ci: ConnectionInfo) => new DevTunnelRelayClient(new TunnelRelayTunnelClient(management), ci.controlPort),
     tunnelRef: devTunnelRef,
     ensureTunnel: async (session, ci) => { await ensureDevTunnel(session, ci); },
-    withLinkspan: ({ id, devtunnel, connectionInfo: ci }, call) => {
-        if (!devtunnel || !ci) { throw new Error('The session has no Dev Tunnel to reach Linkspan through.'); }
+    withLinkspan: ({ id, devtunnel }, ci, call) => {
+        if (!devtunnel) { throw new Error('The session has no Dev Tunnel to reach Linkspan through.'); }
         return call(`https://${devtunnel.id}-${ci.controlPort}.${devtunnel.cluster}.devtunnels.ms/api/v1`, { 'X-Tunnel-Authorization': `tunnel ${live.connectTokens.get(id)}` });
     },
     deleteTunnel: deleteDevTunnel,

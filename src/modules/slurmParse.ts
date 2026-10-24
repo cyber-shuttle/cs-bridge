@@ -1,4 +1,5 @@
 import { GresInfo, RunStats, SlurmJobStatus, SlurmPartitionInfo, SlurmSession } from '../models';
+import { groups } from './util';
 
 // Pure Slurm text helpers (no SSH/vscode), so they unit-test in isolation. See slurmParse.test.ts.
 
@@ -187,19 +188,13 @@ export function parseSacctUtil(output: string): RunStats {
 
 // One `sinfo -h -o "%P|%c|%m|%G"` line: name|cpuCount|memoryMb|gres
 export function parsePartitionLine(line: string): SlurmPartitionInfo {
-    const parts = line.split('|').map(p => p.trim());
-
-    if (parts.length !== 4) {
-        throw new Error(`Invalid sinfo line: ${line}`);
-    }
-
-    const [rawName = '', rawCpuCount = '', rawMemory = '', rawGres = ''] = parts;
-
+    const g = groups(line.match(/^\s*(?<name>[^|]*?)\s*\|\s*(?<cpus>[^|]*?)\s*\|\s*(?<memory>[^|]*?)\s*\|\s*(?<gres>[^|]*?)\s*$/), 'name', 'cpus', 'memory', 'gres');
+    if (!g) { throw new Error(`Invalid sinfo line: ${line}`); }
     return {
-        name: rawName.replace(/\*$/, ''), // trailing "*" marks the default partition
-        cpuCount: parseLeadingInt(rawCpuCount),
-        memoryMb: parseInt(rawMemory, 10) || 0, // sinfo's %m is MB, '+' when nodes differ
-        gres: parseGres(rawGres),
+        name: g.name.replace(/\*$/, ''), // trailing "*" marks the default partition
+        cpuCount: parseLeadingInt(g.cpus),
+        memoryMb: parseInt(g.memory, 10) || 0, // sinfo's %m is MB, '+' when nodes differ
+        gres: parseGres(g.gres),
     };
 }
 
@@ -218,8 +213,8 @@ function parseGres(rawGres: string): GresInfo[] {
 
     // GPUs only, as cs-plane's hasGPU: gpu:v100:2(S:0-1) and gpu:8, not tmpdisk:100G.
     return splitCommaOutsideParens(rawGres).flatMap((entry) => {
-        const match = entry.match(/^(gpu(?::.+)?):(\d+)(?:\([^)]*\))?$/);
-        return match ? [{ name: match[1] ?? 'gpu', count: Number.parseInt(match[2] ?? '0', 10) }] : [];
+        const g = groups(entry.match(/^(?<name>gpu(?::.+)?):(?<count>\d+)(?:\([^)]*\))?$/), 'name', 'count');
+        return g ? [{ name: g.name, count: Number.parseInt(g.count, 10) }] : [];
     });
 }
 

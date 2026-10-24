@@ -143,7 +143,6 @@ export class SlurmBackend implements Backend {
     async stop(session: SlurmSession): Promise<void> {
         this.log(session, `stopping`);
         try {
-            if (!session.jobId) { this.warn(session, `has no job ID; marking stopped without scancel.`); return; }
             const stopCommand = `scancel ${session.jobId}`;
             this.log(session, `sending stop command: ${stopCommand}`);
             try {
@@ -181,7 +180,7 @@ export class SlurmBackend implements Backend {
         catch (error) {
             logger.error(`Error connecting the ${transport.label} for session ${session.id}:`, error);
             await disposeTunnelClient(session.id);
-            if (session.connectionInfo) { session.connectionInfo.localPort = undefined; }
+            if (session.connectionInfo) { patch(session, { connectionInfo: { ...session.connectionInfo, localPort: undefined } }); }
             setError(session, `Failed to connect ${transport.label}: ${errMsg(error)}`);
             return false;
         }
@@ -278,8 +277,8 @@ export class SlurmBackend implements Backend {
     private async prepareRemote(session: SlurmSession): Promise<void> {
         try {
             const transport = this.transports.transportFor(session);
-            await ensureRemoteSession(transport, session); // also refreshes the tunnel
-            await transport.withLinkspan(session, getHealth); // a reused sshd port proves nothing; Linkspan must answer
+            const ci = await ensureRemoteSession(transport, session); // also refreshes the tunnel
+            await transport.withLinkspan(session, ci, getHealth); // a reused sshd port proves nothing; Linkspan must answer
             this.run(session.id).probeFails = 0;
             this.log(session, 'Linkspan is ready to connect.');
             setError(session, ''); // clear any transient-retry warning
@@ -296,7 +295,7 @@ export class SlurmBackend implements Backend {
 
     private pullSample(session: SlurmSession, ci: ConnectionInfo): Promise<UsageSample> {
         if (!isTunnelClientConnected(session.id)) { return getSampleViaSrun(session, ci.controlPort); }
-        return this.transports.transportFor(session).withLinkspan(session, getSample);
+        return this.transports.transportFor(session).withLinkspan(session, ci, getSample);
     }
 
     // Throttled sacct refresh, fire-and-forget from the health path (sacctStats swallows its own errors).

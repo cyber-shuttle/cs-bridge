@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { StatsState, StatsMessage } from './models';
-import { readAllRuns, clearAllRuns, onRunsChange } from './modules/runStore';
+import { readAllRuns, readSessionRuns, clearAllRuns, onRunsChange } from './modules/runStore';
 import { getSession } from './extensionStore';
 import { openSummaryPanel } from './summaryPanel';
 
@@ -25,7 +25,7 @@ export class StatsProvider extends WebviewProvider<StatsMessage> {
     protected readonly handlers: Handlers<StatsMessage> = {
         openRunSummary: ({ sessionId, jobId }) => {
             const session = getSession(sessionId);
-            const run = readAllRuns().find(r => r.sessionId === sessionId && r.jobId === jobId);
+            const run = readSessionRuns(sessionId).find(r => r.jobId === jobId);
             // Show the run's own recorded snapshot, not the live session's, which may have been started again.
             if (session && run) { openSummaryPanel(this.extensionUri, session, run); }
         },

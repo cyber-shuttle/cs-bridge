@@ -1,8 +1,8 @@
 // Records live in extension storage through Files: a folder on desktop, IndexedDB in the browser. A JsonDir keeps a
-import { parseJson } from './json';
 // directory in memory, so reads are synchronous; writes, and reloads of other windows' writes that storage.ts's
 // watcher reports, run in order behind them, and the last write to a record wins. schema.json versions the layout;
 // desktop's steps below 2 import ~/.cybershuttle.
+import { parseJson } from './json';
 
 export interface Files {
     read(name: string): Promise<string | undefined>; // undefined when missing
@@ -88,6 +88,12 @@ export class JsonDir<T> {
     }
 
     private emit(): void { for (const listener of this.listeners) { listener(); } }
+}
+
+// A merge that keeps the object yet takes the record whole: a field the writer cleared is absent from its JSON.
+export function replaceFields<T extends object>(cur: T, next: T): T {
+    for (const key of Object.keys(cur)) { if (!(key in next)) { Reflect.deleteProperty(cur, key); } }
+    return Object.assign(cur, next);
 }
 
 export type Steps = Record<number, () => Promise<void>>;

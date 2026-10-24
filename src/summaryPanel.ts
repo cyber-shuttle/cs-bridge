@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { getSession, statusOf, onSessionsChange } from './extensionStore';
 import { renderHtml } from './webviewProvider';
-import { isSameRun, readAllRuns, readRecentSamples, readSessionStats, onRunsChange } from './modules/runStore';
+import { isSameRun, readSessionRuns, readRecentSamples, readSessionStats, onRunsChange } from './modules/runStore';
 import { UsageSample, RunStats, SlurmSession, SummaryState, WebviewMessage } from './models';
 
 // A finished run's fixed snapshot (from the Run History view), shown instead of the live session, which may have been started again.
@@ -35,7 +35,7 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
     const post = () => {
         const s = getSession(session.id) ?? session;
         // Past run from Run History: its fixed snapshot. Live: current samples + latest sacct copy (run record or in-run file).
-        const run = runSnapshot ? undefined : readAllRuns().find(r => isSameRun(r, s));
+        const run = runSnapshot ? undefined : readSessionRuns(s.id).find(r => isSameRun(r, s));
         const samples = runSnapshot ? runSnapshot.samples : readRecentSamples(s.id);
         const stats = runSnapshot ? runSnapshot.stats : (run?.stats ?? readSessionStats(s.id));
         const state: SummaryState = { session: { ...s, status: statusOf(s), samples }, stats, pending: !runSnapshot && !run };

@@ -85,7 +85,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         for (const s of getAllSessions()) {
             const status = statusOf(s);
             // A stop still wanted is an unfinished Stop: a reload interrupted it, or a remote window handed it off.
-            if (status === 'stopping') { if (claim(s)) { this.runStop(s); } continue; }
+            if (status === 'stopping') { if (!owns(s) && claim(s)) { this.runStop(s); } continue; }
             if (isTerminal(status) || owns(s)) { continue; }
             this.monitor.startMonitoring(s);
             // A session just taken over gets its connection back; startup never forces a sign-in.
