@@ -24,6 +24,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private readonly hostRuntime = new Map<string, HostRuntime>();
     private draftAlias: string | null = null;
     private draft: (LaunchDraft & { sessionId: string }) | null = null;
+    private preparing = false; // one prepare at a time, so one draft follows another
     private readonly shared: vscode.Disposable[] = [];
     private readonly opening = new Map<string, ReturnType<typeof setTimeout>>(); // each open's own fallback timer
     private readonly monitor: SessionMonitor;
@@ -319,16 +320,20 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     private async prepareLaunchSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'prepare launch');
-        if (!session || live.busy.has(session.id) || live.connecting.has(session.id)) { return; } // a Start during a prepare or a connect is a no-op
+        if (!session || this.preparing || live.busy.has(session.id) || live.connecting.has(session.id)) { return; } // one prepare at a time; a Start during a connect is a no-op
+        this.preparing = true;
         live.busy.add(session.id);
-        try { await this.monitor.quiesce(session); }
-        finally { live.busy.delete(session.id); }
+        try {
+            await this.monitor.quiesce(session);
+            await this.dropDraft(); // one preview at a time; a repeated Start gives its earlier attach back through the transport it used
+        }
+        finally { live.busy.delete(session.id); this.preparing = false; }
         if (!this.drive(session)) { return; }
         // An EC2 session has no job script to preview, so Start submits at once.
         if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
+        this.preparing = true;
         live.busy.add(session.id);
         try {
-            await this.dropDraft(); // one preview at a time; a repeated Start gives its earlier attach back through the transport it used
             if (session.connectionInfo) { await this.monitor.endSession(session); } // the previous run's teardown, before a transport switch hides it
             patch(session, { transport: configuredTransport() });
             const draft = await prepareLaunch(session, this.transports.transportFor(session));
@@ -340,7 +345,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             this.logger.error('Failed to prepare session launch:', err);
             this.settle(session);
         }
-        finally { live.busy.delete(session.id); }
+        finally { live.busy.delete(session.id); this.preparing = false; }
         void this.pushState();
     }
 
