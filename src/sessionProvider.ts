@@ -3,7 +3,7 @@ import { configuredTransport } from './features';
 import { errMsg } from './logger';
 import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage, isEc2, newSession } from './models';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
-import { deleteSessionPrivateKey, SshManager, openSshWindow } from './modules/sshSupport';
+import { SshManager, openSshWindow } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
 import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, windowState, statusOf, fail, live, claim, owns, disown, requestStop } from './extensionStore';
@@ -145,7 +145,6 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             vscode.window.showErrorMessage(`Failed to delete session: ${errMsg(err)}`);
             return;
         }
-        if (!isEc2(session)) { deleteSessionPrivateKey(sessionId); } // an EC2 key is the region's
         deleteSession(sessionId);
     }
 
