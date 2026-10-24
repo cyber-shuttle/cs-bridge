@@ -82,3 +82,7 @@ test('-W is consumed without overwriting the RemoteForward that -R set', () => {
     const config = sshCommandToConfig('ssh -R 9000:localhost:9000 -W inner:22 host');
     assert.equal(config.RemoteForward, '9000:localhost:9000');
 });
+
+test('sshCommandToConfig keeps a bare IPv6 host whole', () => {
+    assert.deepEqual(sshCommandToConfig('ssh 2001:db8::1'), { Host: '2001:db8::1', HostName: '2001:db8::1' });
+});

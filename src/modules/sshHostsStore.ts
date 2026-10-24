@@ -134,7 +134,7 @@ export function editHostInConfigText(text: string, alias: string, edit: SshConfi
     if (!section) { throw new Error(`SSH host ${alias} is not in ~/.ssh/config.`); }
     if (edit.Host !== alias && config.find({ Host: edit.Host })) { throw new Error(`SSH host ${edit.Host} already exists.`); }
     section.value = edit.Host;
-    for (const [param, value] of [['User', edit.User], ['HostName', edit.HostName], ['Port', edit.Port]] as const) {
+    for (const [param, value] of [['User', edit.User], ['HostName', edit.HostName]] as const) {
         const i = section.config.findIndex(line => 'param' in line && line.param === param);
         const existing = section.config[i];
         const line: Directive = existing && 'param' in existing ? existing : { type: LineType.DIRECTIVE, before: section.config[0]?.before ?? '    ', after: '\n', separator: ' ', param, value: '' };
