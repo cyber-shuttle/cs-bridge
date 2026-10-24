@@ -93,3 +93,20 @@ test('JsonDir keeps its own write made while a reload reads', async () => {
     await dir.reload('a');
     assert.deepEqual(dir.get('a'), { n: 2 });
 });
+
+test('JsonDir.patch keeps a field patched while its write reads the file', async () => {
+    const files = memoryFiles();
+    await files.write('recs/a.json', JSON.stringify({ n: 1 }));
+    const dir = new JsonDir<Rec>(files, 'recs', err => assert.fail(String(err)), (cur, next) => (cur ? replaceFields(cur, next) : next));
+    await dir.load();
+    const slow = files.read;
+    files.read = async (name) => { await new Promise(res => setTimeout(res, 20)); return slow(name); };
+    await files.write('recs/a.json', JSON.stringify({ n: 1, m: 9 })); // another window's m
+    const first = dir.patch('a', { k: 1 });
+    await new Promise(res => setTimeout(res, 5));
+    dir.patch('a', { m: 5 }); // while the first write reads
+    await first;
+    await dir.reload('a');
+    assert.deepEqual(dir.get('a'), { n: 1, m: 5, k: 1 });
+    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 1, m: 5, k: 1 });
+});

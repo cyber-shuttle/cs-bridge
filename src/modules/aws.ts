@@ -22,7 +22,7 @@ export class AwsClient implements vscode.Disposable {
     readonly restored: Promise<void>;
 
     constructor(private readonly secrets: vscode.SecretStorage) {
-        this.restored = this.restore();
+        this.restored = this.restore().catch(err => void vscode.window.showWarningMessage(`AWS sign-in was not restored: ${errMsg(err)}`));
     }
 
     private async restore(): Promise<void> {

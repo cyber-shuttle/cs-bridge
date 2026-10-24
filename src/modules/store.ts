@@ -13,8 +13,7 @@ export interface Files {
 }
 
 export class JsonDir<T extends object> {
-    private readonly items = new Map<string, T>();
-    private readonly texts = new Map<string, string>(); // each record's text as last read or written
+    private readonly records = new Map<string, { value: T; text: string }>(); // text as last read or written
     private readonly unsaved = new Map<string, Promise<void>>(); // each record's last queued write, until it starts
     private readonly pending = new Map<string, Partial<T>>(); // fields patched since the record's last write began
     private readonly listeners = new Set<() => void>();
@@ -32,62 +31,60 @@ export class JsonDir<T extends object> {
         await Promise.all(names.map(n => this.reload(n.slice(0, -'.json'.length))));
     }
 
-    get(id: string): T | undefined { return this.items.get(id); }
-    values(): T[] { return [...this.items.values()]; }
-    entries(): [string, T][] { return [...this.items.entries()]; }
+    get(id: string): T | undefined { return this.records.get(id)?.value; }
+    values(): T[] { return [...this.records.values()].map(r => r.value); }
+    entries(): [string, T][] { return [...this.records].map(([id, r]) => [id, r.value]); }
 
     set(id: string, value: T): void {
         const text = JSON.stringify(value, null, 2);
-        this.items.set(id, value);
-        this.texts.set(id, text);
+        this.records.set(id, { value, text });
         this.save(id, () => this.files.write(this.path(id), text));
         this.emit();
     }
 
     // A field write. The write carries every field patched since the last one began and lands on the record as
     // another window last wrote it: the fields that window changed since this one last read the file come in, unless
-    // patched here too. A record deleted elsewhere stays deleted.
+    // patched here since that read. A record deleted elsewhere stays deleted.
     patch(id: string, fields: Partial<T>): Promise<void> {
-        const cur = this.items.get(id);
-        if (!cur) { return this.queue; }
-        Object.assign(cur, fields);
+        const record = this.records.get(id);
+        if (!record) { return this.queue; }
+        Object.assign(record.value, fields);
         Object.assign(getOrSet(this.pending, id, () => ({})), fields);
         this.emit();
         return this.save(id, async () => {
-            const queued = this.pending.get(id), record = this.items.get(id);
-            if (!queued || !record) { return; }
+            const queued = this.pending.get(id);
             this.pending.delete(id);
-            if (record !== cur) { Object.assign(record, queued); }
-            const base = this.texts.get(id), text = await this.files.read(this.path(id));
+            const record = this.records.get(id);
+            if (!queued || !record) { return; }
+            Object.assign(record.value, queued);
+            const text = await this.files.read(this.path(id));
             if (text === undefined) {
-                this.items.delete(id);
-                this.texts.delete(id);
+                this.records.delete(id);
                 this.emit();
                 return;
             }
-            if (text !== base) {
-                try { this.takeTheirs(record, parseJson<T>(text), base === undefined ? undefined : parseJson<T>(base), queued); this.emit(); }
+            if (text !== record.text) {
+                const held = { ...queued, ...this.pending.get(id) };
+                try { this.takeTheirs(record.value, parseJson<T>(text), parseJson<T>(record.text), held); this.emit(); }
                 catch { /* another window mid-write; its reload follows */ }
             }
-            const next = JSON.stringify(record, null, 2);
-            this.texts.set(id, next);
-            await this.files.write(this.path(id), next);
+            record.text = JSON.stringify(record.value, null, 2);
+            await this.files.write(this.path(id), record.text);
         });
     }
 
-    private takeTheirs(record: T, theirs: T, base: T | undefined, queued: Partial<T>): void {
-        for (const key of new Set([...Object.keys(theirs), ...(base ? Object.keys(base) : [])])) {
-            if (key in queued) { continue; }
-            const value = Reflect.get(theirs, key);
-            if (base && JSON.stringify(value) === JSON.stringify(Reflect.get(base, key))) { continue; }
-            if (value === undefined) { Reflect.deleteProperty(record, key); }
-            else { Reflect.set(record, key, value); }
+    private takeTheirs(value: T, theirs: T, base: T, held: Partial<T>): void {
+        for (const key of new Set([...Object.keys(theirs), ...Object.keys(base)])) {
+            if (key in held) { continue; }
+            const their = Reflect.get(theirs, key);
+            if (JSON.stringify(their) === JSON.stringify(Reflect.get(base, key))) { continue; }
+            if (their === undefined) { Reflect.deleteProperty(value, key); }
+            else { Reflect.set(value, key, their); }
         }
     }
 
     delete(id: string): Promise<void> {
-        if (!this.items.delete(id)) { return this.queue; }
-        this.texts.delete(id);
+        if (!this.records.delete(id)) { return this.queue; }
         this.emit();
         return this.save(id, () => this.files.remove(this.path(id)));
     }
@@ -97,17 +94,16 @@ export class JsonDir<T extends object> {
     reload(id: string): Promise<void> {
         return this.enqueue(async () => {
             const text = await this.files.read(this.path(id));
-            if (this.unsaved.has(id) || text === this.texts.get(id)) { return; }
+            const record = this.records.get(id);
+            if (this.unsaved.has(id) || text === record?.text) { return; }
             if (text === undefined) {
-                this.texts.delete(id);
-                this.items.delete(id);
+                this.records.delete(id);
             }
             else {
                 let next: T;
                 try { next = parseJson<T>(text); }
                 catch { return; }
-                this.texts.set(id, text);
-                this.items.set(id, this.merge(this.items.get(id), next));
+                this.records.set(id, { value: this.merge(record?.value, next), text });
             }
             this.emit();
         });
