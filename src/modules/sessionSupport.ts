@@ -58,7 +58,8 @@ export class SessionMonitor {
         if (inFlight) { this.stopMonitoring(session.id); return inFlight; } // a loop begun during the teardown ends with it
         const { promise, resolve, reject } = Promise.withResolvers<void>();
         this.ending.set(session.id, promise);
-        void promise.finally(() => { if (this.ending.get(session.id) === promise) { this.ending.delete(session.id); } });
+        const done = () => { if (this.ending.get(session.id) === promise) { this.ending.delete(session.id); } };
+        void promise.then(done, done); // the caller handles a rejection
         this.stopMonitoring(session.id);
         this.backends.use(session, (b, s) => b.end(s)).then(resolve, reject);
         return promise;
@@ -186,11 +187,12 @@ export class SlurmBackend implements Backend {
         try {
             if (!hasSessionKey(session.id)) { throw new Error('SSH private key not found for session'); }
             const ci = await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
-            // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets no connection info written.
+            // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets nothing written.
             if (isTerminal(statusOf(session))) { throw new Error('the job ended'); }
             patch(session, { connectionInfo: ci });
-            await connectSessionToTunnel(transport, session, ci, () => void this.reconnect(session.id));
+            const localPort = await connectSessionToTunnel(transport, session, ci, () => void this.reconnect(session.id));
             if (isTerminal(statusOf(session))) { throw new Error('the job ended'); }
+            patch(session, { connectionInfo: { ...ci, localPort } });
             await syncSshConfig();
             return true;
         }

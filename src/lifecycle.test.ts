@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { panels } from '../scripts/vscodeMock.js';
 import { memoryFiles } from './modules/memoryFiles';
 import type { JsonDir } from './modules/store';
-import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, patch, observe } from './extensionStore';
+import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, patch, observe, onSessionsChange } from './extensionStore';
 import { initRunStore, appendRun } from './modules/runStore';
 import { newSession, isEc2, Run, SlurmJobStatus, SummaryState } from './models';
 import { Backend, Backends, SessionMonitor, prepareLaunch } from './modules/sessionSupport';
@@ -144,12 +144,14 @@ test('a teardown that the record write re-enters runs once, and a prepare leaves
     const backend: Backend = {
         label: 'fake',
         async tick() { },
-        async end(session) { void monitor.endSession(session); await sleep(10); ended.push(session.id); },
+        async end(session) { await sleep(10); ended.push(session.id); },
         async stop() { }, async connect() { return true; }, async remove() { }, forget() { },
     };
-    const monitor: SessionMonitor = new SessionMonitor(new Backends(backend, backend));
+    const monitor = new SessionMonitor(new Backends(backend, backend));
     monitor.startMonitoring(s);
+    const sweep = onSessionsChange(() => void monitor.endSession(s)); // the record write of the loop's release re-enters
     await monitor.endSession(s);
+    sweep.dispose();
     assert.deepEqual(ended, [s.id]);
 
     const before = { sshPort: 40, controlPort: 21000 };

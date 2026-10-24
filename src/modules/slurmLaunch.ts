@@ -107,7 +107,7 @@ export async function validateSlurmConfig(session: SlurmSession, run: RemoteRunn
 }
 
 // sbatchEnv reaches the job as assignments on sbatch over the shell's stdin, never an argv, the job script or a file.
-export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner, log: LogSink, draft: LaunchDraft): Promise<string> {
+export async function submitJobToSlurm(session: SlurmSession, run: RemoteRunner, log: LogSink, draft: Pick<LaunchDraft, 'script' | 'sbatchEnv'>): Promise<string> {
     const scriptB64 = Buffer.from(draft.script).toString('base64');
     const env = envAssignments(draft.sbatchEnv);
     const submitCommand = `echo '${scriptB64}' | base64 -d | ${env}sbatch${env && ' --export=ALL'}`;
