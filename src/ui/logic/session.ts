@@ -1,4 +1,4 @@
-import { ec2ImageLabel, type SlurmSession, type ViewSession } from '@/models';
+import { ec2ImageLabel, isEc2, type Ec2Session, type SlurmSession, type ViewSession } from '@/models';
 import { isDeletable, isReachable, isStoppable, wallMs } from '@/modules/sessionMachine';
 
 export { wallMs }; // shared with the monitor via the vscode-free sessionMachine
@@ -89,32 +89,34 @@ const STATUS_ICON: Record<ViewSession['status'], { name: string; spin?: boolean 
     stopping: { name: 'loading', spin: true },
 };
 
-interface Provider {
+interface Provider<S extends ViewSession = ViewSession> {
+    kind: 'HPC' | 'AWS';
     theme: 'info' | 'warning';
-    chips: (s: ViewSession) => string[];
-    details?: (s: ViewSession) => string[]; // absent: the card renders the resource graphs
+    chips: (s: S) => string[];
+    details?: (s: S) => string[]; // absent: the card renders the resource graphs
     booting: string;
-    running: (s: ViewSession, now: number) => string;
+    running: (s: S, now: number) => string;
 }
 
-const PROVIDER: Record<'HPC' | 'AWS', Provider> = {
-    HPC: {
-        theme: 'info',
-        chips: s => [s.account, s.partition],
-        booting: 'Starting Linkspan…',
-        running: (s, now) => `${fmtTime(remainingMs(s, now))} left`,
-    },
-    AWS: {
-        theme: 'warning',
-        chips: s => [s.ec2!.type, ec2ImageLabel(s.ec2!)],
-        details: s => [s.ec2!.region, s.jobId, s.ec2!.ip].filter((d): d is string => !!d),
-        booting: 'Booting…',
-        running: () => 'Running',
-    },
+const HPC: Provider = {
+    kind: 'HPC',
+    theme: 'info',
+    chips: s => [s.account, s.partition],
+    booting: 'Starting Linkspan…',
+    running: (s, now) => `${fmtTime(remainingMs(s, now))} left`,
+};
+
+const AWS: Provider<ViewSession & Ec2Session> = {
+    kind: 'AWS',
+    theme: 'warning',
+    chips: s => [s.ec2.type, ec2ImageLabel(s.ec2)],
+    details: s => [s.ec2.region, s.jobId, s.ec2.ip].filter((d): d is string => !!d),
+    booting: 'Booting…',
+    running: () => 'Running',
 };
 
 export interface CardModel {
-    kind: keyof typeof PROVIDER;
+    kind: Provider['kind'];
     theme: Provider['theme'];
     icon: { name: string; spin?: boolean };
     color: string;
@@ -126,7 +128,7 @@ export interface CardModel {
     canDelete: boolean;
 }
 
-function statusText(s: ViewSession, now: number, provider: Provider): CardModel['status'] {
+function statusText<S extends ViewSession>(s: S, now: number, provider: Provider<S>): CardModel['status'] {
     const err = s.errorMessage || undefined;
     switch (s.status) {
         case 'not_started': return { text: 'Not started' };
@@ -143,13 +145,13 @@ function statusText(s: ViewSession, now: number, provider: Provider): CardModel[
     }
 }
 
-export function cardModel(s: ViewSession, now: number, remote = false): CardModel {
-    const kind = s.ec2 ? 'AWS' : 'HPC';
-    const provider = PROVIDER[kind];
+export const cardModel = (s: ViewSession, now: number, remote = false): CardModel => isEc2(s) ? card(s, AWS, now, remote) : card(s, HPC, now, remote);
+
+function card<S extends ViewSession>(s: S, provider: Provider<S>, now: number, remote: boolean): CardModel {
     const actions = sessionActions(s);
     return {
-        kind, theme: provider.theme, icon: STATUS_ICON[s.status], color: dotColor(s.status), chips: provider.chips(s),
-        ...kind === 'HPC' && { walltime: fmtTime(wallMs(s)) }, details: provider.details?.(s), status: statusText(s, now, provider),
+        kind: provider.kind, theme: provider.theme, icon: STATUS_ICON[s.status], color: dotColor(s.status), chips: provider.chips(s),
+        ...provider.kind === 'HPC' && { walltime: fmtTime(wallMs(s)) }, details: provider.details?.(s), status: statusText(s, now, provider),
         actions: remote ? actions.filter(a => a.kind === 'stop') : actions, canDelete: !remote && isDeletable(s.status),
     };
 }

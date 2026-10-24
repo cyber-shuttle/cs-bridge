@@ -1,4 +1,4 @@
-import { UsageSample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession } from '../models';
+import { Ec2Session, UsageSample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession, isEc2 } from '../models';
 import { Logger, errMsg } from './../logger';
 import { PlaneError } from '../plane';
 import { getSession, patch, setError, observe, statusOf, live, claim, owns } from '../extensionStore';
@@ -21,16 +21,24 @@ const PROBE_GIVEUP = 6;
 const sessionLine = (name: string, msg: string): string => `Session ${name}: ${msg}`;
 
 // What drives a session's remote side: the Slurm job (SlurmBackend) or an EC2 instance (ec2Session.ts). The provider
-// starts, stops, connects and removes through it; the monitor ticks and ends through it.
-export interface Backend {
+// stops, connects and removes through it; the monitor ticks and ends through it. Starting differs per backend.
+export interface Backend<S extends SlurmSession = SlurmSession> {
     readonly label: string; // what an unreachable poll names
-    start(session: SlurmSession, draft: LaunchDraft | undefined): Promise<void>;
-    stop(session: SlurmSession): Promise<void>;
-    connect(session: SlurmSession): Promise<boolean>;
-    remove(session: SlurmSession): Promise<void>;
-    tick(session: SlurmSession): Promise<void>;
-    end(session: SlurmSession): Promise<void>;
+    stop(session: S): Promise<void>;
+    connect(session: S): Promise<boolean>;
+    remove(session: S): Promise<void>;
+    tick(session: S): Promise<void>;
+    end(session: S): Promise<void>;
     forget(sessionId: string): void;
+}
+
+// The one place that tells an EC2 record from a Slurm one.
+export class Backends {
+    constructor(private readonly slurm: Backend, private readonly ec2: Backend<Ec2Session>) { }
+
+    use<R>(session: SlurmSession, call: <S extends SlurmSession>(backend: Backend<S>, session: S) => R): R {
+        return isEc2(session) ? call(this.ec2, session) : call(this.slurm, session);
+    }
 }
 
 // One independent poll loop per active session. No shared lock: each loop mutates
@@ -40,20 +48,19 @@ export class SessionMonitor {
     private tickers = new Map<string, ReturnType<typeof setInterval>>();
     private ticking = new Set<string>(); // per-session reentrancy guard: a slow tick must not overlap its next fire
 
-    constructor(private readonly backendFor: (session: SlurmSession) => Backend) { }
+    constructor(private readonly backends: Backends) { }
 
     // Teardown for a Stop and for a backend that ended on its own.
     async endSession(session: SlurmSession): Promise<void> {
         this.stopMonitoring(session.id);
-        await this.backendFor(session).end(session);
+        await this.backends.use(session, (b, s) => b.end(s));
     }
 
-    // One independent poll for a single session. Reentrancy-guarded so a slow tick never overlaps its own next fire.
     private async tick(sessionId: string): Promise<void> {
         const session = this.sessions.get(sessionId);
         if (!session || this.ticking.has(sessionId)) { return; }
         this.ticking.add(sessionId);
-        const backend = this.backendFor(session);
+        const label = this.backends.use(session, b => b.label);
         try {
             if (!owns(session)) {
                 this.stopMonitoring(sessionId);
@@ -65,15 +72,15 @@ export class SessionMonitor {
                 return;
             }
 
-            await backend.tick(session);
+            await this.backends.use(session, (b, s) => b.tick(s));
             if (live.unreachable.delete(session.id)) { setError(session, ''); }
             if (isTerminal(statusOf(session))) { void this.endSession(session); }
         }
         catch (error) {
             // SSH host unreachable (dead ControlMaster, Duo-needed under BatchMode) or the AWS API down — not death; stay recoverable.
-            logger.warn(sessionLine(session.name, `${backend.label} unreachable (will retry): ${errMsg(error)}`));
+            logger.warn(sessionLine(session.name, `${label} unreachable (will retry): ${errMsg(error)}`));
             live.unreachable.add(session.id);
-            setError(session, `${backend.label} unreachable: ${errMsg(error)}`);
+            setError(session, `${label} unreachable: ${errMsg(error)}`);
         }
         finally {
             this.ticking.delete(sessionId);
@@ -99,7 +106,7 @@ export class SessionMonitor {
         this.sessions.delete(sessionId);
         this.ticking.delete(sessionId);
         live.unreachable.delete(sessionId);
-        if (session) { this.backendFor(session).forget(sessionId); }
+        if (session) { this.backends.use(session, b => b.forget(sessionId)); }
         logger.info(sessionLine(session?.name ?? sessionId, `monitoring stopped.`));
     }
 
@@ -128,8 +135,7 @@ export class SlurmBackend implements Backend {
         this.lastSacctAt.delete(sessionId);
     }
 
-    async start(session: SlurmSession, draft: LaunchDraft | undefined): Promise<void> {
-        if (!draft) { throw new Error(`Session ${session.name}: no job script was prepared`); }
+    async start(session: SlurmSession, draft: LaunchDraft): Promise<void> {
         this.log(session, `initiating launch`);
         const run = SshManager.getInstance();
         await checkSlurmAvailability(session, run, logger);

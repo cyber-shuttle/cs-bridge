@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { enabled } from './features';
 import { errMsg } from './logger';
-import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage, newSession } from './models';
+import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage, isEc2, newSession } from './models';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSessionPrivateKey, SshManager, openSshWindow } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
@@ -9,7 +9,7 @@ import { csHostAlias } from './modules/sshHostsStore';
 import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, onWindowsChange, windowState, statusOf, fail, live, claim, owns } from './extensionStore';
 import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
-import { Backend, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
+import { Backends, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
 import { Transports, disposeAllTunnelClients, disposeTunnelClient } from './modules/transport';
 import { validateSlurmConfig, LaunchDraft } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
@@ -36,6 +36,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private readonly monitor: SessionMonitor;
     private readonly slurm: SlurmBackend;
     private readonly ec2: Ec2Backend;
+    private readonly backends: Backends;
     private sharedReady = false;
 
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar.
@@ -43,11 +44,10 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         super(extensionUri);
         this.slurm = new SlurmBackend(transports, () => this.monitor);
         this.ec2 = new Ec2Backend(aws, () => this.monitor);
-        this.monitor = new SessionMonitor(s => this.backendFor(s));
+        this.backends = new Backends(this.slurm, this.ec2);
+        this.monitor = new SessionMonitor(this.backends);
         this.shared.push(aws.onDidSignIn(() => this.ec2.adopt().catch(err => this.logger.error('Adopting EC2 instances failed:', err))));
     }
-
-    private backendFor(session: SlurmSession): Backend { return session.ec2 ? this.ec2 : this.slurm; }
 
     private release(session: SlurmSession | undefined) { return session && this.transports.transportFor(session).release(session); }
 
@@ -89,7 +89,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             if (!s.jobId || isTerminal(status) || owns(s)) { continue; }
             this.monitor.startMonitoring(s);
             // A session just taken over gets its connection back; startup never forces a sign-in.
-            if (owns(s) && s.connectionInfo?.sshPort && (s.ec2 || await this.transports.transportFor(s).signedIn())) { void this.backendFor(s).connect(s); }
+            if (owns(s) && s.connectionInfo?.sshPort && (isEc2(s) || await this.transports.transportFor(s).signedIn())) { void this.backends.use(s, (b, s) => b.connect(s)); }
         }
     }
 
@@ -109,9 +109,8 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         dismissAlert: this.dismiss(() => { this.alert = null; }),
         addSession: m => this.createSession(m),
         refreshSlurmDiscovery: ({ alias }) => this.fetchSlurmDiscovery(alias, true),
-        // An EC2 session has no job script to preview, so Start submits at once.
-        prepareLaunchSession: ({ sessionId }) => getSession(sessionId)?.ec2 ? this.submitSession(sessionId) : void this.prepareLaunchSession(sessionId),
-        launchSession: ({ sessionId }) => this.submitSession(sessionId),
+        prepareLaunchSession: ({ sessionId }) => void this.prepareLaunchSession(sessionId),
+        launchSession: () => this.launchDraft(),
         stopSessionExecution: ({ sessionId }) => void this.stopSessionExecution(sessionId),
         stopRemoteSession: () => { if (this.remoteSessionId) { void vscode.commands.executeCommand('csbridge.stopRemoteSession'); } },
         connectTunnel: ({ sessionId }) => void this.connectSession(sessionId),
@@ -146,18 +145,18 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             return;
         }
 
-        const confirmed = await confirmModal('Delete session?', 'Delete', session.ec2
+        const confirmed = await confirmModal('Delete session?', 'Delete', isEc2(session)
             ? 'This terminates the instance, deleting its disk, and removes the session record.'
             : 'This deletes the session record and cleans up its SSH config entry and key file.');
         if (!confirmed) { return; }
 
         await disposeTunnelClient(sessionId);
-        try { await this.backendFor(session).remove(session); }
+        try { await this.backends.use(session, (b, s) => b.remove(s)); }
         catch (err) {
             vscode.window.showErrorMessage(`Failed to delete session: ${errMsg(err)}`);
             return;
         }
-        if (!session.ec2) { deleteSessionPrivateKey(sessionId); } // an EC2 key is the region's
+        if (!isEc2(session)) { deleteSessionPrivateKey(sessionId); } // an EC2 key is the region's
         deleteSession(sessionId);
     }
 
@@ -260,7 +259,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             return;
         }
         claim(session);
-        if (await this.backendFor(session).connect(session)) { this.openOrFocusWindow(session); }
+        if (await this.backends.use(session, (b, s) => b.connect(s))) { this.openOrFocusWindow(session); }
     }
 
     private async stopSessionExecution(sessionId: string) {
@@ -282,21 +281,24 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     // The real stop, shared by the sidebar Stop and activation resuming an unfinished one.
     private runStop(session: SlurmSession): void {
-        this.runSessionTask(session, 'stop', () => this.backendFor(session).stop(session),
-            session.ec2 ? 'Please check the AWS console to ensure the instance has stopped.' : 'Please check the cluster to ensure the job has stopped and clean up any resources if necessary.');
+        this.runSessionTask(session, 'stop', () => this.backends.use(session, (b, s) => b.stop(s)),
+            isEc2(session) ? 'Please check the AWS console to ensure the instance has stopped.' : 'Please check the cluster to ensure the job has stopped and clean up any resources if necessary.');
     }
 
-    private submitSession(sessionId: string) {
-        const session = this.requireSession(sessionId, 'launch');
-        if (!session) { return; }
-        const draft = this.draft?.sessionId === sessionId ? this.draft : undefined;
+    private launchDraft() {
+        const draft = this.draft;
         this.draft = null;
-        // A fresh run: the walltime re-anchors when the new job starts, and a Slurm job id is the run's while an EC2 instance outlives it.
-        patch(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '', startedAt: undefined, submittedAt: Date.now(), ...!session.ec2 && { jobId: '' } });
+        const session = draft && getSession(draft.sessionId);
+        if (session && draft) { this.submit(session, () => this.slurm.start(session, draft)); }
+    }
+
+    // A fresh run: the walltime re-anchors when the new job starts, and a Slurm job id is the run's while an EC2 instance outlives it.
+    private submit(session: SlurmSession, start: () => Promise<void>) {
+        patch(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '', startedAt: undefined, submittedAt: Date.now(), ...!isEc2(session) && { jobId: '' } });
         claim(session);
         live.launching.add(session.id);
-        this.runSessionTask(session, 'launch', () => this.backendFor(session).start(session, draft).finally(() => live.launching.delete(session.id)),
-            session.ec2 ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.');
+        this.runSessionTask(session, 'launch', () => start().finally(() => live.launching.delete(session.id)),
+            isEc2(session) ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.');
     }
 
     // One task per session at a time; a failure marks the session failed and shows a dialog.
@@ -315,6 +317,8 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private async prepareLaunchSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'prepare launch');
         if (!session) { return; }
+        // An EC2 session has no job script to preview, so Start submits at once.
+        if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
         try {
             await this.release(session); // the previous run's, before a transport switch hides it
             session.transport = enabled('cybershuttle') ? vscode.workspace.getConfiguration('csbridge').get('transport', 'devtunnel') : 'devtunnel';
