@@ -380,8 +380,8 @@ export class SessionProvider extends WebviewProvider implements vscode.Disposabl
         if (!session) { return; }
         const draft = this.draft?.sessionId === sessionId ? this.draft : undefined;
         this.draft = null;
-        session.startedAt = undefined; // fresh launch: re-anchor the walltime countdown when the new job starts running
-        Object.assign(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '' });
+        // A fresh run: the walltime re-anchors when the new job starts, and a Slurm job id is the run's while an EC2 instance outlives it.
+        Object.assign(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '', startedAt: undefined, submittedAt: Date.now(), ...!session.ec2 && { jobId: '' } });
         claim(session);
         updateSession(session);
         live.launching.add(session.id);
