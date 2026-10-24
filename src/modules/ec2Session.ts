@@ -29,7 +29,7 @@ export class Ec2Backend implements Backend<Ec2Session> {
     readonly label = 'AWS';
 
     // The monitor is built with this backend, so it arrives lazily.
-    constructor(private readonly aws: AwsClient, private readonly monitor: () => SessionMonitor) { }
+    constructor(private readonly aws: Pick<AwsClient, 'ec2' | 'ready'>, private readonly monitor: () => SessionMonitor, private readonly pollMs = 5_000) { }
 
     forget(): void { }
 
@@ -77,11 +77,11 @@ export class Ec2Backend implements Backend<Ec2Session> {
             for (;;) {
                 // Once the stop is sent, an unreachable API only delays the reading.
                 const read = await ec2.describe(region, session.jobId).then(instance => ({ instance }), (err) => { if (sent) { return undefined; } throw err; });
-                if (!read) { logger.warn(`EC2 describe of ${session.jobId} failed; retrying`); await sleep(5_000); continue; }
+                if (!read) { logger.warn(`EC2 describe of ${session.jobId} failed; retrying`); await sleep(this.pollMs); continue; }
                 const { instance } = read;
                 if (!instance || instance.state === 'stopped' || instance.state === 'terminated') { observe(session, instance ? observedEc2(instance.state) : observedEc2('terminated')); break; }
                 if (!sent && instance.state !== 'pending') { await ec2.act('stop', region, session.jobId); sent = true; }
-                await sleep(5_000);
+                await sleep(this.pollMs);
             }
         }
         catch (err) {

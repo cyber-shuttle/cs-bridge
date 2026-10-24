@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import { panels } from '../scripts/vscodeMock.js';
 import { memoryFiles } from './modules/memoryFiles';
 import type { JsonDir } from './modules/store';
-import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession } from './extensionStore';
+import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, patch } from './extensionStore';
 import { initRunStore, appendRun } from './modules/runStore';
-import { newSession, Run, SlurmJobStatus, SummaryState } from './models';
+import { newSession, isEc2, Run, SlurmJobStatus, SummaryState } from './models';
 import { Backend, Backends, SessionMonitor } from './modules/sessionSupport';
+import { Ec2Backend } from './modules/ec2Session';
+import { Ec2 } from './modules/ec2';
+import { fakeClient } from './modules/fakeEc2Client';
 import { openSummaryPanel } from './summaryPanel';
 import { sleep } from './modules/util';
 
@@ -78,4 +81,38 @@ test('the summary shows a run as recorded, pinned to the job it opened on', () =
     assert.equal(state.session.status, 'stopped');
     assert.deepEqual(state.session.samples, [{ memBytes: 1 }]);
     assert.deepEqual(state.stats, { cores: 1 });
+});
+
+test('an EC2 instance is adopted once, then started, stopped and removed through the lifecycle', async () => {
+    const calls: string[] = [];
+    let state = 'stopped';
+    const client = fakeClient({
+        DescribeInstancesCommand: () => ({ Reservations: [{ Instances: [{ InstanceId: 'i-9', InstanceType: 't3.micro', State: { Name: state }, Tags: [{ Key: 'Name', Value: 'i-9' }, { Key: 'CS-Bridge-User', Value: 'ubuntu' }] }] }] }),
+        StartInstancesCommand: () => { calls.push('start'); state = 'running'; return {}; },
+        StopInstancesCommand: () => { calls.push('stop'); state = 'stopped'; return {}; },
+        TerminateInstancesCommand: () => { calls.push('terminate'); state = 'terminated'; return {}; },
+    });
+    const ec2 = new Ec2(() => client, () => '', 'm');
+    const aws = { ec2, ready: async () => ({ ec2, regions: ['r1'] }) };
+    const idle: Backend = { label: 'none', async tick() { }, async end() { }, async stop() { }, async connect() { return true; }, async remove() { }, forget() { } };
+    const backend: Ec2Backend = new Ec2Backend(aws, () => monitor, 1);
+    const monitor: SessionMonitor = new SessionMonitor(new Backends(idle, backend));
+    await backend.adopt();
+    await backend.adopt();
+    const adopted = getAllSessions().filter(s => s.jobId === 'i-9');
+    assert.equal(adopted.length, 1, 'adopted once');
+    const s = adopted[0]!;
+    assert.ok(isEc2(s));
+    assert.equal(statusOf(s), 'stopped');
+
+    await patch(s, { desired: 'running' }); // as the provider's submit does
+    await backend.start(s);
+    assert.deepEqual(calls, ['start']);
+    assert.equal(statusOf(s), 'preparing', 'running, no sshd yet');
+    await backend.stop(s);
+    assert.deepEqual(calls, ['start', 'stop']);
+    assert.equal(statusOf(s), 'stopped');
+    await backend.remove(s);
+    assert.deepEqual(calls, ['start', 'stop', 'terminate']);
+    monitor.dispose();
 });

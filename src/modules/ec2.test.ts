@@ -3,15 +3,8 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import { EC2Client } from '@aws-sdk/client-ec2';
 import { Ec2 } from './ec2';
-
-// A real EC2Client so paginators accept it; send answers by command name.
-function fakeClient(answers: Record<string, (input: unknown) => unknown>) {
-    const client = new EC2Client({ region: 'r', credentials: { accessKeyId: 'a', secretAccessKey: 's' } });
-    client.send = (async ({ constructor: { name }, input }: { constructor: { name: string }; input: unknown }) => answers[name]?.(input) ?? {}) as never;
-    return client;
-}
+import { fakeClient } from './fakeEc2Client';
 
 test('list reads every page of tagged instances and takes the login user from the tag', async () => {
     const filters: unknown[] = [];
