@@ -88,6 +88,7 @@ test('cardModel: status text carries the error where there is one, with a hover 
     assert.deepEqual(cardModel(sess('unreachable', { ...base, errorMessage: 'ssh: timeout' }), 0).status, { text: 'Unreachable: ssh: timeout', title: 'ssh: timeout' });
     assert.deepEqual(cardModel(sess('stopped', { ...base, errorMessage: 'ssh: timeout' }), 0).status, { text: 'Stopped', title: 'ssh: timeout' });
     assert.deepEqual(cardModel(sess('failed', { ...base, errorMessage: 'OOM' }), 0).status, { text: 'Failed: OOM', title: 'OOM' });
+    assert.deepEqual(cardModel(sess('failed', { ...base, failure: 'sbatch refused' }), 0).status, { text: 'Failed: sbatch refused', title: 'sbatch refused' }, 'a cleared error leaves the failure to show');
     assert.equal(cardModel(sess('stopped', base), 0).canDelete, true);
     const remote = cardModel(sess('connected', { ...base, isCurrent: true }), 0, true);
     assert.deepEqual([remote.actions.map(a => a.kind), remote.canDelete], [['stop'], false]);
