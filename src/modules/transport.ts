@@ -5,7 +5,7 @@
 import { SlurmSession } from '../models';
 import { Logger, errMsg } from '../logger';
 import { Plane } from '../plane';
-import { live, updateSession } from '../extensionStore';
+import { live, patch, updateSession } from '../extensionStore';
 import type { TunnelRequestOptions } from '@microsoft/dev-tunnels-management';
 import { ConnectionStatus, type TunnelConnectionOptions, type TunnelRelayTunnelClient } from '@microsoft/dev-tunnels-connections';
 import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
@@ -234,7 +234,6 @@ export async function disposeAllTunnelClients(): Promise<void> {
 
 export async function disconnectSessionFromTunnel(t: Tunnels, session: SlurmSession): Promise<void> {
     await disposeTunnelClient(session.id);
-    session.connectionInfo = undefined;
-    updateSession(session);
+    patch(session, { connectionInfo: undefined });
     logger.info(`Session ${session.id} disconnected from its ${t.label}.`);
 }

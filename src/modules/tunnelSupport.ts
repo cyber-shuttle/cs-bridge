@@ -1,7 +1,7 @@
 import { SlurmSession } from '../models';
 import * as vscode from 'vscode';
 import { Logger } from '../logger';
-import { live, updateSession } from '../extensionStore';
+import { live, patch } from '../extensionStore';
 import { TunnelManagementHttpClient, ManagementApiVersions } from '@microsoft/dev-tunnels-management';
 import { TunnelRelayTunnelClient, TunnelConnectionOptions } from '@microsoft/dev-tunnels-connections';
 import { Tunnel, TunnelAccessScopes } from '@microsoft/dev-tunnels-contracts';
@@ -32,8 +32,7 @@ export async function ensureDevTunnel(session: SlurmSession): Promise<string> {
     const ref = devTunnelRef(session);
     const tunnel = (ref && await mgmt.getTunnel(ref, opts)) ?? await mgmt.createTunnel(ref ?? {}, opts);
 
-    session.devtunnel = { id: tunnel.tunnelId!, cluster: tunnel.clusterId! };
-    updateSession(session);
+    patch(session, { devtunnel: { id: tunnel.tunnelId!, cluster: tunnel.clusterId! } });
     const connectToken = tunnel.accessTokens?.[TunnelAccessScopes.Connect];
     if (connectToken) { live.connectTokens.set(session.id, connectToken); }
 
@@ -87,8 +86,7 @@ export async function deleteDevTunnel(session: SlurmSession): Promise<void> {
     catch (err) {
         logger.warn(`Failed to delete Dev Tunnel ${ref.tunnelId}:`, err);
     }
-    session.devtunnel = undefined;
-    updateSession(session);
+    patch(session, { devtunnel: undefined });
 }
 
 function getMicrosoftSession(options: vscode.AuthenticationGetSessionOptions & { createIfNone: true }): Thenable<vscode.AuthenticationSession>;

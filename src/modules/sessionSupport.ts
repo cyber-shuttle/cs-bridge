@@ -1,7 +1,7 @@
 import { UsageSample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession, SessionStatus as Status } from '../models';
 import { Logger, errMsg } from './../logger';
 import { PlaneError } from '../plane';
-import { updateSession, observe, fail, statusOf, live, claim, owns } from '../extensionStore';
+import { patch, setError, observe, fail, statusOf, live, claim, owns } from '../extensionStore';
 import { recordSessionRun, sacctStats } from '../sessionRunSupport';
 import { SshManager } from './sshSupport';
 import { getSampleViaSrun, getSlurmJobStatus } from './slurmSupport';
@@ -82,7 +82,7 @@ export class SessionMonitor {
             await transport.withLinkspan(session, getHealth); // a reused sshd port proves nothing; Linkspan must answer
             this.probeFailedCounts.delete(session.id); // Step 1 up — clear the prepare-failure tally
             this.log(session, 'Linkspan is ready to connect.');
-            if (session.errorMessage) { session.errorMessage = ''; updateSession(session); } // clear any transient-retry warning
+            setError(session, ''); // clear any transient-retry warning
         }
         catch (err) {
             // Linkspan not up yet, or a Dev Tunnels API blip: transient rather than job death, so
@@ -90,8 +90,7 @@ export class SessionMonitor {
             this.bumpProbeFails(session.id);
             if (err instanceof PlaneError && err.code === 'session_access_unavailable') { this.log(session, `waiting for Linkspan's link to cs-plane`); return; }
             this.warn(session, `Linkspan unreachable (will retry): ${errMsg(err)}`);
-            session.errorMessage = `Preparing remote session: ${errMsg(err)}`;
-            updateSession(session);
+            setError(session, `Preparing remote session: ${errMsg(err)}`);
         }
     }
 
@@ -114,7 +113,7 @@ export class SessionMonitor {
 
             if (session.ec2) { await this.ec2.tick(session); }
             else { await this.slurmTick(session, status); }
-            if (live.unreachable.delete(session.id)) { session.errorMessage = ''; updateSession(session); }
+            if (live.unreachable.delete(session.id)) { setError(session, ''); }
             if (isTerminal(statusOf(session))) { void this.endSession(session); }
         }
         catch (error) {
@@ -122,8 +121,7 @@ export class SessionMonitor {
             const label = session.ec2 ? 'AWS' : 'SSH host';
             this.warn(session, `${label} unreachable (will retry): ${errMsg(error)}`);
             live.unreachable.add(session.id);
-            const message = `${label} unreachable: ${errMsg(error)}`;
-            if (session.errorMessage !== message) { session.errorMessage = message; updateSession(session); }
+            setError(session, `${label} unreachable: ${errMsg(error)}`);
         }
         finally {
             this.ticking.delete(sessionId);
@@ -146,8 +144,7 @@ export class SessionMonitor {
                 try {
                     const m = await this.pullSample(session);
                     this.probeFailedCounts.delete(session.id);
-                    // Samples go to the per-session runs file; only write the record when a persisted field changes.
-                    if (session.errorMessage) { session.errorMessage = ''; updateSession(session); }
+                    setError(session, ''); // samples go to the per-session runs file, not the record
                     if (m.memBytes !== undefined) { appendSample(session.id, { ...m, atMs: Date.now() }); }
                     void this.refreshStats(session);
                 }
@@ -165,10 +162,7 @@ export class SessionMonitor {
         this.log(session, `healthcheck (Slurm): status=${slurmStatus}`);
 
         // Anchor the walltime countdown to Slurm's reported elapsed run-time, not the poll time.
-        if (slurmStatus === SlurmJobStatus.RUNNING && !session.startedAt) {
-            session.startedAt = Date.now() - elapsedSeconds * 1000;
-            updateSession(session);
-        }
+        if (slurmStatus === SlurmJobStatus.RUNNING && !session.startedAt) { patch(session, { startedAt: Date.now() - elapsedSeconds * 1000 }); }
 
         // Pre-running states (queued/unreachable): sacct is the reading. RUNNING makes the session 'preparing', after
         // which the Dev Tunnel branch above takes over — no more SSH host polls.
@@ -233,8 +227,7 @@ export async function prepareLaunch(session: SlurmSession, transport: Transport)
     try { script = buildSlurmScript(session, launch); }
     catch (err) { throw new Error(`Failed to generate Slurm script: ${errMsg(err)}`, { cause: err }); }
 
-    session.errorMessage = '';
-    updateSession(session);
+    setError(session, '');
     return { script, sbatchEnv: launch.sbatchEnv };
 }
 

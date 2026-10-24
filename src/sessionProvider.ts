@@ -7,7 +7,7 @@ import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSessionPrivateKey, hasSessionKey, SshManager, openSshWindow, syncSshConfig } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
-import { addSession, deleteSession, getSession, getAllSessions, updateSession, onSessionsChange, onWindowsChange, windowState, statusOf, fail, live, claim, owns } from './extensionStore';
+import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, onWindowsChange, windowState, statusOf, fail, live, claim, owns } from './extensionStore';
 import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { stopSession, SessionMonitor, launchSession, prepareLaunch } from './modules/sessionSupport';
@@ -293,8 +293,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             this.logger.error(`Error connecting the ${transport.label} for session ${session.id}:`, error);
             await disposeTunnelClient(session.id);
             if (session.connectionInfo) { session.connectionInfo.localPort = undefined; }
-            session.errorMessage = `Failed to connect ${transport.label}: ${errMsg(error)}`;
-            updateSession(session);
+            setError(session, `Failed to connect ${transport.label}: ${errMsg(error)}`);
             return false;
         }
         finally {
@@ -345,9 +344,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
         if (!await confirmModal('Stop session?', 'Stop', 'This stops the running job.')) { return; }
 
-        session.desired = 'stopped';
-        session.errorMessage = '';
-        updateSession(session);
+        patch(session, { desired: 'stopped', errorMessage: '' });
         this.runStop(session);
     }
 
@@ -363,9 +360,8 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         const draft = this.draft?.sessionId === sessionId ? this.draft : undefined;
         this.draft = null;
         // A fresh run: the walltime re-anchors when the new job starts, and a Slurm job id is the run's while an EC2 instance outlives it.
-        Object.assign(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '', startedAt: undefined, submittedAt: Date.now(), ...!session.ec2 && { jobId: '' } });
+        patch(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '', startedAt: undefined, submittedAt: Date.now(), ...!session.ec2 && { jobId: '' } });
         claim(session);
-        updateSession(session);
         live.launching.add(session.id);
         this.runSessionTask(session, 'launch', () => this.lifecycle(session).start(session, draft).finally(() => live.launching.delete(session.id)),
             session.ec2 ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.');
@@ -396,8 +392,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         }
         catch (err) {
             vscode.window.showErrorMessage(errMsg(err));
-            session.errorMessage = errMsg(err);
-            updateSession(session);
+            setError(session, errMsg(err));
             this.logger.error('Failed to prepare session launch:', err);
         }
         void this.pushState();

@@ -5,7 +5,7 @@ import * as net from 'net';
 import { uuidv7 } from 'uuidv7';
 import { Ec2Spec, SlurmJobStatus, SlurmSession } from '../models';
 import { Logger } from '../logger';
-import { addSession, getAllSessions, live, observe, statusOf, updateSession } from '../extensionStore';
+import { addSession, getAllSessions, live, observe, patch, statusOf, updateSession } from '../extensionStore';
 import { AwsClient } from './aws';
 import { isTerminal, observedEc2 } from './sessionMachine';
 import { Backend, SessionMonitor } from './sessionSupport';
@@ -90,15 +90,12 @@ export class Ec2Backend implements Backend {
             updateSession(session);
         }
         if (state === 'running' && !session.connectionInfo && ip && await portOpen(ip, SSH_PORT)) {
-            session.connectionInfo = { sshPort: SSH_PORT, controlPort: 0 };
-            session.errorMessage = '';
-            updateSession(session);
+            patch(session, { connectionInfo: { sshPort: SSH_PORT, controlPort: 0 }, errorMessage: '' });
         }
     }
 
     async end(session: SlurmSession): Promise<void> {
         live.connected.delete(session.id);
-        session.connectionInfo = undefined;
-        updateSession(session);
+        patch(session, { connectionInfo: undefined });
     }
 }

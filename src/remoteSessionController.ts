@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getSession, statusOf, updateSession, onSessionsChange } from './extensionStore';
+import { getSession, statusOf, patch, onSessionsChange } from './extensionStore';
 import { isTerminal } from './modules/sessionMachine';
 import { remainingMs, fmtTime, wallMs } from './ui/logic/session';
 import { enqueuePendingSummary } from './summaryPanel';
@@ -72,8 +72,7 @@ export class RemoteSessionController implements vscode.Disposable {
 
         this.torndown = true; // claim now so the 1s render tick can't race the reload
         this.stopItem.text = '$(loading~spin) Stopping…';
-        session.desired = 'stopped';
-        updateSession(session);
+        patch(session, { desired: 'stopped' });
         await this.endToLocal();
     }
 
