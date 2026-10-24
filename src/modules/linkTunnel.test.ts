@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { server as WebSocketServer, w3cwebsocket } from 'websocket';
 import { LinkRelayClient } from './linkTunnel';
+import { must } from './testSupport';
 
 // A local stand-in for cs-plane's forward: a real WebSocket server that accepts cybershuttle.v1 and pipes each socket to
 // a real TCP echo server. The relay dials it over a real WebSocket; only the host differs from cs-plane's.
@@ -19,7 +20,7 @@ test('a forwarded port bridges each 127.0.0.1 connection to its own cs-plane for
         const ws = request.accept('cybershuttle.v1');
         const tcp = net.connect((echo.address() as net.AddressInfo).port, '127.0.0.1');
         tcp.on('data', data => ws.sendBytes(data));
-        ws.on('message', ({ binaryData }) => tcp.write(binaryData!));
+        ws.on('message', ({ binaryData }) => tcp.write(must(binaryData)));
         ws.on('close', () => tcp.destroy());
     });
     const dialed: string[] = [];

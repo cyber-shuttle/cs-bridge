@@ -15,6 +15,7 @@ export interface Files {
 export class JsonDir<T extends object> {
     private readonly records = new Map<string, { value: T; text: string }>(); // text as last read or written
     private readonly unsaved = new Map<string, Promise<void>>(); // each record's last queued write, until it starts
+    private readonly dirty = new Set<string>(); // records whose last write failed: memory is authoritative until one lands
     private readonly pending = new Map<string, Partial<T>>(); // fields patched since the record's last write began
     private readonly listeners = new Set<() => void>();
     private queue = Promise.resolve();
@@ -57,13 +58,12 @@ export class JsonDir<T extends object> {
             this.pending.delete(id);
             const record = this.records.get(id);
             if (!queued || !record) { return; }
-            try { await this.land(id, record, queued); }
-            catch (err) { this.pending.set(id, { ...queued, ...this.pending.get(id) }); throw err; } // the fields wait for the next write
+            await this.land(id, record, queued);
         });
     }
 
     private async land(id: string, record: { value: T; text: string }, queued: Partial<T>): Promise<void> {
-        const text = await this.files.read(this.path(id));
+        const text = this.dirty.has(id) ? record.text : await this.files.read(this.path(id));
         if (text === undefined) {
             this.records.delete(id);
             this.emit();
@@ -89,6 +89,7 @@ export class JsonDir<T extends object> {
 
     delete(id: string): Promise<void> {
         if (!this.records.delete(id)) { return this.queue; }
+        this.dirty.delete(id);
         this.emit();
         return this.save(id, () => this.files.remove(this.path(id)));
     }
@@ -99,7 +100,7 @@ export class JsonDir<T extends object> {
         return this.enqueue(async () => {
             const text = await this.files.read(this.path(id));
             const record = this.records.get(id);
-            if (this.unsaved.has(id) || text === record?.text) { return; }
+            if (this.unsaved.has(id) || this.dirty.has(id) || text === record?.text) { return; }
             if (text === undefined) {
                 this.records.delete(id);
             }
@@ -118,7 +119,11 @@ export class JsonDir<T extends object> {
     private path(id: string) { return `${this.dir}/${id}.json`; }
 
     private save(id: string, op: () => Promise<void>): Promise<void> {
-        const write: Promise<void> = this.enqueue(() => { if (this.unsaved.get(id) === write) { this.unsaved.delete(id); } return op(); });
+        const write: Promise<void> = this.enqueue(async () => {
+            if (this.unsaved.get(id) === write) { this.unsaved.delete(id); }
+            try { await op(); this.dirty.delete(id); }
+            catch (err) { this.dirty.add(id); throw err; }
+        });
         this.unsaved.set(id, write);
         return write;
     }

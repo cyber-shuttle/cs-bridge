@@ -15,12 +15,12 @@ export function storageFiles(root: vscode.Uri): Files {
     };
     return {
         read: name => Promise.resolve(fs.readFile(uri(name))).then(b => new TextDecoder().decode(b), missing(undefined)),
-        // A POSIX rename replaces the file in one step, so no window reads a truncated record; vscode's rename deletes first.
+        // A rename replaces the file in one step, so no window reads a truncated record; vscode's rename deletes first.
         write: async (name, text) => {
             const file = uri(name).fsPath, tmp = `${file}.${randomUUID()}.tmp`;
             await nodeFs.promises.mkdir(path.dirname(file), { recursive: true });
-            await nodeFs.promises.writeFile(tmp, text);
-            await nodeFs.promises.rename(tmp, file);
+            try { await nodeFs.promises.writeFile(tmp, text); await nodeFs.promises.rename(tmp, file); }
+            catch (err) { await nodeFs.promises.rm(tmp, { force: true }); throw err; }
         },
         // Synchronous: deactivate removes the window heartbeat, and an async delete may not land before the host exits.
         remove: name => Promise.resolve(nodeFs.rmSync(uri(name).fsPath, { force: true })),

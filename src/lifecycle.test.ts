@@ -72,7 +72,7 @@ test('a tick that outlives its loop writes nothing, and a teardown is awaited by
 
 test('the summary shows a run as recorded, pinned to the job it opened on', async () => {
     const s = running();
-    const summary = openSummaryPanel(vscode.Uri.parse('/ext'), s);
+    openSummaryPanel(vscode.Uri.parse('/ext'), s);
     const panel = must(panels.at(-1));
     panel.receive({ command: 'ready' });
     const last = () => must(panel.webview.posted.at(-1)).state;
@@ -87,7 +87,10 @@ test('the summary shows a run as recorded, pinned to the job it opened on', asyn
     assert.equal(state.session.status, 'stopped');
     assert.deepEqual(state.session.samples, [{ memBytes: 1 }]);
     assert.deepEqual(state.stats, { cores: 1 });
-    summary.dispose();
+    let disposed = false;
+    panel.onDidDispose(() => { disposed = true; });
+    deleteSession(s.id);
+    assert.ok(disposed, 'the panel closes with its session');
 });
 
 test('an EC2 instance is adopted once, then started, stopped and removed through the lifecycle', async () => {
