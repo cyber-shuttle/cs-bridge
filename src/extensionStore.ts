@@ -47,6 +47,15 @@ export function updateSession(session: SlurmSession) {
     if (sessions.get(session.id)) { sessions.set(session.id, session); }
 }
 
+export function patch(session: SlurmSession, fields: Partial<SlurmSession>): void {
+    updateSession(Object.assign(session, fields));
+}
+
+// Written only on change: the monitor says it every tick.
+export function setError(session: SlurmSession, errorMessage: string): void {
+    if (session.errorMessage !== errorMessage) { patch(session, { errorMessage }); }
+}
+
 // A live-set change notifies onSessionsChange like a record write, so no caller has to re-render by hand.
 const liveListeners = new Set<() => void>();
 class LiveSet extends Set<string> {
@@ -78,16 +87,10 @@ export function statusOf(session: SlurmSession, now = Date.now()): SessionStatus
 
 // Writing only on change keeps the 5 s polls from churning the store.
 export function observe(session: SlurmSession, state: SlurmJobStatus): void {
-    if (session.observed?.state === state) { return; }
-    session.observed = { state, at: Date.now() };
-    updateSession(session);
+    if (session.observed?.state !== state) { patch(session, { observed: { state, at: Date.now() } }); }
 }
 
-export function fail(session: SlurmSession, message: string): void {
-    session.failure = message;
-    session.errorMessage = message;
-    updateSession(session);
-}
+export const fail = (session: SlurmSession, message: string): void => patch(session, { failure: message, errorMessage: message });
 
 export function deleteSession(sessionId: string) {
     sessions.delete(sessionId);
@@ -104,7 +107,7 @@ export function startBeat(remote?: { sessionId: string; folder: string }): void 
 export function claim(session: SlurmSession): boolean {
     const owner = session.owner && windows.get(session.owner);
     if (session.owner !== windowId && owner && isBeating(owner)) { return false; }
-    if (session.owner !== windowId) { session.owner = windowId; updateSession(session); }
+    if (session.owner !== windowId) { patch(session, { owner: windowId }); }
     return true;
 }
 
