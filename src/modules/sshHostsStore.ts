@@ -26,7 +26,7 @@ export const SSH_RESILIENCE_OPTIONS: ReadonlyArray<readonly [string, string]> = 
 // The per-session SSH host's alias, which is also the vscode-remote authority VS Code shows verbatim as the remote
 // window's "[SSH: …]" label — so it reads like the target: <alias>-<last 6 of the session name> (e.g. delta-493119).
 // Never equals a bare SSH host alias, so it can't shadow the real SSH host used for Slurm; unique per session in
-// practice (the name is a creation timestamp). The same function builds the ssh_config Host line, the authority, and
+// practice (the name is a creation timestamp, or an instance id). The same function builds the ssh_config Host line, the authority, and
 // the reverse lookup, so all three stay in lockstep.
 export const csHostAlias = ({ alias, name }: Pick<SlurmSession, 'alias' | 'name'>): string =>
     `${alias}-${name.slice(-6)}`;
