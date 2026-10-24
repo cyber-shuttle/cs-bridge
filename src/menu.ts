@@ -12,7 +12,7 @@ import { SshManager } from './modules/sshSupport';
 import { Transports } from './modules/transport';
 import { getMicrosoftAccountLabel, switchDevTunnelAccount } from './modules/tunnelSupport';
 import { configuredTransport, enabled } from './features';
-import { sshCommandToConfig } from './modules/sshCommandParser';
+import { parseHostToken, sshCommandToConfig } from './modules/sshCommandParser';
 
 type Page = { title: string; placeholder?: string; items: Item[]; input?: { value: string; submit: (value: string) => Build | void } };
 type Build = () => Page;
@@ -116,8 +116,8 @@ export class CsBridgeMenu {
         if (!host) { throw new Error(`SSH host ${alias} is no longer configured.`); }
         return ask('Edit SSH Host: Alias', 'Press Enter to keep this alias, or type a new one', alias, newAlias => () =>
             ask('Edit SSH Host: Destination', '[user@]hostname', [host.user, host.hostname].filter(Boolean).join('@'), (destination) => {
-                const [HostName = '', User] = destination.split('@').reverse();
-                this.sshHosts.saveSshHost({ Host: newAlias, HostName, ...User && { User } }, alias);
+                const { hostname, username, port } = parseHostToken(destination);
+                this.sshHosts.saveSshHost({ Host: newAlias, HostName: hostname, ...username && { User: username }, ...port && { Port: port } }, alias);
             }));
     };
 

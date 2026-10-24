@@ -9,7 +9,7 @@ import { buildSlurmScript } from './slurmParse';
 import { isReachable, isTerminal } from './sessionMachine';
 import { checkSlurmAvailability, linkspanIsUpToDate, installLinkspan, submitJobToSlurm, LaunchDraft } from './slurmLaunch';
 import { Transport, Transports, connectSessionToTunnel, disconnectSessionFromTunnel, disposeTunnelClient, ensureRemoteSession, isTunnelClientConnected } from './transport';
-import { getHealth, getSample } from './linkspanSupport';
+import { getSample } from './linkspanSupport';
 import { appendSample, writeSessionStats, resetLive } from './runStore';
 import { getOrSet } from './util';
 
@@ -171,11 +171,12 @@ export class SlurmBackend implements Backend {
         live.connecting.add(session.id);
         const transport = this.transports.transportFor(session);
         try {
-            const ci = await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
-            patch(session, { connectionInfo: ci });
             if (!hasSessionKey(session.id)) { throw new Error('SSH private key not found for session'); }
+            const ci = await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
+            // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets nothing written.
+            if (isTerminal(statusOf(session))) { throw new Error('the job ended'); }
+            patch(session, { connectionInfo: ci });
             await connectSessionToTunnel(transport, session, ci, () => void this.reconnect(session.id));
-            // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets no local port.
             if (isTerminal(statusOf(session))) { throw new Error('the job ended'); }
             await syncSshConfig();
             return true;
@@ -285,8 +286,7 @@ export class SlurmBackend implements Backend {
     private async prepareRemote(session: SlurmSession, alive: () => boolean): Promise<void> {
         try {
             const transport = this.transports.transportFor(session);
-            const ci = await ensureRemoteSession(transport, session); // also refreshes the tunnel
-            await transport.withLinkspan(session, ci, getHealth); // a reused sshd port proves nothing; Linkspan must answer
+            const ci = await ensureRemoteSession(transport, session); // Linkspan answered, so it is up; also refreshes the tunnel
             if (!alive()) { return; }
             patch(session, { connectionInfo: ci });
             this.run(session.id).probeFails = 0;
