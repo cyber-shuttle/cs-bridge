@@ -32,7 +32,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private readonly ec2: Ec2Backend;
     private readonly backends: Backends;
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar, which alone drives sessions.
-    constructor(extensionUri: vscode.Uri, private readonly transports: Pick<Transports, 'transportFor' | 'remove'>, aws: AwsClient, private readonly remoteSessionId?: string) {
+    constructor(extensionUri: vscode.Uri, private readonly transports: Pick<Transports, 'transportFor' | 'remove'>, aws: Pick<AwsClient, 'ec2' | 'ready' | 'onDidSignIn'>, private readonly remoteSessionId?: string) {
         super(extensionUri);
         this.slurm = new SlurmBackend(transports, () => this.monitor);
         this.ec2 = new Ec2Backend(aws, () => this.monitor);
@@ -70,7 +70,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             // The owner carries out a Stop asked anywhere; without a beating owner, this window takes it.
             if (status === 'stopping') { if (claim(s)) { this.runStop(s); } continue; }
             // A run ended by the clock while no window had its loop (the walltime passed with VS Code closed) is still torn
-            // down; a record this window owns without a loop is in a task's hands.
+            // down; a record this window owns without a loop is in a task's or a preview's hands.
             if (isTerminal(status)) { if (s.connectionInfo && !owns(s) && claim(s)) { void this.monitor.endSession(s).finally(() => this.settle(s)); } continue; }
             if (owns(s)) { continue; }
             this.monitor.startMonitoring(s);
@@ -263,7 +263,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         return false;
     }
 
-    // A claim outlives its task only as a monitor loop.
+    // A claim outlives its task as a monitor loop or as a preview; anything else gives it back.
     private settle(session: SlurmSession): void {
         if (!this.monitor.monitoring(session.id)) { disown(session); }
     }
