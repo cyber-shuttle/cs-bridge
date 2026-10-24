@@ -1,7 +1,7 @@
 // Records live in extension storage through Files: a folder on desktop, IndexedDB in the browser. A JsonDir keeps a
 // directory in memory, so reads are synchronous; writes, and reloads of other windows' writes that storage.ts's
-// watcher reports, run in order behind them, and the last write to a record wins. schema.json versions the layout;
-// desktop's steps below 2 import ~/.cybershuttle.
+// watcher reports, run in order behind them. A whole-record write wins over an earlier one; a patch lands its fields on
+// whatever another window wrote last. schema.json versions the layout; desktop's steps below 2 import ~/.cybershuttle.
 import { parseJson } from './json';
 import { getOrSet } from './util';
 
@@ -12,7 +12,7 @@ export interface Files {
     list(dir: string): Promise<string[]>;
 }
 
-export class JsonDir<T> {
+export class JsonDir<T extends object> {
     private readonly items = new Map<string, T>();
     private readonly texts = new Map<string, string>(); // each record's text as last read or written
     private readonly unsaved = new Map<string, Promise<void>>(); // each record's last queued write, until it starts
@@ -45,7 +45,7 @@ export class JsonDir<T> {
     }
 
     // The fields land on the record as another window last wrote it, so two windows' patches to different fields both
-    // survive; the fields of every patch still queued go with the first write.
+    // survive. Every field patched since the last write went out rides each write until the record's writes drain.
     patch(id: string, fields: Partial<T>): void {
         const cur = this.items.get(id);
         if (!cur) { return; }
@@ -55,12 +55,23 @@ export class JsonDir<T> {
         this.save(id, async () => {
             const queued = this.pending.get(id);
             if (!queued) { return; }
-            this.pending.delete(id);
             const text = await this.files.read(this.path(id));
-            if (text !== undefined && text !== this.texts.get(id)) { replaceFields(cur, { ...parseJson<T>(text), ...queued }); }
-            const next = JSON.stringify(cur, null, 2);
+            let record = cur;
+            if (text !== undefined && text !== this.texts.get(id)) {
+                let theirs: T | undefined;
+                try { theirs = parseJson<T>(text); }
+                catch { /* another window mid-write; its reload follows */ }
+                if (theirs) {
+                    record = this.merge(cur, theirs);
+                    this.items.set(id, record);
+                    Object.assign(record, queued);
+                    this.emit();
+                }
+            }
+            const next = JSON.stringify(record, null, 2);
             this.texts.set(id, next);
             await this.files.write(this.path(id), next);
+            if (!this.unsaved.has(id)) { this.pending.delete(id); }
         });
     }
 

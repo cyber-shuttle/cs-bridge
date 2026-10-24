@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { JsonDir, replaceFields } from './store';
 import { memoryFiles } from './memoryFiles';
 
-interface Rec { n: number; m?: number }
+interface Rec { n: number; m?: number; k?: number }
 
 test('JsonDir skips its own writes and merges another window\'s in place', async () => {
     const files = memoryFiles();
@@ -37,16 +37,25 @@ test('JsonDir skips its own writes and merges another window\'s in place', async
     assert.equal(changes, 3);
 });
 
-test('JsonDir.patch lands its fields on another window\'s newer record', async () => {
+test('JsonDir.patch lands its fields on another window\'s newer record and tells listeners', async () => {
     const files = memoryFiles();
     await files.write('recs/a.json', JSON.stringify({ n: 1 }));
-    const dir = new JsonDir<Rec>(files, 'recs', err => assert.fail(String(err)));
+    const dir = new JsonDir<Rec>(files, 'recs', err => assert.fail(String(err)), (cur, next) => (cur ? replaceFields(cur, next) : next));
     await dir.load();
+    let changes = 0;
+    dir.onDidChange(() => changes++);
     await files.write('recs/a.json', JSON.stringify({ n: 2 })); // another window, not yet reloaded here
     dir.patch('a', { m: 7 });
+    dir.patch('a', { k: 9 }); // queued while the first write reads the file
     await dir.reload('a');
-    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 7 });
-    assert.deepEqual(dir.get('a'), { n: 2, m: 7 });
+    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 7, k: 9 });
+    assert.deepEqual(dir.get('a'), { n: 2, m: 7, k: 9 });
+    assert.equal(changes, 3);
+
+    await files.write('recs/a.json', '{"n": 3'); // another window mid-write
+    dir.patch('a', { m: 8 });
+    await dir.reload('a');
+    assert.deepEqual(JSON.parse(files.texts.get('recs/a.json')!), { n: 2, m: 8, k: 9 });
 });
 
 test('replaceFields drops a field the other window cleared', () => {
