@@ -28,7 +28,7 @@ export interface Backend<S extends SlurmSession = SlurmSession> {
     stop(session: S): Promise<void>;
     connect(session: S): Promise<boolean>;
     remove(session: S): Promise<void>;
-    tick(session: S): Promise<void>;
+    tick(session: S, alive: () => boolean): Promise<void>; // alive: the loop still wants this tick's writes
     end(session: S): Promise<void>;
     forget(sessionId: string): void;
 }
@@ -74,8 +74,9 @@ export class SessionMonitor {
                 return;
             }
 
-            await this.backends.use(session, (b, s) => b.tick(s));
-            if (this.loops.get(sessionId) !== loop) { return; } // a Stop ended the loop meanwhile
+            const alive = () => this.loops.get(sessionId) === loop;
+            await this.backends.use(session, (b, s) => b.tick(s, alive));
+            if (!alive()) { return; } // a Stop ended the loop meanwhile
             if (live.unreachable.delete(session.id)) { setError(session, ''); }
             if (isTerminal(statusOf(session))) { void this.endSession(session); }
         }
@@ -200,14 +201,14 @@ export class SlurmBackend implements Backend {
 
     remove(session: SlurmSession): Promise<void> { return this.transports.remove(session); }
 
-    async tick(session: SlurmSession): Promise<void> {
+    async tick(session: SlurmSession, alive: () => boolean): Promise<void> {
         const status = statusOf(session);
         const transport = this.transports.transportFor(session);
         // Job running but not yet up: drive bring-up over the tunnel rather than Slurm,
         // cross-checking sacct only after PROBE_GIVEUP failures, so a running session
         // never SSH-polls the SSH host.
         if (status === 'preparing' && transport.tunnelRef(session) && session.connectionInfo?.controlPort) {
-            await this.pingOrCrossCheck(session, () => this.prepareRemote(session));
+            await this.pingOrCrossCheck(session, alive, () => this.prepareRemote(session, alive));
             return;
         }
 
@@ -215,16 +216,17 @@ export class SlurmBackend implements Backend {
         if (transport.tunnelRef(session) && isReachable(status) && ci) {
             // Pulling /usage is the health check: success = alive + a live sample; PROBE_GIVEUP failures
             // cross-check sacct for death. The sample comes over the tunnel when this window holds its client, else srun.
-            await this.pingOrCrossCheck(session, async () => {
+            await this.pingOrCrossCheck(session, alive, async () => {
                 try {
                     const m = await this.pullSample(session, ci);
+                    if (!alive()) { return; }
                     this.run(session.id).probeFails = 0;
                     setError(session, ''); // samples go to the per-session runs file, not the record
                     if (m.memBytes !== undefined) { appendSample(session.id, { ...m, atMs: Date.now() }); }
                     void this.refreshStats(session);
                 }
                 catch (err) {
-                    if (isReachable(statusOf(session))) {
+                    if (alive() && isReachable(statusOf(session))) {
                         const attempt = ++this.run(session.id).probeFails;
                         this.warn(session, `healthcheck (usage): failed (attempt ${attempt}/${PROBE_GIVEUP}): ${errMsg(err)}`);
                     }
@@ -234,6 +236,7 @@ export class SlurmBackend implements Backend {
         }
 
         const { status: slurmStatus, elapsedSeconds } = await getSlurmJobStatus(session);
+        if (!alive()) { return; }
         this.log(session, `healthcheck (Slurm): status=${slurmStatus}`);
 
         // Anchor the walltime countdown to Slurm's reported elapsed run-time, not the poll time.
@@ -254,35 +257,39 @@ export class SlurmBackend implements Backend {
     }
 
     // Tunnel health gave up — only an authoritative sacct terminal state may tear the session down; else it's alive, resume pinging.
-    private async crossCheckSlurmForDeath(session: SlurmSession): Promise<void> {
+    private async crossCheckSlurmForDeath(session: SlurmSession, alive: () => boolean): Promise<void> {
         try {
-            observe(session, (await getSlurmJobStatus(session)).status);
+            const { status } = await getSlurmJobStatus(session);
+            if (!alive()) { return; }
+            observe(session, status);
             if (!isTerminal(statusOf(session))) { this.run(session.id).probeFails = 0; }
         }
         catch (err) {
-            this.warn(session, `healthcheck (Slurm): unreachable (will retry): ${errMsg(err)}`);
+            if (alive()) { this.warn(session, `healthcheck (Slurm): unreachable (will retry): ${errMsg(err)}`); }
         }
     }
 
     // Probe over the tunnel until PROBE_GIVEUP consecutive failures, then fall back
     // to an authoritative sacct cross-check. The probe differs by phase.
-    private async pingOrCrossCheck(session: SlurmSession, probe: () => Promise<void>): Promise<void> {
+    private async pingOrCrossCheck(session: SlurmSession, alive: () => boolean, probe: () => Promise<void>): Promise<void> {
         if (this.run(session.id).probeFails < PROBE_GIVEUP) { await probe(); }
-        else { await this.crossCheckSlurmForDeath(session); }
+        else { await this.crossCheckSlurmForDeath(session, alive); }
     }
 
     // Drives a running session to ready_to_connect. Awaited under tick()'s reentrancy
     // guard, so it needs no in-flight guard of its own.
-    private async prepareRemote(session: SlurmSession): Promise<void> {
+    private async prepareRemote(session: SlurmSession, alive: () => boolean): Promise<void> {
         try {
             const transport = this.transports.transportFor(session);
             const ci = await ensureRemoteSession(transport, session); // also refreshes the tunnel
             await transport.withLinkspan(session, ci, getHealth); // a reused sshd port proves nothing; Linkspan must answer
+            if (!alive()) { return; }
             this.run(session.id).probeFails = 0;
             this.log(session, 'Linkspan is ready to connect.');
             setError(session, ''); // clear any transient-retry warning
         }
         catch (err) {
+            if (!alive()) { return; }
             // Linkspan not up yet, or a tunnel API blip: transient rather than job death, so
             // hold 'preparing' and count it toward the sacct cross-check.
             this.run(session.id).probeFails++;

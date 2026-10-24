@@ -1,6 +1,7 @@
 // An EC2 instance as a session's backend: the monitor's poll and teardown, and the provider's start, stop, connect
 // and remove, so an instance rides the Slurm session lifecycle. 'preparing' holds until the instance's port 22
-// accepts a connection; connect only writes the per-session SSH host, since the instance is reached over plain SSH.
+// accepts a connection; connect has nothing to build, since the instance is reached over plain SSH to the host the
+// record's connection info renders.
 import * as net from 'net';
 import { Ec2Session, Ec2Spec, SlurmJobStatus, SlurmSession, newSession } from '../models';
 import { Logger } from '../logger';
@@ -97,16 +98,17 @@ export class Ec2Backend implements Backend<Ec2Session> {
         if (session.jobId && await ec2.describe(session.ec2.region, session.jobId)) { await ec2.act('terminate', session.ec2.region, session.jobId); }
     }
 
-    async tick(session: Ec2Session): Promise<void> {
+    async tick(session: Ec2Session, alive: () => boolean): Promise<void> {
         const ec2 = this.aws.ec2;
         if (!ec2) { return; } // signed out, or still restoring: hold
         const spec = session.ec2;
         const instance = await ec2.describe(spec.region, session.jobId);
+        if (!alive()) { return; }
         if (!instance) { observe(session, observedEc2('terminated')); return; }
         const { state, ip } = instance;
         observe(session, observedEc2(state));
         if (ip !== spec.ip) { patch(session, { ec2: { ...spec, ip } }); } // a stopped instance comes back with a new public IP
-        if (state === 'running' && !session.connectionInfo && ip && await portOpen(ip, SSH_PORT)) {
+        if (state === 'running' && !session.connectionInfo && ip && await portOpen(ip, SSH_PORT) && alive()) {
             patch(session, { connectionInfo: { sshPort: SSH_PORT, controlPort: 0 }, errorMessage: '' });
         }
     }
