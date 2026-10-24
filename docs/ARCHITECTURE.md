@@ -157,7 +157,9 @@ actions and every dialog.
 ## SSH transport
 
 `SshManager` holds one persistent `ssh … bash -l` per SSH host and multiplexes every remote command over it, framing
-each call with a random marker to demux stdout, stderr and exit code (`sshSupport.ts`, `sshShell.ts`). A per-SSH-host
+each call with a random marker to demux stdout, stderr and exit code (`sshSupport.ts`, `sshShell.ts`). A command
+resolves to its stdout; a non-zero exit, or a shell that could not connect, rejects with `RemoteCommandError`, so no
+caller inspects an exit code. A per-SSH-host
 serial queue keeps one command in flight; a dropped shell reconnects lazily on the next command. This in-process
 multiplexing is what makes Windows work, where OpenSSH has no Unix-socket ControlMaster; on Unix a ControlMaster
 socket (named by a SHA-256 of the SSH host's alias, to stay under the 104-byte socket-path limit) is layered on as well

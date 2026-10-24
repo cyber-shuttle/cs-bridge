@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- A remote command that fails now reports its exit code and stderr the same way everywhere, so a launch, stop or
+  discovery failure reads as the command's own error.
+
+### Changed
+
 - A session's status is derived from recorded facts (the last reading, the stop intent, a failure verdict, the
   walltime) and this window's live connection instead of being stored, so a stale reading cannot revive an ended
   session, a reload cannot lose a stop, and the sidebar and the remote window's status bar always agree.

@@ -29,9 +29,8 @@ async function fetchStats(session: SlurmSession): Promise<RunStats | undefined> 
 // One sacct read (no flush-retry) — the monitor calls this during a run to keep the live Slurm accounting copy non-stale.
 export async function sacctStats(session: SlurmSession): Promise<RunStats | undefined> {
     try {
-        const r = await SshManager.getInstance().runRemoteCommand(session.alias, `${SACCT} ${session.jobId} 2>/dev/null`, { batch: true });
-        const m = r.code === 0 ? parseSacctUtil(r.stdout) : undefined;
-        return m && Object.keys(m).length ? m : undefined;
+        const m = parseSacctUtil(await SshManager.getInstance().runRemoteCommand(session.alias, `${SACCT} ${session.jobId} 2>/dev/null`, { batch: true }));
+        return Object.keys(m).length ? m : undefined;
     }
     catch { return undefined; }
 }

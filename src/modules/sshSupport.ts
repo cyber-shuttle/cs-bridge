@@ -30,6 +30,10 @@ const sessionKeyPath = (sessionId: string): string => sshKeyPath(`id_cshost-${se
 
 type CommandResult = { stdout: string; stderr: string; code: number };
 
+export class RemoteCommandError extends Error {
+    constructor(readonly code: number, readonly stderr: string, command: string) { super(`exit ${code}: ${stderr.trim() || command}`); }
+}
+
 // The single command in flight on a shell; its streams accumulate until both sentinels arrive (see sshShell).
 type Pending = { rid: string; outBuf: string; errBuf: string; settled: boolean; resolve: (r: CommandResult) => void };
 
@@ -124,15 +128,10 @@ export class SshManager {
     // Every remote command rides the SSH host's one persistent shell, established on demand and reused until it drops.
     // batch: a background poll won't open a new connection that would raise a Duo box it can't answer — it rides an
     // existing shell or fails fast (caller retries). A user-driven call authenticates interactively.
-    public runRemoteCommand(alias: string, command: string, opts?: { batch?: boolean }): Promise<CommandResult> {
-        return this.enqueue(alias, async () => {
-            let shell: HostShell;
-            try { shell = await this.ensureShell(alias, !!opts?.batch); }
-            catch (err) {
-                return { stdout: '', stderr: errMsg(err), code: 255 };
-            }
-            return this.runOnShell(shell, command);
-        });
+    public async runRemoteCommand(alias: string, command: string, opts?: { batch?: boolean }): Promise<string> {
+        const { stdout, stderr, code } = await this.enqueue(alias, async () => this.runOnShell(await this.ensureShell(alias, !!opts?.batch), command));
+        if (code !== 0) { throw new RemoteCommandError(code, stderr, command); }
+        return stdout;
     }
 
     public disposeAll(): void {

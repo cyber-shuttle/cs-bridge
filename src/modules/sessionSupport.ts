@@ -251,13 +251,14 @@ export async function stopSession(session: SlurmSession, monitor: SessionMonitor
         if (session.jobId) {
             const stopCommand = `scancel ${session.jobId}`;
             logger.info(sessionLine(session.name, `sending stop command: ${stopCommand}`));
-            const stopResult = await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand);
             // scancel accepted is the job's end, as sacct will report it; refused, sacct says whether it had ended anyway.
-            observe(session, stopResult.code === 0 ? SlurmJobStatus.CANCELLED : await getSlurmJobStatus(session).then(r => r.status, () => SlurmJobStatus.UNKNOWN));
+            let refused: unknown;
+            observe(session, await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand).then(() => SlurmJobStatus.CANCELLED,
+                (err) => { refused = err; return getSlurmJobStatus(session).then(r => r.status, () => SlurmJobStatus.UNKNOWN); }));
             if (!isTerminal(statusOf(session))) {
-                throw new Error(`Session ${session.name}: failed to send stop command: ${stopResult.stderr}`);
+                throw new Error(`Session ${session.name}: failed to send stop command: ${errMsg(refused)}`);
             }
-            logger.info(sessionLine(session.name, stopResult.code === 0 ? `stop command sent successfully` : `job already ended`));
+            logger.info(sessionLine(session.name, refused ? `job already ended` : `stop command sent successfully`));
         }
         else {
             logger.warn(sessionLine(session.name, `has no job ID; marking stopped without scancel.`));
