@@ -13,13 +13,14 @@ export interface SshConfigEntry {
 // Verbatim getopt option string from Remote-SSH 0.123.0.
 const OPTSTRING = ':1246ab:c:e:fgi:kl:m:no:p:qstvxAB:CD:E:F:GI:J:KL:MNO:PQ:R:S:TVw:W:XYy';
 
-// Flag -> ssh_config directive (Remote-SSH 0.123.0). Flags in OPTSTRING but absent here are consumed by getopt without
-// producing a directive. A flag is either a switch or takes an argument, as OPTSTRING's colons say.
 type Config = Record<string, string>;
 const CHECKED_KEYS = ['HostName', 'Port', 'User'];
 
 // ssh_config keywords are case-insensitive.
 export const isKeyword = (param: string, keyword: string): boolean => param.toLowerCase() === keyword.toLowerCase();
+
+// Flag -> ssh_config directive (Remote-SSH 0.123.0). Flags in OPTSTRING but absent from these tables are consumed by
+// getopt without producing a directive. A flag is either a switch or takes an argument, as OPTSTRING's colons say.
 const SWITCHES: Record<string, (c: Config) => void> = {
     1: (c) => { c.Protocol = '1'; },
     2: (c) => { c.Protocol = '2'; },
