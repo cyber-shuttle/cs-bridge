@@ -63,13 +63,21 @@ export class Ec2Backend implements Backend<Ec2Session> {
         this.monitor().startMonitoring(session);
     }
 
-    // EC2 refuses to stop a pending instance. 'stopping' then holds until the poll sees the instance stopped.
+    // EC2 refuses to stop a pending instance, so the stop is sent once the instance can take it and the task holds
+    // until the instance has stopped.
     async stop(session: Ec2Session): Promise<void> {
         const { ec2 } = this.aws.require();
         const { region } = session.ec2;
-        while ((await ec2.describe(region, session.jobId))?.state === 'pending') { await sleep(5_000); }
-        await ec2.act('stop', region, session.jobId);
-        this.monitor().startMonitoring(session);
+        try {
+            let sent = false;
+            for (;;) {
+                const instance = await ec2.describe(region, session.jobId);
+                if (!instance || instance.state === 'stopped' || instance.state === 'terminated') { observe(session, instance ? observedEc2(instance.state) : observedEc2('terminated')); return; }
+                if (!sent && instance.state !== 'pending') { await ec2.act('stop', region, session.jobId); sent = true; }
+                await sleep(5_000);
+            }
+        }
+        finally { await this.monitor().endSession(session); }
     }
 
     async connect(session: Ec2Session): Promise<boolean> {

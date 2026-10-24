@@ -49,7 +49,6 @@ export abstract class WebviewProvider<M extends WebviewMessage = { command: 'rea
     }
 }
 
-// Modal confirm dialog; true only when the user clicked the confirm button.
 export async function confirmModal(title: string, confirmLabel: string, detail?: string): Promise<boolean> {
     const choice = await vscode.window.showWarningMessage(title, { modal: true, detail }, confirmLabel);
     return choice === confirmLabel;

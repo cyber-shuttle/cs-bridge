@@ -14,24 +14,24 @@ export async function recordSessionRun(session: SlurmSession): Promise<void> {
     if (!session.jobId) { return; }
     if (readSessionRuns(session.id).some(r => isSameRun(r, session))) { return; }
     // Captured before the sacct wait: a restart meanwhile would change the job and reset the samples.
-    const { id: sessionId, alias, jobId, account, partition } = session;
-    const run = { sessionId, alias, jobId, account, partition, endedAt: Date.now(), finalState: statusOf(session), samples: readRecentSamples(session.id) };
-    const stats = await fetchStats(session) ?? readSessionStats(session.id);
+    const { id: sessionId, alias, jobId, account, partition, startedAt } = session;
+    const run = { sessionId, alias, jobId, account, partition, startedAt, endedAt: Date.now(), finalState: statusOf(session), samples: readRecentSamples(session.id) };
+    const stats = await fetchStats(run) ?? readSessionStats(session.id);
     appendRun({ ...run, stats });
 }
 
-async function fetchStats(session: SlurmSession): Promise<RunStats | undefined> {
+async function fetchStats(job: Pick<SlurmSession, 'alias' | 'jobId'>): Promise<RunStats | undefined> {
     for (let attempt = 0; ; attempt++) {
-        const m = await sacctStats(session);
+        const m = await sacctStats(job);
         if ((m && m.maxRss !== undefined) || attempt >= STATS_RETRIES) { return m; }
         await sleep(STATS_RETRY_MS);
     }
 }
 
 // One sacct read (no flush-retry) — the monitor calls this during a run to keep the live Slurm accounting copy non-stale.
-export async function sacctStats(session: SlurmSession): Promise<RunStats | undefined> {
+export async function sacctStats({ alias, jobId }: Pick<SlurmSession, 'alias' | 'jobId'>): Promise<RunStats | undefined> {
     try {
-        const m = parseSacctUtil(await SshManager.getInstance().runRemoteCommand(session.alias, `${SACCT} ${session.jobId} 2>/dev/null`, { batch: true }));
+        const m = parseSacctUtil(await SshManager.getInstance().runRemoteCommand(alias, `${SACCT} ${jobId} 2>/dev/null`, { batch: true }));
         return Object.keys(m).length ? m : undefined;
     }
     catch { return undefined; }

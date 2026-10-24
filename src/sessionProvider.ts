@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
-import { enabled } from './features';
+import { configuredTransport } from './features';
 import { errMsg } from './logger';
 import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage, isEc2, newSession } from './models';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { deleteSessionPrivateKey, SshManager, openSshWindow } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
-import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, onWindowsChange, windowState, statusOf, fail, live, claim, owns } from './extensionStore';
+import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, onWindowsChange, windowState, statusOf, fail, live, claim, owns, disown } from './extensionStore';
 import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { Backends, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
@@ -73,6 +73,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             if (mine !== undefined && mine === lastMine) { return; }
             lastMine = mine;
             void this.pushState();
+            void this.reattachLiveSessions(); // a remote window's Stop hands its session to the owner through the record
         }));
         // Live samples land in the per-session files (bypassing updateSession); pushState reads them at render time.
         this.shared.push(onRunsChange(() => void this.pushState()));
@@ -85,7 +86,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         for (const s of getAllSessions()) {
             const status = statusOf(s);
             // A stop still wanted is an unfinished Stop: a reload interrupted it, or a remote window handed it off.
-            if (status === 'stopping') { if (!owns(s) && claim(s)) { this.runStop(s); } continue; }
+            if (status === 'stopping') { if (claim(s)) { this.runStop(s); } continue; }
             if (isTerminal(status) || owns(s)) { continue; }
             this.monitor.startMonitoring(s);
             // A session just taken over gets its connection back; startup never forces a sign-in.
@@ -94,7 +95,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     }
 
     dispose(): void {
-        this.monitor.dispose(); // window close: clear every per-session poll interval so none leak past teardown
+        this.monitor.dispose();
         this.shared.forEach(d => d.dispose());
         void disposeAllTunnelClients(); // window close: free local ports (remote stays, reaped by linkspan)
     }
@@ -258,8 +259,14 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             this.openOrFocusWindow(session);
             return;
         }
-        claim(session);
+        this.monitor.startMonitoring(session); // claims the session when its owner has gone
         if (await this.backends.use(session, (b, s) => b.connect(s))) { this.openOrFocusWindow(session); }
+        this.settle(session);
+    }
+
+    // A claim outlives its task only as a monitor loop.
+    private settle(session: SlurmSession): void {
+        if (!this.monitor.monitoring(session.id)) { disown(session); }
     }
 
     private async stopSessionExecution(sessionId: string) {
@@ -301,7 +308,6 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             isEc2(session) ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.');
     }
 
-    // One task per session at a time; a failure marks the session failed and shows a dialog.
     private runSessionTask(session: SlurmSession, verb: string, run: () => Promise<void>, cleanupHint: string): void {
         if (live.busy.has(session.id)) { return; }
         live.busy.add(session.id);
@@ -311,7 +317,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             vscode.window.showErrorMessage(`${detail}. ${cleanupHint}`);
             fail(session, detail);
             void this.release(session);
-        }).finally(() => live.busy.delete(session.id));
+        }).finally(() => { live.busy.delete(session.id); this.settle(session); });
     }
 
     private async prepareLaunchSession(sessionId: string) {
@@ -321,7 +327,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
         try {
             await this.release(session); // the previous run's, before a transport switch hides it
-            patch(session, { transport: enabled('cybershuttle') ? vscode.workspace.getConfiguration('csbridge').get('transport', 'devtunnel') : 'devtunnel' });
+            patch(session, { transport: configuredTransport() });
             const draft = await prepareLaunch(session, this.transports.transportFor(session));
             if (this.draft?.sessionId !== sessionId) { this.dropDraft(); }
             this.draft = { sessionId, ...draft };

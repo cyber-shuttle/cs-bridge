@@ -144,6 +144,7 @@ export interface Run {
     jobId: string;
     account: string;
     partition: string;
+    startedAt?: number;
     endedAt: number;
     finalState: SessionStatus;
     stats?: RunStats;
@@ -159,6 +160,7 @@ export interface StatsState {
 export interface SummaryState {
     session: ViewSession; // its samples are the live history, or a past run's
     stats?: RunStats; // sacct accounting, absent when the run recorded none
+    at: number; // when the run ended, or now while it runs
     pending: boolean; // the run is still being recorded
 }
 
