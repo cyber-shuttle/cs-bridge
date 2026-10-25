@@ -6,44 +6,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-25
+
+### Added
+
+- **EC2 instances** **(experimental)** are sessions: the same card, Start, Stop, Connect and Delete, the window
+  heartbeat and the remote window's Stop, and a record that survives a reload.
+- **Create Cloud VM** walks through region, instance type and image.
+- A launch creates the region's default VPC when the account lacks one.
+- Signing in to AWS adopts instances CS Bridge launched elsewhere.
+- The menu shows the signed-in AWS key with **Sign Out of AWS**.
+- The AWS sign-in survives a window reload.
+
+### Changed
+
+- One window drives each live session: it alone polls the job and holds the relay.
+- A closed window's sessions pass to the next window.
+- A Stop asked in any window is carried out by the window driving the session.
+- A session's status is derived from recorded facts and this window's connection instead of being stored.
+- A session record no longer carries a window's local port or Dev Tunnel token.
+- A session record is written whole through a rename, so no window reads a half-written one.
+- The per-session SSH hosts and `remote.SSH.serverInstallPath` entries are rendered from the session records instead
+  of edited in place.
+- A remote command that fails reports its exit code and stderr the same way everywhere.
+- **Reconnect** is gone; **Connect** reopens the window.
+- A past run opens its summary as recorded, even after its session was started again.
+- The GPU graph is labelled with the allocated GPU count.
+- One AWS key pair per machine serves each region.
+- **Edit SSH Host** changes the user and hostname only.
+
 ### Fixed
 
 - A freshly submitted job no longer flashes "SSH host unreachable" while Slurm accounting has no row for it yet.
-- An EC2 launch that returns no instance id fails outright instead of leaving a running instance recorded as never
-  started.
-- An SSH host whose partitions or home directory cannot be read fails discovery with Retry instead of offering a session
-  form that could only submit a job that fails.
-
-### Fixed
-
-- Starting a stopped session again showed it queued since its first run; the card now counts from the new submit.
-
-### Changed
-
-- One window drives each live session: it alone polls the job and holds the relay, and a closed window's sessions
-  pass to the next window. Several open windows no longer poll the same job or race to connect it.
-- The per-session SSH hosts and `remote.SSH.serverInstallPath` entries are rendered from the session records instead
-  of edited in place, so an entry can no longer be left behind or clobbered by another window.
-
-### Changed
-
-- A remote command that fails now reports its exit code and stderr the same way everywhere, so a launch, stop or
-  discovery failure reads as the command's own error.
-- A session record no longer carries a window's local port or Dev Tunnel token; they stay in that window's memory.
-
-### Changed
-
-- A session's status is derived from recorded facts (the last reading, the stop intent, a failure verdict, the
-  walltime) and this window's live connection instead of being stored, so a stale reading cannot revive an ended
-  session, a reload cannot lose a stop, and the sidebar and the remote window's status bar always agree.
-
-### Changed
-
-- **EC2 instances** **(experimental)**: an instance is now a session. It follows the session lifecycle, with the
-  same card, Start, Stop, Connect and Delete, the window heartbeat and the remote window's Stop, and its record
-  survives a reload. The menu shows the signed-in AWS key with **Sign Out of AWS**, and **Create Cloud VM** walks
-  through region, instance type and image; a launch creates the region's default VPC when the account lacks one, and
-  signing in adopts instances CS Bridge launched elsewhere. The sign-in survives a window reload.
+- Starting a stopped session again counts its queue time from the new submit.
+- A run the walltime ended while VS Code was closed is recorded and torn down on the next open.
+- A Stop the cluster refuses leaves the session running and shows the error.
+- A Start while a launch preview is open gives the earlier preview back first.
+- Start, Stop and Delete wait for a teardown in flight.
+- A deleted session's run stays out of the history.
+- A failed session's card shows its failure.
+- An EC2 launch that returns no instance id fails outright instead of recording a running instance as never started.
+- Signing in to AWS no longer adopts the same instance twice.
+- An SSH host whose partitions or home directory cannot be read fails discovery with Retry instead of offering a
+  session form.
+- `ssh_config` keywords are read in any case, and a HostName set by `-o` is kept.
+- Only Host sections with a single pattern are listed.
+- Editing an SSH host keeps a bare IPv6 hostname whole.
+- Every open authentication prompt closes with its SSH shell.
+- The driving window may authenticate for a Stop.
+- A Dev Tunnel that returns no connect token fails the connect instead of sending an empty token.
+- A session deleted while its summary is open closes the summary.
+- Editing a host that is no longer configured shows the error without an empty picker.
 
 ## [0.2.4] - 2026-10-21
 
