@@ -8,7 +8,9 @@ privately — see [SECURITY.md](SECURITY.md).
 
 - [Git](https://git-scm.com/)
 - [Bun](https://bun.sh/) (the version in `packageManager`)
-- [VS Code](https://code.visualstudio.com/) 1.101 or newer
+- [VS Code](https://code.visualstudio.com/) 1.101 or newer, with its `code` command on `PATH` for `bun run dev`
+- [Node.js](https://nodejs.org/) with npm. `bun run test:host` needs it. `bun run dev` and `bun run package` need it
+  too. Their packager runs `vscode:prepublish` through npm.
 
 ## Development setup
 
@@ -16,18 +18,22 @@ privately — see [SECURITY.md](SECURITY.md).
 git clone https://github.com/cyber-shuttle/CS-Bridge.git
 cd CS-Bridge
 bun install
-bun run watch      # esbuild in watch mode: extension + webview bundles
+bun run watch      # esbuild in watch mode: extension, webview and host-test bundles
 ```
 
-Press **F5** to open an Extension Development Host with the extension loaded; reload that window
-(*Developer: Reload Window*) to pick up a rebuild. The activity-bar entry is titled **CS Bridge**.
+Press **F5** and choose **VS Code Extension Development**. This opens an Extension Development Host with the extension
+loaded. Reload that window (*Developer: Reload Window*) to pick up a rebuild. The activity-bar entry is titled **CS
+Bridge**.
 
-The Extension Development Host is the only window that loads a development build — a remote window opened from it
-does not inherit the extension. Testing the connect path end to end therefore needs an installed build:
+The Extension Development Host is the only window that loads a development build. A remote window opened from it does
+not inherit the extension. To test the connect path end to end, you need an installed build:
 
 ```sh
 bun run dev        # package the .vsix and install it into VS Code
 ```
+
+This replaces your installed CS Bridge. It runs against your real sessions and storage. A build that raises
+`SCHEMA_VERSION` migrates that storage. Released versions then refuse to activate until a matching release ships.
 
 ## Before you open a pull request
 
@@ -37,25 +43,33 @@ bun run lint          # eslint src  (bun run lint:fix applies what it can)
 bun run test          # bun test over src/**/*.test.ts
 ```
 
-These three are exactly what `.github/workflows/ci.yml` runs on every pull request. esbuild does not type-check, so
-a `.tsx` type error surfaces only under `check-types`.
+CI (`.github/workflows/ci.yml`) runs these three after `bun install --frozen-lockfile`. It runs on every pull request
+and push to `main`. Commit `bun.lock` with any dependency change. esbuild does not type-check. A `.tsx` type error
+surfaces only under `check-types`.
 
 ## Submitting a change
 
 - Branch off `main` and open the pull request against `main`.
-- Cover new behaviour with a test. Tests sit beside what they test as `*.test.ts`. A module that imports `vscode`
-  cannot be loaded by the test runner, so testable logic belongs in a `vscode`-free module — see
-  [Source layout](docs/ARCHITECTURE.md#source-layout).
-- Say in the description what you ran and against what: the three commands above, plus the cluster and scheduler if
-  the change touches the launch or connect path. The webview `.tsx` rendering has no automated coverage, so UI
-  changes want a screenshot from the Extension Development Host.
-- Add a bullet under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for anything a user would notice.
-- Slurm's own terms (`CANCELLED`, `scancel`) stay as Slurm writes them; everywhere else the verb is "stop", not
-  "cancel", and the session status is `stopped`.
-- Keep CI green; a red check is the author's to clear.
+- Cover new behaviour with a test. Tests sit beside what they test as `*.test.ts`. `bun test` runs them with a stub
+  `vscode` module (`scripts/vscodeMock.js`). Logic that needs more of the VS Code API than the stub provides belongs
+  in a `vscode`-free module. See [Source layout](docs/09-source-layout.md).
+- Say in the description what you ran and against what. List the three commands above. Add the cluster and scheduler
+  if the change touches the launch or connect path.
 
-Source layout, the status model, the SSH transport and the build pipeline are in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Open work is in the
+  Webview layout has no automated checks beyond `bun run test:host`. UI changes want a screenshot from the Extension
+  Development Host.
+
+  `test:host` loads the extension in a downloaded VS Code with a throwaway profile but your real home directory. Each
+  run prepends to `~/.ssh/config` an `Include` of that profile's `ssh_config`. That `ssh_config` is deleted afterwards.
+  Each run also runs the storage migrations against `~/.cybershuttle`. Remove the stale `Include` lines after running
+  it.
+- Add a bullet under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for anything a user would notice.
+- Slurm's own terms (`CANCELLED`, `scancel`) stay as Slurm writes them. Everywhere else the verb is "stop", not
+  "cancel". The session status is `stopped`.
+- Keep CI green. A red check is the author's to clear.
+
+Source layout, the status model, the SSH transport and the build pipeline are in the
+[documentation](docs/README.md). Open work is in the
 [issue tracker](https://github.com/cyber-shuttle/CS-Bridge/issues). There is no CLA and no DCO sign-off.
 
 ## Releasing
@@ -63,11 +77,15 @@ Source layout, the status model, the SSH transport and the build pipeline are in
 Maintainers, one pull request per release:
 
 1. Bump `version` in `package.json`.
-2. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, open a fresh `[Unreleased]` above it,
-   and add the version's link definition at the bottom of the file. Group entries under the Keep a Changelog
-   headings only: Added, Changed, Deprecated, Removed, Fixed, Security.
-3. If the release needs a newer Linkspan, say so under the version heading (`Requires Linkspan X.Y.Z.`). The
-   changelog is the only place that companion-agent contract is recorded.
-4. Merge the pull request as `release: X.Y.Z`, then tag that commit `X.Y.Z` — no `v` prefix — and push the tag.
+2. In `CHANGELOG.md`:
+   - rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`;
+   - open a fresh `[Unreleased]` above it;
+   - add the version's link definition at the bottom of the file;
+   - point the `[Unreleased]` link at `X.Y.Z...HEAD`.
+
+   Group entries under the Keep a Changelog headings only: Added, Changed, Deprecated, Removed, Fixed, Security.
+3. If the release needs a newer Linkspan, raise `MINIMUM` in `src/modules/slurmLaunch.ts`. Every launch enforces it.
+   Say so under the version heading (`Requires Linkspan X.Y.Z.`).
+4. Merge the pull request as `release: X.Y.Z`. Then tag that commit `X.Y.Z` — no `v` prefix — and push the tag.
 5. `bun run package` produces `csbridge-X.Y.Z.vsix`. A maintainer uploads it to the VS Code Marketplace under the
-   `cybershuttle` publisher; there is no publish workflow.
+   `cybershuttle` publisher. There is no publish workflow.
