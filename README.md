@@ -9,9 +9,17 @@ CS Bridge lets you work on a high-performance computing (HPC) cluster's compute 
 own machine. Pick a cluster, say how much CPU, memory, GPU and time you need, and CS Bridge gets you a VS Code
 window on the node Slurm gives you, with the editor, terminal and debugger running next to your code and data.
 
-<img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/demo-sidebar.webp" alt="Requesting a compute node and watching the job start" width="360">
+<img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/demo-overview.webp" alt="Requesting a compute node from the CS Bridge menu and watching the job start" width="800">
 
 ## What You Can Do
+
+### Start everything from one menu
+
+The **+** in the Sessions view, or **CS Bridge: Open Menu** in the Command Palette, opens the CS Bridge menu: create
+a session on an SSH host, add a host, create a cloud VM, choose how sessions connect, and sign in or out of each
+account.
+
+<img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/demo-menu.webp" alt="A tour of the CS Bridge menu" width="800">
 
 ### Use the clusters you already have
 
