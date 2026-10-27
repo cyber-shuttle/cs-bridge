@@ -1,4 +1,4 @@
-// Named features and their stage: an experimental one is on only with csbridge.experimentalFeatures. docs/ARCHITECTURE.md
+// Named features and their stage: an experimental one is on only with csbridge.experimentalFeatures. docs/05-backends-and-transports.md
 // has the lifecycle.
 import * as vscode from 'vscode';
 import type { SlurmSession } from './models';
