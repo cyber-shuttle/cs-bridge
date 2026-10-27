@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-27
+
+### Changed
+
+- The README describes what CS Bridge lets you do, one capability at a time, with screenshots and demos of the
+  current interface, including a tour of the CS Bridge menu.
+- File locations and the reset steps moved from the README to the architecture document.
+
 ## [0.3.0] - 2026-10-25
 
 ### Added
@@ -377,7 +385,9 @@ Initial release of **CS Bridge** — remote HPC development from VS Code. Publis
 - Status bar countdown and progress toasts for active sessions
 - esbuild-based build producing a single bundled, minified `out/extension.js` (`tsc` used for type-checking only)
 
-[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.4...HEAD
+[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.3.1...HEAD
+[0.3.1]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.3.0...0.3.1
+[0.3.0]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.4...0.3.0
 [0.2.4]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.3...0.2.4
 [0.2.3]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.2...0.2.3
 [0.2.2]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.1...0.2.2
