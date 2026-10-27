@@ -191,6 +191,20 @@ A remote window recognises itself: `extension.ts` reads the workspace URI author
 `ssh-remote+<alias>` window it scopes the Sessions view to that one session, observe-only, and sets the
 `csbridge.remote` context so the SSH Hosts and Run History views hide.
 
+## Files on disk
+
+| Where | What |
+|---|---|
+| VS Code extension storage | sessions, run history and usage, window heartbeats, per-session SSH keys, and the `ssh_config` of per-session SSH hosts that `~/.ssh/config` includes; moved there from `~/.cybershuttle` on activation and removed by VS Code on uninstall |
+| Temp folder | SSH ControlMaster sockets |
+| OS keychain | the Microsoft account token, held by VS Code |
+| VS Code SecretStorage | the CyberShuttle credential and AWS access key **(experimental)**, until sign-out; the AWS-generated SSH key sits with the session SSH keys |
+| Cluster `~/.cybershuttle/bin/linkspan` | the agent, installed on first launch |
+| Cluster `~/.cybershuttle/logs/` | Linkspan output per session |
+
+To reset, remove the `cybershuttle.csbridge` folder in VS Code's `User/globalStorage`, its `Include` line in
+`~/.ssh/config`, and `~/.cybershuttle/` on the cluster.
+
 ## Schema migrations
 
 `schema.json` in extension storage holds one version. At activation, before any store reads, `migrate()`
