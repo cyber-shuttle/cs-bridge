@@ -91,8 +91,7 @@ export function SessionCard({ session, remote }: Props) {
                 {m.details ? <Divided items={m.details.map(t => <Text key={t} size={11}>{t}</Text>)} /> : <ResourceStats session={session} />}
                 <Row gap={6}>
                     <Chip label={m.kind} background={tint} />
-                    {m.walltime ? <Chip label={m.walltime} /> : null}
-                    <Row style={statusStyle}><Text title={m.status.title}>{m.status.text}</Text></Row>
+                    <Row style={statusStyle}><Text ellipsis title={m.status.title ?? m.status.text}>{m.status.text}</Text></Row>
                     {m.actions.length ? (
                         <Row gap={6} style={{ marginLeft: 'auto', flexShrink: 0, zoom: 0.85 }}>
                             {m.actions.map(a => a.kind === 'opening'

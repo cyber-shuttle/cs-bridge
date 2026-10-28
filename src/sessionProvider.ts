@@ -27,6 +27,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private preparing = false; // one prepare at a time, so one draft follows another
     private readonly shared: vscode.Disposable[] = [];
     private readonly opening = new Map<string, ReturnType<typeof setTimeout>>(); // each open's own fallback timer
+    private readonly starting = new Set<string>();
     private readonly monitor: SessionMonitor;
     private readonly slurm: SlurmBackend;
     private readonly ec2: Ec2Backend;
@@ -95,7 +96,11 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         dismissAlert: this.dismiss(() => { this.alert = null; }),
         addSession: m => this.createSession(m),
         refreshSlurmDiscovery: ({ alias }) => this.fetchSlurmDiscovery(alias, true),
-        prepareLaunchSession: ({ sessionId }) => void this.prepareLaunchSession(sessionId),
+        prepareLaunchSession: ({ sessionId }) => {
+            this.starting.add(sessionId);
+            void this.pushState();
+            void this.prepareLaunchSession(sessionId).finally(() => { this.starting.delete(sessionId); void this.pushState(); });
+        },
         launchSession: () => this.launchDraft(),
         stopSessionExecution: ({ sessionId }) => void this.stopSessionExecution(sessionId),
         stopRemoteSession: () => void vscode.commands.executeCommand('csbridge.stopRemoteSession'), // posted only by a remote window's card
@@ -212,7 +217,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
                     .map((s) => {
                         const live = windowState(s);
                         if (live.windowAlive) { clearTimeout(this.opening.get(s.id)); this.opening.delete(s.id); }
-                        return { ...s, status: statusOf(s), ...live, opening: this.opening.has(s.id), samples: readRecentSamples(s.id) };
+                        return { ...s, status: statusOf(s), ...live, opening: this.opening.has(s.id), starting: this.starting.has(s.id), samples: readRecentSamples(s.id) };
                     })
                     .sort((a, b) => b.id.localeCompare(a.id)), // newest first
                 draftAlias: this.draftAlias,
@@ -320,7 +325,8 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     private async prepareLaunchSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'prepare launch');
-        if (!session || this.preparing || live.busy.has(session.id) || live.connecting.has(session.id)) { return; } // one prepare at a time; a Start during a connect is a no-op
+        const wallMinutes = session && !isEc2(session) ? await pickWalltime(session.resources.wallMinutes) : 0;
+        if (!session || wallMinutes === undefined || this.preparing || live.busy.has(session.id) || live.connecting.has(session.id)) { return; } // one prepare at a time; a Start during a connect is a no-op
         this.preparing = true;
         live.busy.add(session.id);
         try {
@@ -335,7 +341,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         live.busy.add(session.id);
         try {
             if (session.connectionInfo) { await this.monitor.endSession(session); } // the previous run's teardown, before a transport switch hides it
-            patch(session, { transport: configuredTransport() });
+            patch(session, { transport: configuredTransport(), resources: { ...session.resources, wallMinutes } });
             const draft = await prepareLaunch(session, this.transports.transportFor(session));
             this.draft = { sessionId, ...draft };
         }
@@ -354,4 +360,16 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         const session = draft && getSession(draft.sessionId);
         return draft && session ? { sessionId: session.id, alias: session.alias, script: draft.script } : null;
     }
+}
+
+function pickWalltime(previous: number): Promise<number | undefined> {
+    const pick = vscode.window.createQuickPick<vscode.QuickPickItem & { minutes: number }>();
+    pick.title = 'Walltime';
+    pick.items = [30, 60, 120, 240, 480, 720, 1440].map(m => ({ label: m < 60 ? `${m} min` : `${m / 60} h`, minutes: m }));
+    pick.activeItems = pick.items.filter(i => i.minutes === previous);
+    return new Promise((resolve) => {
+        pick.onDidAccept(() => { resolve(pick.selectedItems[0]?.minutes); pick.dispose(); });
+        pick.onDidHide(() => { resolve(undefined); pick.dispose(); });
+        pick.show();
+    });
 }

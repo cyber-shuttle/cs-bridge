@@ -70,15 +70,17 @@ test('connected session: Current when this window, else Switch/Connect by window
     assert.deepEqual([connectingBtn?.kind, connectingBtn?.label], ['opening', 'Connecting…']);
 });
 
-test('cardModel: an HPC job and an EC2 instance differ only in chips, details, walltime and the running text', () => {
+test('cardModel: an HPC job and an EC2 instance differ only in chips, details and the running text', () => {
     const base = { alias: 'h', account: 'acct', partition: 'gpu', jobId: '42', errorMessage: '', submittedAt: 1_000, startedAt: 1_000, resources: { cores: 2, memoryMb: 4096, wallMinutes: 60 } };
     const hpc = cardModel(sess('connected', base), 601_000);
-    assert.deepEqual([hpc.kind, hpc.theme, hpc.chips, hpc.walltime, hpc.details, hpc.status.text], ['HPC', 'info', ['acct', 'gpu'], '1h 0m', undefined, '50m 0s left']);
+    assert.deepEqual([hpc.kind, hpc.theme, hpc.chips, hpc.details, hpc.status.text], ['HPC', 'info', ['acct', 'gpu'], undefined, '50m 0s left']);
     const ec2 = { region: 'us-east-1', type: 't3.micro', image: '', user: 'ubuntu', ip: '1.2.3.4' };
     const aws = cardModel(sess('connected', { ...base, ec2 }), 601_000);
-    assert.deepEqual([aws.kind, aws.theme, aws.chips, aws.walltime, aws.details, aws.status.text], ['AWS', 'warning', ['t3.micro', 'Ubuntu 24.04 LTS'], undefined, ['us-east-1', '42', '1.2.3.4'], 'Running']);
+    assert.deepEqual([aws.kind, aws.theme, aws.chips, aws.details, aws.status.text], ['AWS', 'warning', ['t3.micro', 'Ubuntu 24.04 LTS'], ['us-east-1', '42', '1.2.3.4'], 'Running']);
     assert.equal(cardModel(sess('preparing', base), 0).status.text, 'Starting Linkspan…');
     assert.equal(cardModel(sess('preparing', { ...base, ec2 }), 0).status.text, 'Booting…');
+    const starting = cardModel(sess('stopped', { ...base, starting: true }), 0);
+    assert.deepEqual([starting.actions[0]?.label, starting.canDelete], ['Starting…', false]);
 });
 
 test('cardModel: status text carries the error where there is one, with a hover title', () => {

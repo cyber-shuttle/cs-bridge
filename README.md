@@ -50,8 +50,8 @@ alias. Stop a session's job before you rename or remove its host.
 
 ### Request a compute node from a form
 
-Choose the partition, Slurm account, CPUs, memory and GPUs the cluster offers. Choose a walltime of up to 24 hours.
-**Add** checks the request with Slurm before saving it. **Start** shows the job script CS Bridge wrote. **Submit Job**
+Choose the partition, Slurm account, CPUs, memory and GPUs the cluster offers. **Add** checks the request with Slurm
+before saving it. **Start** asks for a walltime of up to 24 h, then shows the job script CS Bridge wrote. **Submit Job**
 submits it. There is no batch script to maintain.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/02-new-session.png" alt="New session form" width="360">
@@ -203,7 +203,7 @@ CS Bridge currently fails to activate when `~/.ssh` does not exist. Create it fi
 3. From the **+** menu, choose **Create New SSH Session** and pick an SSH host. To add a host first, choose **Add SSH
    Host** and paste its `ssh` command.
 4. Fill in the resource form and click **Add**.
-5. On the new session, click **Start**, review the job script, and click **Submit Job**.
+5. On the new session, click **Start**, choose a walltime, review the job script, and click **Submit Job**.
 6. Once the job runs, click **Connect**. A new VS Code window opens on the compute node.
 
 ## FAQ
