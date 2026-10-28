@@ -52,17 +52,21 @@ offers:
 | CPUs | 2 up to the partition's count |
 | Memory | 4, 8, 16, … 1024 GB, up to the partition's. The range is 4 to 128 GB when the partition reports none. 2 GB is excluded. It OOM-kills the VS Code server. |
 | GPU type and count | from the partition's GRES |
-| Walltime | 30 min, 1, 2, 4, 8, 12 or 24 h |
+
+The form has no walltime, so validation sends no `--time`.
 
 ## Start
+
+For a Slurm session, **Start** first asks for a walltime, from 30 min to 24 h. The last one is preselected. Escape
+cancels. The card shows busy until the preview opens.
 
 1. **Claim and clean up.** **Start** (`sessionProvider.ts`):
    - ends any monitoring loop with its teardown, or waits for a teardown already in flight;
    - drops an unsubmitted preview;
    - claims the session. It stops if another window owns it.
 
-   If the previous run left connection info, that run's teardown runs now. The configured transport is then written
-   to the record. This way a run keeps the transport it started with.
+   If the previous run left connection info, that run's teardown runs now. The configured transport and the walltime
+   are then written to the record. This way a run keeps the transport it started with.
 
    Start does nothing while:
    - another Start in this window is preparing;
@@ -131,7 +135,7 @@ offers:
 
 `buildSlurmScript` writes:
 
-- `#SBATCH` lines for job name, nodes, tasks, CPUs, memory, time and partition, plus account and `--gres` when set;
+- `#SBATCH` lines for job name, nodes, tasks, CPUs, memory and partition, plus time, account and `--gres` when set;
 - output and error logs at `~/.cybershuttle/logs/linkspan-session-$SLURM_JOB_ID.{out,err}`;
 - `unset XDG_RUNTIME_DIR TMPDIR`. Compute nodes have no logind. Without it, the inherited `/run/user/$UID` does not
   exist there. Unsetting both makes the VS Code server use node-local `/tmp`;

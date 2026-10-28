@@ -108,7 +108,7 @@ export enum SlurmJobStatus {
     UNKNOWN = 'unknown',
 }
 
-export type ViewSession = SlurmSession & { status: SessionStatus; samples: UsageSample[]; isCurrent?: boolean; windowAlive?: boolean; opening?: boolean };
+export type ViewSession = SlurmSession & { status: SessionStatus; samples: UsageSample[]; isCurrent?: boolean; windowAlive?: boolean; opening?: boolean; starting?: boolean };
 
 export const SAMPLE_HISTORY_LEN = 20; // rolling live-sample window, also the sparkline slot count
 export const POLLING_INTERVAL_MS = 5000;

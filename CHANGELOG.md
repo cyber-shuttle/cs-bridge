@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Start** on an HPC session asks for a walltime each time. The card shows busy until the script appears.
+- The session form no longer asks for a walltime.
+- HPC cards drop the walltime chip.
+- Long card status text is cut short. Hover to see all of it.
+- The architecture document is split into numbered pages under `docs/`.
+
 ## [0.3.1] - 2026-10-27
 
 ### Changed
