@@ -8,16 +8,19 @@ async function main() {
     const root = path.resolve(__dirname, '..');
     const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'csbridge-host-'));
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'csbridge-ws-'));
+    // The extension adds an Include of its storage to ~/.ssh/config, which must not outlive this profile.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'csbridge-home-'));
+    fs.mkdirSync(path.join(home, '.ssh'), { mode: 0o700 }); // activation fails without ~/.ssh
     try {
         await runTests({
             extensionDevelopmentPath: root,
             extensionTestsPath: path.join(root, 'out', 'hostTests.js'),
             launchArgs: [workspace, '--user-data-dir', userData, '--disable-extensions', '--disable-workspace-trust'],
-            extensionTestsEnv: { CSBRIDGE_USER_DATA: userData },
+            extensionTestsEnv: { CSBRIDGE_USER_DATA: userData, HOME: home },
         });
     }
     finally {
-        for (const dir of [userData, workspace]) { fs.rmSync(dir, { recursive: true, force: true }); }
+        for (const dir of [userData, workspace, home]) { fs.rmSync(dir, { recursive: true, force: true }); }
     }
 }
 
