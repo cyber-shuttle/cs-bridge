@@ -5,9 +5,16 @@
 [![Installs](https://vsmarketplacebadges.dev/downloads-short/cybershuttle.csbridge.svg)](https://marketplace.visualstudio.com/items?itemName=cybershuttle.csbridge)
 [![License](https://img.shields.io/github/license/cyber-shuttle/CS-Bridge?color=blue)](LICENSE)
 
-CS Bridge lets you work on a high-performance computing (HPC) cluster's compute node from VS Code as if it were your
-own machine. Pick a cluster and say how much CPU, memory, GPU and time you need. CS Bridge then gets you a VS Code
-window on the node Slurm gives you. The editor, terminal and debugger run next to your code and data.
+# CS Bridge
+
+CS Bridge launches remote VS Code sessions directly on the compute nodes of SLURM-based HPC clusters and connects them to your local VS Code, so you can develop on the cluster as if it were your own machine.
+
+## Features
+
+- **Automatic cluster discovery.** CS Bridge detects the cluster's partitions and your allocations for you, with no manual configuration needed.
+- **Simple resource selection.** Pick the partition, allocation, and resources for your session through a clean, minimal interface.
+- **Native VS Code experience.** Sessions run on the compute node but open in your local VS Code, with your usual extensions, settings, and workflow.
+- **Experimental AWS EC2 support.** Beyond HPC clusters, CS Bridge can also launch remote VS Code sessions backed by AWS EC2 instances.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/demo-overview.webp" alt="Requesting a compute node from the CS Bridge menu and watching the job start" width="800">
 
