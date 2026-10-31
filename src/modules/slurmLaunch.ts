@@ -103,7 +103,8 @@ export async function installLinkspan(session: Host, run: RemoteRunner, log: Log
 // --test-only runs the site submit filter without queueing.
 export async function validateSlurmConfig(session: SlurmSession, run: RemoteRunner, log: LogSink): Promise<void> {
     // A dry run needs no tunnel or port: the script's Linkspan line is a placeholder --test-only never executes.
-    const scriptB64 = Buffer.from(buildSlurmScript(session, devTunnelLaunch({ id: '', cluster: '' }, ''), 0)).toString('base64');
+    // Some sites require a time limit, and a new session has none yet, so 30 min stands in.
+    const scriptB64 = Buffer.from(buildSlurmScript({ ...session, resources: { ...session.resources, wallMinutes: 30 } }, devTunnelLaunch({ id: '', cluster: '' }, ''), 0)).toString('base64');
     await run.runRemoteCommand(session.alias, `echo '${scriptB64}' | base64 -d | sbatch --test-only`);
     log.info(`Slurm on SSH host ${session.alias} validated the session configuration`);
 }

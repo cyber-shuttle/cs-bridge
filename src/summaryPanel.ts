@@ -38,7 +38,7 @@ export function openSummaryPanel(extensionUri: vscode.Uri, session: SlurmSession
         const recorded = past ?? readSessionRuns(live.id).find(r => isSameRun(r, job));
         const state: SummaryState = {
             session: recorded
-                ? { ...live, alias: recorded.alias, account: recorded.account, partition: recorded.partition, jobId: recorded.jobId, startedAt: recorded.startedAt, status: recorded.finalState, samples: recorded.samples }
+                ? { ...live, alias: recorded.alias, account: recorded.account, partition: recorded.partition, jobId: recorded.jobId, startedAt: recorded.startedAt, status: recorded.finalState, samples: recorded.samples, resources: { ...live.resources, wallMinutes: recorded.wallMinutes ?? live.resources.wallMinutes } }
                 : { ...live, status: statusOf(live), samples: readRecentSamples(live.id) },
             stats: recorded ? recorded.stats : readSessionStats(live.id), // the live copy sacct refreshes in-run
             at: recorded ? recorded.endedAt : Date.now(),

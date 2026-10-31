@@ -13,7 +13,7 @@ CS Bridge launches remote VS Code sessions directly on the compute nodes of SLUR
 
 - **Automatic cluster discovery.** CS Bridge detects the cluster's partitions and your allocations for you, with no manual configuration needed.
 - **Simple resource selection.** Pick the partition, allocation, and resources for your session through a clean, minimal interface.
-- **Native VS Code experience.** Sessions run on the compute node but open in your local VS Code, with your usual extensions, settings, and workflow.
+- **Native VS Code experience.** Sessions run on the compute node but open in your local VS Code, with your usual settings and workflow. Remote extensions install per session; see the [FAQ](#faq).
 - **Experimental AWS EC2 support.** Beyond HPC clusters, CS Bridge can also launch remote VS Code sessions backed by AWS EC2 instances.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/demo-overview.webp" alt="Requesting a compute node from the CS Bridge menu and watching the job start" width="800">

@@ -53,7 +53,7 @@ offers:
 | Memory | 4, 8, 16, … 1024 GB, up to the partition's. The range is 4 to 128 GB when the partition reports none. 2 GB is excluded. It OOM-kills the VS Code server. |
 | GPU type and count | from the partition's GRES |
 
-The form has no walltime, so validation sends no `--time`.
+The form has no walltime. Validation sends `--time` for 30 min, because some sites require one.
 
 ## Start
 
@@ -65,8 +65,8 @@ cancels. The card shows busy until the preview opens.
    - drops an unsubmitted preview;
    - claims the session. It stops if another window owns it.
 
-   If the previous run left connection info, that run's teardown runs now. The configured transport and the walltime
-   are then written to the record. This way a run keeps the transport it started with.
+   If the previous run left connection info, that run's teardown runs now. The configured transport is then written
+   to the record. This way a run keeps the transport it started with.
 
    Start does nothing while:
    - another Start in this window is preparing;
@@ -87,8 +87,8 @@ cancels. The card shows busy until the preview opens.
 
    **Submit**:
    - discards the draft;
-   - resets the record's run fields. It sets `desired: 'running'` and `submittedAt`. It clears `observed`, `failure`,
-     `errorMessage`, `startedAt` and `jobId`;
+   - resets the record's run fields. It sets the walltime, `desired: 'running'` and `submittedAt`. It clears
+     `observed`, `failure`, `errorMessage`, `startedAt` and `jobId`;
    - marks the session as launching (`submitting`);
    - continues with `SlurmBackend.start` (`sessionSupport.ts`).
 
@@ -135,7 +135,7 @@ cancels. The card shows busy until the preview opens.
 
 `buildSlurmScript` writes:
 
-- `#SBATCH` lines for job name, nodes, tasks, CPUs, memory and partition, plus time, account and `--gres` when set;
+- `#SBATCH` lines for job name, nodes, tasks, CPUs, memory, time and partition, plus account and `--gres` when set;
 - output and error logs at `~/.cybershuttle/logs/linkspan-session-$SLURM_JOB_ID.{out,err}`;
 - `unset XDG_RUNTIME_DIR TMPDIR`. Compute nodes have no logind. Without it, the inherited `/run/user/$UID` does not
   exist there. Unsetting both makes the VS Code server use node-local `/tmp`;
@@ -264,8 +264,8 @@ cannot be reached. A run whose deadline passed while VS Code was closed is torn 
 
 ## Delete
 
-**Delete** is the card's ×. It is shown for `not_started`, `stopped` and `failed`. After confirmation,
-`confirmAndDeleteSession` (`sessionProvider.ts`):
+**Delete** is the card's ×. It is shown for `not_started`, `stopped` and `failed`, except while Start is busy. After
+confirmation, `confirmAndDeleteSession` (`sessionProvider.ts`):
 
 1. does nothing while a task for the session runs. Otherwise it ends any loop with its teardown, or waits for a
    teardown in flight, then claims the session. It stops if another window owns it;

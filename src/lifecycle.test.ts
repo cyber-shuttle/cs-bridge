@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { afterEach, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { panels } from '../scripts/vscodeMock.js';
+import { panels, quickPick } from '../scripts/vscodeMock.js';
 import { memoryFiles } from './modules/memoryFiles';
 import { must } from './modules/testSupport';
 import type { JsonDir } from './modules/store';
@@ -78,10 +78,11 @@ test('the summary shows a run as recorded, pinned to the job it opened on', asyn
     let state = last();
     assert.equal(state.pending, true, 'no run recorded yet');
     await patch(s, { jobId: '8' }); // a restart moves the session on; the panel stays with job 7
-    const run: Run = { sessionId: s.id, alias: 'delta', jobId: '7', account: '', partition: 'cpu', startedAt: s.startedAt, endedAt: 5_000, finalState: 'stopped', samples: [{ memBytes: 1 }], stats: { cores: 1 } };
+    const run: Run = { sessionId: s.id, alias: 'delta', jobId: '7', account: '', partition: 'cpu', startedAt: s.startedAt, endedAt: 5_000, finalState: 'stopped', wallMinutes: 120, samples: [{ memBytes: 1 }], stats: { cores: 1 } };
     appendRun(run);
     state = last();
     assert.equal(state.pending, false);
+    assert.equal(state.session.resources.wallMinutes, 120, 'the run\'s own walltime');
     assert.equal(state.at, 5_000);
     assert.equal(state.session.status, 'stopped');
     assert.deepEqual(state.session.samples, [{ memBytes: 1 }]);
@@ -163,7 +164,7 @@ test('a teardown that the record write re-enters runs once, and a prepare leaves
 
     const before = { sshPort: 40, controlPort: 21000 };
     await patch(s, { connectionInfo: before }); // an old run's, not yet torn down by a fake end
-    const draft = await prepareLaunch(s, { prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }) });
+    const draft = await prepareLaunch(s, { prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }) }, 60);
     assert.deepEqual(s.connectionInfo, before, 'the record keeps the old run until submit');
     assert.ok(draft.connectionInfo.controlPort >= 20000);
 });
@@ -189,12 +190,15 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
     } as never);
     const state = () => posted.at(-1)?.state;
 
+    quickPick.minutes = 60;
     receive({ command: 'prepareLaunchSession', sessionId: s.id });
     await sleep(20);
+    quickPick.minutes = 0;
     assert.deepEqual(released, [s.id], 'the old run is torn down before the next is prepared');
     assert.equal(s.connectionInfo, undefined);
     assert.equal(state()?.preview?.sessionId, s.id, 'the preview is up');
-    assert.match(must(state()?.preview).script, /^#SBATCH --time=00:30:00$/m, 'the last walltime is preselected');
+    assert.match(must(state()?.preview).script, /^#SBATCH --time=01:00:00$/m, 'the picked walltime');
+    assert.equal(s.resources.wallMinutes, 30, 'the record keeps the last run\'s walltime until Submit');
     assert.equal(owns(s), true, 'the preview holds the claim');
 
     await files.write('windows/other.json', JSON.stringify({ at: Date.now() }));

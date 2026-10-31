@@ -68,7 +68,6 @@ test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan in
     assert.match(script, /^#SBATCH --cpus-per-task=4$/m);
     assert.match(script, /^#SBATCH --mem=8192M$/m);
     assert.match(script, /^#SBATCH --time=1-01:00:00$/m);
-    assert.doesNotMatch(buildSlurmScript({ ...session, resources: { ...session.resources, wallMinutes: 0 } }, devTunnelLaunch({ id: 'tid', cluster: 'use' }, 'tok'), 25000), /--time/, 'no walltime, no --time');
     assert.match(script, /^#SBATCH --partition=gpu$/m);
     assert.match(script, /^#SBATCH --account=acct1$/m);
     assert.match(script, /^#SBATCH --gres=gpu:a100:2$/m);

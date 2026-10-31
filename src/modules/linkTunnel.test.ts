@@ -4,8 +4,19 @@ import * as net from 'node:net';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { server as WebSocketServer, w3cwebsocket } from 'websocket';
-import { LinkRelayClient } from './linkTunnel';
+import { LinkManagementClient, LinkRelayClient } from './linkTunnel';
 import { must } from './testSupport';
+import type { SlurmSession } from '../models';
+
+test('a new link session is defined with the picked walltime', async () => {
+    const defined: number[] = [];
+    const plane = {
+        createSession: async (s: SlurmSession) => { defined.push(s.resources.wallMinutes); return { id: 'p' }; },
+        stopSession: async () => { }, attachLink: async () => ({ port: 1, link: { url: '', token: '' } }),
+    };
+    await new LinkManagementClient(plane as never).attachTunnel({ resources: { wallMinutes: 0 } } as SlurmSession, 60);
+    assert.deepEqual(defined, [60]);
+});
 
 // A local stand-in for cs-plane's forward: a real WebSocket server that accepts cybershuttle.v1 and pipes each socket to
 // a real TCP echo server. The relay dials it over a real WebSocket; only the host differs from cs-plane's.

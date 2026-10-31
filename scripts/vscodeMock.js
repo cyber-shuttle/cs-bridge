@@ -10,6 +10,7 @@ class EventEmitter {
     dispose() { this.listeners.clear(); }
 }
 export const panels = [];
+export const quickPick = { minutes: 0 }; // the walltime the next pick answers; 0 takes the preselected one
 mock.module('vscode', () => ({
     EventEmitter,
     ThemeColor: class { constructor(id) { this.id = id; } },
@@ -26,7 +27,7 @@ mock.module('vscode', () => ({
     window: {
         createOutputChannel: () => ({ info: noop, warn: noop, error: noop, trace: noop, dispose: noop }),
         showErrorMessage: async () => undefined, showWarningMessage: async () => undefined, showInformationMessage: async () => undefined,
-        createQuickPick: () => { const pick = { activeItems: [], onDidHide: noop, dispose: noop, onDidAccept: f => { pick.show = () => { pick.selectedItems = pick.activeItems; f(); }; } }; return pick; },
+        createQuickPick: () => { const pick = { activeItems: [], onDidHide: noop, dispose: noop, onDidAccept: f => { pick.show = () => { pick.selectedItems = [pick.items.find(i => i.minutes === quickPick.minutes) ?? pick.activeItems[0] ?? pick.items[0]]; f(); }; } }; return pick; },
         createWebviewPanel: () => {
             const received = new EventEmitter(), disposed = new EventEmitter();
             const panel = { webview: { html: '', cspSource: 'vscode-webview:', asWebviewUri: u => u, posted: [], postMessage: async m => { panel.webview.posted.push(m); return true; }, onDidReceiveMessage: received.event }, onDidDispose: disposed.event, dispose: () => disposed.fire(), receive: m => received.fire(m) };

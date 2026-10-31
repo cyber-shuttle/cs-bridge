@@ -16,8 +16,8 @@ export class LinkManagementClient {
     }
 
     // Attach refuses a live session and a lost release would leave one; a 404 on stop is a session deleted elsewhere.
-    async attachTunnel(session: SlurmSession) {
-        const define = async () => (await this.plane.createSession(session)).id;
+    async attachTunnel(session: SlurmSession, wallMinutes: number) {
+        const define = async () => (await this.plane.createSession({ ...session, resources: { ...session.resources, wallMinutes } })).id;
         let tunnelId = session.planeId ?? await define();
         await this.plane.stopSession(tunnelId).catch(async (err) => {
             if (!(err instanceof PlaneError && err.status === 404)) { throw err; }
