@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The session form no longer asks for a walltime.
 - HPC cards drop the walltime chip.
 - A run's summary shows that run's walltime. Earlier runs take the session's current one.
+- Each link run gets a new Airavata session, so it carries the picked walltime.
 - Long card status text is cut short. Hover to see all of it.
 - The README is revised, and the architecture document is split into numbered pages under `docs/`.
 
