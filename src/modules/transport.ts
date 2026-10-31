@@ -96,8 +96,9 @@ class Link implements Transport {
 
     async prepare(session: SlurmSession, ci: ConnectionInfo, wallMinutes: number) {
         try {
-            const { tunnelId, port, link } = await this.management().attachTunnel(session, wallMinutes);
-            patch(session, { planeId: tunnelId });
+            const tunnelId = await this.management().defineTunnel(session, wallMinutes);
+            patch(session, { planeId: tunnelId }); // before attach, so a failed attach leaves no session behind
+            const { port, link } = await this.plane.attachLink(tunnelId);
             ci.controlPort = port;
             return linkLaunch(link.url, link.token);
         }

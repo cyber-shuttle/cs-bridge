@@ -58,7 +58,8 @@ The form has no walltime. Validation sends `--time` for 30 min, because some sit
 ## Start
 
 For a Slurm session, **Start** first asks for a walltime, from 30 min to 24 h. The last one is preselected. Escape
-cancels. The card shows busy until the preview opens.
+cancels. The picked walltime goes to `sbatch --test-only` before the preview. A refusal shows as the session's error.
+The card shows busy until the preview opens.
 
 1. **Claim and clean up.** **Start** (`sessionProvider.ts`):
    - ends any monitoring loop with its teardown, or waits for a teardown already in flight;

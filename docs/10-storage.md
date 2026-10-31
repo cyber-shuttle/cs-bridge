@@ -79,7 +79,7 @@ A run is a `Run` with `RunStats` and `samples`.
 
 ## Schema migrations
 
-`schema.json` in extension storage holds the storage version. The current one is `SCHEMA_VERSION = 3` (`store.ts`).
+`schema.json` in extension storage holds the storage version. The current one is `SCHEMA_VERSION = 4` (`store.ts`).
 At activation, `openStorage` (`storage.ts`) calls `migrate()` before any store is read. It:
 
 1. reads the version on disk;
@@ -96,6 +96,7 @@ locks `~/.ssh/config`. So on a machine without `~/.ssh/`, activation fails until
 | 0 → 1 | inside `~/.cybershuttle`: splits `sessions.json` into `sessions/`, renames fields to Airavata's names, reissues non-uuid ids, turns `metrics/` into `runs/`, removes `ssh_hosts` and its `Include` |
 | 1 → 2 | moves records and SSH keys from `~/.cybershuttle` into extension storage, removes the old `Include` and CS Bridge's entries in `~/.cybershuttle` |
 | 2 → 3 | replaces the stored status with `desired`, `observed` and `failure` |
+| 3 → 4 | gives each run without a walltime its session's current one |
 
 | Change | Rule |
 |---|---|

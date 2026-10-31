@@ -50,7 +50,7 @@ export class Plane {
         return email;
     }
 
-    createSession(session: SlurmSession) { return this.api<{ id: string }>('sessions', 'POST', toSpec(session)); }
+    createSession(session: SlurmSession, idempotencyKey: string) { return this.api<{ id: string }>('sessions', 'POST', toSpec(session, idempotencyKey)); }
     attachLink(id: string) { return this.api<{ port: number; link: { url: string; token: string } }>(`sessions/${id}/attach`, 'POST', { tunnelModes: ['link'] }); }
     stopSession(id: string) { return this.api(`sessions/${id}/stop`, 'POST'); }
     deleteSession(id: string) { return this.api(`sessions/${id}`, 'DELETE'); }
@@ -106,5 +106,5 @@ export class Plane {
 }
 
 // A session as cs-plane defines it, keyed by its local id so every launch of it maps to one cs-plane session.
-const toSpec = ({ id, alias, account, partition, rootFolder, resources }: SlurmSession) =>
-    ({ idempotencyKey: id, alias, account: account || undefined, partition, rootFolder: rootFolder || '$HOME', resources });
+const toSpec = ({ alias, account, partition, rootFolder, resources }: SlurmSession, idempotencyKey: string) =>
+    ({ idempotencyKey, alias, account: account || undefined, partition, rootFolder: rootFolder || '$HOME', resources });

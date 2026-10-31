@@ -52,7 +52,7 @@ test('migrate brings every ~/.cybershuttle layout into the store, reruns idempot
         connectionInfo: { sshPort: 40, controlPort: 25000 },
     });
     assert.deepEqual(record(`runs/${UUID}.json`), {
-        runs: [{ sessionId: UUID, alias: 'anvil', jobId: '8', account: 'a', partition: 'q', endedAt: 5, finalState: 'stopped', stats: { requestedMemory: '2.0 GB', elapsedSeconds: 10, memoryEfficiencyPct: 50 }, samples: [{ memBytes: 1 }] }],
+        runs: [{ wallMinutes: 30, sessionId: UUID, alias: 'anvil', jobId: '8', account: 'a', partition: 'q', endedAt: 5, finalState: 'stopped', stats: { requestedMemory: '2.0 GB', elapsedSeconds: 10, memoryEfficiencyPct: 50 }, samples: [{ memBytes: 1 }] }],
         samples: [{ memBytes: 2 }], stats: { requestedMemory: '1.0 GB' },
     });
     const reissued = [...files.texts.keys()].filter(n => n.startsWith('sessions/')).map(record).find(s => s.id !== UUID);

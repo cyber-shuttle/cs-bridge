@@ -345,6 +345,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         try {
             if (session.connectionInfo) { await this.monitor.endSession(session); } // the previous run's teardown, before a transport switch hides it
             patch(session, { transport: configuredTransport() });
+            await validateSlurmConfig(session, SshManager.getInstance(), this.logger, wallMinutes);
             const draft = await prepareLaunch(session, this.transports.transportFor(session), wallMinutes);
             this.draft = { sessionId, wallMinutes, ...draft };
         }

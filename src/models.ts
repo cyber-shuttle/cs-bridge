@@ -146,7 +146,7 @@ export interface Run {
     startedAt?: number;
     endedAt: number;
     finalState: SessionStatus;
-    wallMinutes?: number; // absent on runs from before 0.4.0
+    wallMinutes: number;
     stats?: RunStats;
     samples: UsageSample[];
 }

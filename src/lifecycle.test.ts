@@ -16,6 +16,7 @@ import { Ec2 } from './modules/ec2';
 import { fakeClient } from './modules/fakeEc2Client';
 import { openSummaryPanel } from './summaryPanel';
 import { sleep } from './modules/util';
+import { SshManager } from './modules/sshSupport';
 
 const files = memoryFiles();
 const fail = (err: unknown) => assert.fail(String(err));
@@ -169,7 +170,8 @@ test('a teardown that the record write re-enters runs once, and a prepare leaves
     assert.ok(draft.connectionInfo.controlPort >= 20000);
 });
 
-test('a relaunch preview outlives a heartbeat, and dropping it releases the attach it made', async () => {
+test('a relaunch preview outlives a heartbeat, and dropping it releases the attach it made', async (t) => {
+    t.mock.method(SshManager, 'getInstance', () => ({ runRemoteCommand: async () => '' }) as never);
     const s = running();
     await patch(s, { jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() }, connectionInfo: { sshPort: 40, controlPort: 21000, localPort: 5 } });
     assert.equal(statusOf(s), 'stopped');
@@ -215,7 +217,37 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
     provider.dispose();
 });
 
-test('a second Start during a preview keeps the claim and gives the first attach back', async () => {
+test('a walltime Slurm refuses stops the Start before the attach', async (t) => {
+    const s = running();
+    await patch(s, { jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() } });
+    const commands: string[] = [];
+    t.mock.method(SshManager, 'getInstance', () => ({
+        runRemoteCommand: async (_: string, command: string) => { commands.push(command); throw new Error('sbatch: error: Requested time limit is invalid'); },
+    }) as never);
+    let attached = false;
+    const transport = {
+        signedIn: async () => true, prepare: async () => { attached = true; return { tunnelArgs: '', sbatchEnv: {} }; }, release: async () => { },
+    } as unknown as Transport;
+    const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
+    const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { } }, aws);
+    let receive: (m: SessionsMessage) => void = () => { };
+    provider.resolveWebviewView({
+        webview: { options: {}, html: '', cspSource: 'x', asWebviewUri: (u: unknown) => u, postMessage: async () => true, onDidReceiveMessage: (l: (m: SessionsMessage) => void) => { receive = l; return { dispose() { } }; } },
+        visible: true, onDidChangeVisibility: () => ({ dispose() { } }), onDidDispose: () => ({ dispose() { } }),
+    } as never);
+
+    quickPick.minutes = 1440;
+    receive({ command: 'prepareLaunchSession', sessionId: s.id });
+    await sleep(20);
+    quickPick.minutes = 0;
+    assert.match(Buffer.from(must(commands[0]?.match(/echo '(.+?)'/)?.[1]), 'base64').toString(), /^#SBATCH --time=1-00:00:00$/m, 'the picked walltime is the one checked');
+    assert.equal(attached, false);
+    assert.match(s.errorMessage, /time limit is invalid/);
+    provider.dispose();
+});
+
+test('a second Start during a preview keeps the claim and gives the first attach back', async (t) => {
+    t.mock.method(SshManager, 'getInstance', () => ({ runRemoteCommand: async () => '' }) as never);
     const s = running();
     await patch(s, { jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() } });
     const log: string[] = [];

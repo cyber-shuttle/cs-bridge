@@ -3,8 +3,8 @@ import { Files, JsonDir } from './store';
 
 // One file per session: runs/{id}.json = { runs, samples, stats }, the run history, live samples and live sacct copy.
 const RUNS_PER_SESSION = 10;
-// On disk any field may be absent, and a run recorded before 0.2.4 may lack its samples.
-export type StoredRunsFile = Partial<Omit<RunsFile, 'runs'> & { runs: (Omit<Run, 'samples'> & Partial<Run>)[] }>;
+// On disk any field may be absent, a run recorded before 0.2.4 may lack its samples, and one whose session file was gone at schema 4 its walltime.
+export type StoredRunsFile = Partial<Omit<RunsFile, 'runs'> & { runs: (Omit<Run, 'samples' | 'wallMinutes'> & Partial<Run>)[] }>;
 let runsDir: JsonDir<StoredRunsFile>;
 
 export async function initRunStore(files: Files, onError: (err: unknown) => void) {
@@ -15,7 +15,7 @@ export async function initRunStore(files: Files, onError: (err: unknown) => void
 
 export const isSameRun = (a: Pick<Run, 'alias' | 'jobId'>, b: Pick<Run, 'alias' | 'jobId'>): boolean =>
     a.alias === b.alias && a.jobId === b.jobId;
-const whole = ({ runs = [], ...f }: StoredRunsFile = {}): RunsFile => ({ samples: [], ...f, runs: runs.map(r => ({ samples: [], ...r })) });
+const whole = ({ runs = [], ...f }: StoredRunsFile = {}): RunsFile => ({ samples: [], ...f, runs: runs.map(r => ({ samples: [], wallMinutes: 0, ...r })) });
 const read = (id: string): RunsFile => whole(runsDir.get(id));
 
 // fn returns null to skip the write.
