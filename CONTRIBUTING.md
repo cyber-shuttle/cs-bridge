@@ -60,7 +60,7 @@ surfaces only under `check-types`.
   Development Host.
 
   `test:host` loads the extension in a downloaded VS Code with a throwaway profile and a temporary `HOME`. Both are
-  deleted afterwards. On Windows `HOME` does not set the home directory, so each run still writes to the real one.
+  deleted afterwards. On Windows `HOME` is ignored, so each run writes to the real home.
 - Add a bullet under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for anything a user would notice.
 - Slurm's own terms (`CANCELLED`, `scancel`) stay as Slurm writes them. Everywhere else the verb is "stop", not
   "cancel". The session status is `stopped`.

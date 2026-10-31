@@ -28,10 +28,9 @@ with. Changing the setting affects the next Start.
    - It is cleared on a `401`, or when Airavata refuses the refresh with a 4xx.
    - A 5xx or network error during refresh keeps the credential.
 2. **Prepare.** `Link.prepare` (`transport.ts`), through `LinkManagementClient.defineTunnel` (`linkTunnel.ts`):
-   - stops and deletes the Airavata session in `planeId`, if any. Airavata cannot change a session's walltime. A `404`
-     is ignored;
-   - defines a new one, with the picked walltime and a new idempotency key, and saves the id as `planeId`. A reused key
-     would restart Airavata's run count, and its run history drops a repeated run;
+   - stops and deletes the Airavata session in `planeId`, if any, ignoring a `404`;
+   - defines a new one with the picked walltime and a new idempotency key, and saves its id as `planeId`. Airavata
+     cannot change a walltime, and a reused key would restart its run count;
    - attaches with `tunnelModes: ["link"]`;
    - replaces the control port with the one Airavata assigns.
 

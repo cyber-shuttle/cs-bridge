@@ -53,13 +53,13 @@ offers:
 | Memory | 4, 8, 16, … 1024 GB, up to the partition's. The range is 4 to 128 GB when the partition reports none. 2 GB is excluded. It OOM-kills the VS Code server. |
 | GPU type and count | from the partition's GRES |
 
-The form has no walltime. Validation sends `--time` for 30 min, because some sites require one.
+The form has no walltime. Validation uses 30 min, because some sites require one.
 
 ## Start
 
 For a Slurm session, **Start** first asks for a walltime, from 30 min to 24 h. The last one is preselected. Escape
-cancels. The picked walltime goes to `sbatch --test-only` before the preview. A refusal shows as the session's error.
-The card shows busy until the preview opens.
+cancels. `sbatch --test-only` checks the pick before the preview. A refusal shows on the session. The card shows busy
+until the preview opens.
 
 1. **Claim and clean up.** **Start** (`sessionProvider.ts`):
    - ends any monitoring loop with its teardown, or waits for a teardown already in flight;

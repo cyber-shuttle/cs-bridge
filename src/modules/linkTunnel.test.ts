@@ -9,7 +9,7 @@ import { PlaneError } from '../plane';
 import { must } from './testSupport';
 import type { SlurmSession } from '../models';
 
-test('each link run replaces the Airavata session, so it carries the picked walltime', async () => {
+test('each link run replaces the Airavata session', async () => {
     const calls: (string | number)[] = [];
     const plane = {
         createSession: async (s: SlurmSession) => { calls.push(s.resources.wallMinutes); return { id: 'p' }; },

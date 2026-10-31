@@ -15,8 +15,8 @@ export class LinkManagementClient {
         return { tunnelId, accessTokens: { connect: (await this.plane.sessionAccess(tunnelId)).jupyter.token } };
     }
 
-    // cs-plane cannot change a session's walltime, so each run gets a new session. A reused key would restart cs-plane's
-    // run count, and its history drops a repeated run. A 404 is a session deleted elsewhere.
+    // cs-plane cannot change a walltime, so each run gets a new session. A reused key would restart its run count.
+    // A 404 is a session deleted elsewhere.
     async defineTunnel(session: SlurmSession, wallMinutes: number) {
         if (session.planeId) {
             await this.deleteTunnel({ tunnelId: session.planeId }).catch((err) => {

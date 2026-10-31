@@ -3,7 +3,7 @@ import { Files, JsonDir } from './store';
 
 // One file per session: runs/{id}.json = { runs, samples, stats }, the run history, live samples and live sacct copy.
 const RUNS_PER_SESSION = 10;
-// On disk any field may be absent, a run recorded before 0.2.4 may lack its samples, and one whose session file was gone at schema 4 its walltime.
+// On disk any field may be absent. Runs from before 0.2.4 may lack samples, and runs that outlived their session a walltime.
 export type StoredRunsFile = Partial<Omit<RunsFile, 'runs'> & { runs: (Omit<Run, 'samples' | 'wallMinutes'> & Partial<Run>)[] }>;
 let runsDir: JsonDir<StoredRunsFile>;
 
