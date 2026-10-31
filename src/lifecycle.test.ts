@@ -194,6 +194,7 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
     assert.deepEqual(released, [s.id], 'the old run is torn down before the next is prepared');
     assert.equal(s.connectionInfo, undefined);
     assert.equal(state()?.preview?.sessionId, s.id, 'the preview is up');
+    assert.match(must(state()?.preview).script, /^#SBATCH --time=00:30:00$/m, 'the last walltime is preselected');
     assert.equal(owns(s), true, 'the preview holds the claim');
 
     await files.write('windows/other.json', JSON.stringify({ at: Date.now() }));

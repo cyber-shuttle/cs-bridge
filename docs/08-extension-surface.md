@@ -60,7 +60,7 @@ error. The extension answers with one message, `{command: 'state', state}`.
 | Sessions | `addSession` | validates with `sbatch --test-only`, then saves (`createSession`) |
 | Sessions | `refreshSlurmDiscovery` | reruns discovery for the SSH host, bypassing the cache |
 | Sessions | `dismissDraftSession`, `dismissPreview`, `dismissAlert` | closes the draft form; drops the preview and its run; closes the validation alert |
-| Sessions | `prepareLaunchSession` | **Start**: prepares and shows the script preview. For an EC2 session, submits at once. |
+| Sessions | `prepareLaunchSession` | **Start**: asks for a walltime, prepares and shows the script preview. For an EC2 session, submits at once. |
 | Sessions | `launchSession` | **Submit Job** in the preview |
 | Sessions | `connectTunnel` | **Connect** and **Switch** (`connectSession`) |
 | Sessions | `stopSessionExecution` | **Stop**: confirms, then `requestStop` |

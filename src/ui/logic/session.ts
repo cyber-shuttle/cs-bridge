@@ -54,7 +54,7 @@ export function dotColor(status: ViewSession['status']): string {
 
 export function sessionActions(session: ViewSession): SessionAction[] {
     const s = session.status;
-    if (isDeletable(s)) { return [{ kind: 'start', label: 'Start', icon: 'play' }]; }
+    if (isDeletable(s)) { return [session.starting ? { kind: 'opening', label: 'Starting…', icon: 'loading' } : { kind: 'start', label: 'Start', icon: 'play' }]; }
 
     const actions: SessionAction[] = [];
     if (isStoppable(s)) { actions.push(STOP); }
@@ -120,7 +120,6 @@ interface CardModel {
     icon: { name: string; spin?: boolean };
     color: string;
     chips: string[];
-    walltime?: string;
     details?: string[];
     status: { text: string; title?: string };
     actions: SessionAction[];
@@ -150,7 +149,7 @@ function card<S extends ViewSession>(s: S, provider: Provider<S>, now: number, r
     const actions = sessionActions(s);
     return {
         kind: provider.kind, theme: provider.theme, icon: STATUS_ICON[s.status], color: dotColor(s.status), chips: provider.chips(s),
-        ...provider.kind === 'HPC' && { walltime: fmtTime(wallMs(s)) }, details: provider.details?.(s), status: statusText(s, now, provider),
-        actions: remote ? actions.filter(a => a.kind === 'stop') : actions, canDelete: !remote && isDeletable(s.status),
+        details: provider.details?.(s), status: statusText(s, now, provider),
+        actions: remote ? actions.filter(a => a.kind === 'stop') : actions, canDelete: !remote && !s.starting && isDeletable(s.status),
     };
 }

@@ -11,8 +11,6 @@ interface Props {
     validating: boolean;
 }
 
-const WALL_MINUTES: NonEmpty<number> = [30, 60, 120, 240, 480, 720, 1440];
-const wallLabel = (m: number) => (m < 60 ? `${m} min` : m === 60 ? '1 hour' : `${m / 60} hours`);
 const partitionLabel = (p: SlurmPartitionInfo) => `${p.name} (${p.cpuCount} CPUs${p.gres[0] ? `, ${p.gres[0].count} GPUs` : ''})`;
 
 // Options are keyed by `id` because the state the form derives from is re-sent on every render.
@@ -36,7 +34,6 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
     const [memPick, setMem] = useState<number>();
     const [gpuCountPick, setGpuCount] = useState<number>();
     const [gpuTypePick, setGpuType] = useState<string>();
-    const [wall, setWall] = useState(WALL_MINUTES[0]);
 
     const partition = resolvePick(partName, info.partitions, p => p.name);
     const tab = tabOf(partition);
@@ -47,7 +44,7 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
 
     const submit = () => post({
         command: 'addSession', alias, partition: partition.name, account, rootFolder: info.homeDir,
-        resources: { cores: cpu, memoryMb: memGb * 1024, wallMinutes: wall, ...gpu && { gpuType: gpuTypeOf(gpu.type), gpuCount } },
+        resources: { cores: cpu, memoryMb: memGb * 1024, wallMinutes: 0, ...gpu && { gpuType: gpuTypeOf(gpu.type), gpuCount } },
     });
 
     return (
@@ -69,7 +66,6 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
                     <Choice label="GPU Type" value={gpu.type} options={gpu.types} onChange={setGpuType} />
                 </>
             )}
-            <Choice label="Walltime" value={wall} options={WALL_MINUTES} onChange={setWall} show={wallLabel} />
             <Button onClick={submit} disabled={validating}>
                 {validating ? <Row gap={4}><Spinner size={12} /> Validating…</Row> : 'Add'}
             </Button>
