@@ -48,7 +48,7 @@ export interface Tunnels {
 export interface Transport extends Tunnels {
     readonly description: string;
     signedIn(): Promise<boolean>; // without prompting
-    prepare(session: SlurmSession, ci: ConnectionInfo): Promise<LinkspanLaunch>; // before sbatch: reserve the run's tunnel on its control port
+    prepare(session: SlurmSession, ci: ConnectionInfo, wallMinutes: number): Promise<LinkspanLaunch>; // before sbatch: reserve the run's tunnel on its control port
     release(session: SlurmSession): Promise<void>; // end the run's remote hold and its tokens
 }
 
@@ -94,10 +94,11 @@ class Link implements Transport {
 
     signedIn = () => this.plane.signedIn();
 
-    async prepare(session: SlurmSession, ci: ConnectionInfo) {
+    async prepare(session: SlurmSession, ci: ConnectionInfo, wallMinutes: number) {
         try {
-            const { tunnelId, port, link } = await this.management().attachTunnel(session);
-            patch(session, { planeId: tunnelId });
+            const tunnelId = await this.management().defineTunnel(session, wallMinutes);
+            patch(session, { planeId: tunnelId }); // first, so a failed attach is not orphaned
+            const { port, link } = await this.plane.attachLink(tunnelId);
             ci.controlPort = port;
             return linkLaunch(link.url, link.token);
         }

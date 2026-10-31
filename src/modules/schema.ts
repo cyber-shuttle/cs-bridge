@@ -1,7 +1,7 @@
 // legacySteps gives store.migrate the steps 0 to 2. Version 0 is every ~/.cybershuttle up to 0.2.0; version 1
 // renamed its fields to cs-plane's; version 2 moves the records and SSH keys into extension storage and clears
-// its own entries from ~/.cybershuttle; version 3 derives the status it stored. Each step runs under a lock and is
-// idempotent, so a crash or a second window reruns it cleanly.
+// its own entries from ~/.cybershuttle; version 3 derives the status it stored; version 4 gives each run its
+// session's walltime. Each step runs under a lock and is idempotent, so a crash or a second window reruns it cleanly.
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -163,6 +163,16 @@ async function v2ToV3(files: Files): Promise<void> {
     }
 }
 
+async function v3ToV4(files: Files): Promise<void> {
+    for (const name of (await files.list('runs')).filter(n => n.endsWith('.json'))) {
+        const [text, session] = await Promise.all([files.read(`runs/${name}`), files.read(`sessions/${name}`)]);
+        if (!text || !session) { continue; }
+        const { wallMinutes } = parseJson<SlurmSession>(session).resources;
+        const file = parseJson<StoredRunsFile>(text);
+        await files.write(`runs/${name}`, JSON.stringify({ ...file, runs: file.runs?.map(r => ({ wallMinutes, ...r })) }, null, 2));
+    }
+}
+
 // The lock lives in extension storage, since step 1 may remove ~/.cybershuttle.
 export function legacySteps(files: Files, storageDir: string, home = CS_HOME): Steps {
     const locked = (step: () => Promise<void> | void) => async () => {
@@ -172,5 +182,5 @@ export function legacySteps(files: Files, storageDir: string, home = CS_HOME): S
         try { await step(); }
         finally { release(key); }
     };
-    return { 0: locked(() => v0ToV1(home)), 1: locked(() => v1ToV2(home, files, storageDir)), 2: locked(() => v2ToV3(files)) };
+    return { 0: locked(() => v0ToV1(home)), 1: locked(() => v1ToV2(home, files, storageDir)), 2: locked(() => v2ToV3(files)), 3: locked(() => v3ToV4(files)) };
 }

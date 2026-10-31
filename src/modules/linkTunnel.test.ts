@@ -4,8 +4,34 @@ import * as net from 'node:net';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { server as WebSocketServer, w3cwebsocket } from 'websocket';
-import { LinkRelayClient } from './linkTunnel';
+import { LinkManagementClient, LinkRelayClient } from './linkTunnel';
+import { PlaneError } from '../plane';
 import { must } from './testSupport';
+import type { SlurmSession } from '../models';
+
+test('each link run replaces the Airavata session', async () => {
+    const calls: (string | number)[] = [];
+    const plane = {
+        createSession: async (s: SlurmSession) => { calls.push(s.resources.wallMinutes); return { id: 'p' }; },
+        stopSession: async () => { calls.push('stop'); }, deleteSession: async () => { calls.push('delete'); },
+    };
+    const client = new LinkManagementClient(plane as never);
+    const session = { resources: { wallMinutes: 30 } } as SlurmSession;
+    assert.equal(await client.defineTunnel(session, 60), 'p');
+    assert.deepEqual(calls, [60], 'a new session has nothing to replace');
+
+    calls.length = 0;
+    await client.defineTunnel({ ...session, planeId: 'p' }, 120);
+    assert.deepEqual(calls, ['stop', 'delete', 120]);
+
+    plane.stopSession = async () => { throw new PlaneError(404, 'gone'); };
+    calls.length = 0;
+    await client.defineTunnel({ ...session, planeId: 'p' }, 120);
+    assert.deepEqual(calls, [120], 'a session deleted elsewhere is defined again');
+
+    plane.stopSession = async () => { throw new PlaneError(500, 'down'); };
+    await assert.rejects(client.defineTunnel({ ...session, planeId: 'p' }, 120), /down/);
+});
 
 // A local stand-in for cs-plane's forward: a real WebSocket server that accepts cybershuttle.v1 and pipes each socket to
 // a real TCP echo server. The relay dials it over a real WebSocket; only the host differs from cs-plane's.

@@ -70,7 +70,7 @@ Field names match Airavata's wire types. The status-related fields are listed in
 | `name` | creation time in ms, or the instance id for an adopted EC2 instance. Its last six characters name the per-session SSH host. |
 | `alias`, `account`, `partition`, `rootFolder`, `resources` | the request. An empty `account` submits without `--account`. `rootFolder` is the folder the window opens. `resources` holds `cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`. |
 | `submittedAt` | the last submit, or the creation time before the first |
-| `transport`, `devtunnel`, `planeId` | `transport` is the latest run's transport. `devtunnel` (`{id, cluster}`) is the Dev Tunnel of the last run that used one. It is kept until the next Dev Tunnel Start or until Delete. `planeId` is the session's one Airavata session. It is created on the session's first link Start and reused by every later link run. It is replaced only when Airavata no longer has it. It is kept until Delete. |
+| `transport`, `devtunnel`, `planeId` | `transport` is the latest run's transport. `devtunnel` (`{id, cluster}`) is the Dev Tunnel of the last run that used one. It is kept until the next Dev Tunnel Start or until Delete. `planeId` is the latest link run's Airavata session. It is kept until Delete. |
 | `connectionInfo` | `controlPort`. `sshPort`: 0 until Linkspan's SSH server is up, or 22 once an EC2 instance's port 22 answers. `localPort`: the `127.0.0.1` listener bound by the window that last connected. It is kept after that window closes. |
 | `owner` | see [Owner window](03-cross-window-state.md#owner-window) |
 | `ec2` | see [EC2 instances](07-ec2.md#model) |
@@ -79,14 +79,15 @@ A run is a `Run` with `RunStats` and `samples`.
 
 ## Schema migrations
 
-`schema.json` in extension storage holds the storage version. The current one is `SCHEMA_VERSION = 3` (`store.ts`).
+`schema.json` in extension storage holds the storage version. The current one is `SCHEMA_VERSION = 4` (`store.ts`).
 At activation, `openStorage` (`storage.ts`) calls `migrate()` before any store is read. It:
 
 1. reads the version on disk;
 2. runs each step in `legacySteps` (`schema.ts`) from that version up to `SCHEMA_VERSION`, under a lock;
 3. saves the new version after each step.
 
-The stores read only the current shape. One exception: `runStore` fills `samples` for runs recorded before 0.2.4.
+The stores read only the current shape. Two exceptions: `runStore` fills `samples` on runs from before 0.2.4, and
+`wallMinutes` on runs that outlived their session.
 
 A fresh install starts at version 0, so every step runs. Without `~/.cybershuttle` the steps change nothing. But step 0
 locks `~/.ssh/config`. So on a machine without `~/.ssh/`, activation fails until that folder exists.
@@ -96,6 +97,7 @@ locks `~/.ssh/config`. So on a machine without `~/.ssh/`, activation fails until
 | 0 → 1 | inside `~/.cybershuttle`: splits `sessions.json` into `sessions/`, renames fields to Airavata's names, reissues non-uuid ids, turns `metrics/` into `runs/`, removes `ssh_hosts` and its `Include` |
 | 1 → 2 | moves records and SSH keys from `~/.cybershuttle` into extension storage, removes the old `Include` and CS Bridge's entries in `~/.cybershuttle` |
 | 2 → 3 | replaces the stored status with `desired`, `observed` and `failure` |
+| 3 → 4 | gives each run without a walltime its session's |
 
 | Change | Rule |
 |---|---|

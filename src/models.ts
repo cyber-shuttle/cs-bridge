@@ -38,7 +38,7 @@ export interface SlurmSession {
     errorMessage: string;
     transport: 'devtunnel' | 'link'; // the latest run's route to Linkspan
     devtunnel?: { id: string; cluster: string };
-    planeId?: string; // the cs-plane session each link run attaches
+    planeId?: string; // the latest link run's cs-plane session
     connectionInfo?: ConnectionInfo;
     ec2?: Ec2Spec; // an EC2 session: alias is aws-<region>, jobId the instance id, resources zero, transport unused
 }
@@ -146,6 +146,7 @@ export interface Run {
     startedAt?: number;
     endedAt: number;
     finalState: SessionStatus;
+    wallMinutes: number;
     stats?: RunStats;
     samples: UsageSample[];
 }

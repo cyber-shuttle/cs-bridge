@@ -7,3 +7,4 @@ export interface FakePanel {
     receive(message: unknown): void;
 }
 export const panels: FakePanel[];
+export const quickPick: { minutes: number };

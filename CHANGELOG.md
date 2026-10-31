@@ -6,13 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-31
+
 ### Changed
 
-- **Start** on an HPC session asks for a walltime each time. The card shows busy until the script appears.
+- **Start** on an HPC session asks for a walltime and checks it with Slurm. The card shows busy until the script appears.
 - The session form no longer asks for a walltime.
 - HPC cards drop the walltime chip.
+- A run's summary shows its own walltime. Older runs use the session's.
+- Each link run gets a new Airavata session.
 - Long card status text is cut short. Hover to see all of it.
-- The architecture document is split into numbered pages under `docs/`.
+- The README is revised, and the architecture document is split into numbered pages under `docs/`.
 
 ## [0.3.1] - 2026-10-27
 
@@ -393,7 +397,8 @@ Initial release of **CS Bridge** — remote HPC development from VS Code. Publis
 - Status bar countdown and progress toasts for active sessions
 - esbuild-based build producing a single bundled, minified `out/extension.js` (`tsc` used for type-checking only)
 
-[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.3.1...HEAD
+[Unreleased]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.4.0...HEAD
+[0.4.0]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.3.1...0.4.0
 [0.3.1]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.4...0.3.0
 [0.2.4]: https://github.com/cyber-shuttle/CS-Bridge/compare/0.2.3...0.2.4

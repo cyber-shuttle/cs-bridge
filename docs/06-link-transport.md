@@ -27,11 +27,12 @@ with. Changing the setting affects the next Start.
      does the refresh.
    - It is cleared on a `401`, or when Airavata refuses the refresh with a 4xx.
    - A 5xx or network error during refresh keeps the credential.
-2. **Prepare.** `Link.prepare` (`transport.ts`), through `LinkManagementClient.attachTunnel` (`linkTunnel.ts`):
-   - defines the Airavata session if the record has no `planeId`, with the local session id as its idempotency key;
-   - stops any run still live on it. If the stop returns `404`, the session is defined again;
+2. **Prepare.** `Link.prepare` (`transport.ts`), through `LinkManagementClient.defineTunnel` (`linkTunnel.ts`):
+   - stops and deletes the Airavata session in `planeId`, if any, ignoring a `404`;
+   - defines a new one with the picked walltime and a new idempotency key, and saves its id as `planeId`. Airavata
+     cannot change a walltime, and a reused key would restart its run count;
    - attaches with `tunnelModes: ["link"]`;
-   - saves the id as `planeId` and replaces the control port with the one Airavata assigns.
+   - replaces the control port with the one Airavata assigns.
 
    The job script gets `--tunnel-mode link --tunnel-link-args '--url …'`.
 3. **Submit.** The link token is passed as `LINKSPAN_LINK_TOKEN` in `sbatch`'s environment. It is sent over the

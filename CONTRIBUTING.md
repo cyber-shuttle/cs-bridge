@@ -50,7 +50,7 @@ surfaces only under `check-types`.
 ## Submitting a change
 
 - Branch off `main` and open the pull request against `main`.
-- Cover new behaviour with a test. Tests sit beside what they test as `*.test.ts`. `bun test` runs them with a stub
+- Cover new behaviour with a test. Tests sit beside what they test as `*.test.ts`. `bun run test` runs them with a stub
   `vscode` module (`scripts/vscodeMock.js`). Logic that needs more of the VS Code API than the stub provides belongs
   in a `vscode`-free module. See [Source layout](docs/09-source-layout.md).
 - Say in the description what you ran and against what. List the three commands above. Add the cluster and scheduler
@@ -59,10 +59,8 @@ surfaces only under `check-types`.
   Webview layout has no automated checks beyond `bun run test:host`. UI changes want a screenshot from the Extension
   Development Host.
 
-  `test:host` loads the extension in a downloaded VS Code with a throwaway profile but your real home directory. Each
-  run prepends to `~/.ssh/config` an `Include` of that profile's `ssh_config`. That `ssh_config` is deleted afterwards.
-  Each run also runs the storage migrations against `~/.cybershuttle`. Remove the stale `Include` lines after running
-  it.
+  `test:host` loads the extension in a downloaded VS Code with a throwaway profile and a temporary `HOME`. Both are
+  deleted afterwards. On Windows `HOME` is ignored, so each run writes to the real home.
 - Add a bullet under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for anything a user would notice.
 - Slurm's own terms (`CANCELLED`, `scancel`) stay as Slurm writes them. Everywhere else the verb is "stop", not
   "cancel". The session status is `stopped`.

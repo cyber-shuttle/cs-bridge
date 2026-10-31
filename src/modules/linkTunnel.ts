@@ -15,15 +15,15 @@ export class LinkManagementClient {
         return { tunnelId, accessTokens: { connect: (await this.plane.sessionAccess(tunnelId)).jupyter.token } };
     }
 
-    // Attach refuses a live session and a lost release would leave one; a 404 on stop is a session deleted elsewhere.
-    async attachTunnel(session: SlurmSession) {
-        const define = async () => (await this.plane.createSession(session)).id;
-        let tunnelId = session.planeId ?? await define();
-        await this.plane.stopSession(tunnelId).catch(async (err) => {
-            if (!(err instanceof PlaneError && err.status === 404)) { throw err; }
-            tunnelId = await define();
-        });
-        return { tunnelId, ...await this.plane.attachLink(tunnelId) };
+    // cs-plane cannot change a walltime, so each run gets a new session. A reused key would restart its run count.
+    // A 404 is a session deleted elsewhere.
+    async defineTunnel(session: SlurmSession, wallMinutes: number) {
+        if (session.planeId) {
+            await this.deleteTunnel({ tunnelId: session.planeId }).catch((err) => {
+                if (!(err instanceof PlaneError && err.status === 404)) { throw err; }
+            });
+        }
+        return (await this.plane.createSession({ ...session, resources: { ...session.resources, wallMinutes } }, `${session.id}:${Date.now()}`)).id;
     }
 
     // cs-plane deletes only a stopped session.

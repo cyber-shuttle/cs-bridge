@@ -76,7 +76,7 @@ The SSH auth panel is `csbridge.sshAuth`. Its HTML is inline, from `renderAuthHt
 
 | Status | Actions |
 |---|---|
-| `not_started`, `stopped`, `failed` | Start; × deletes |
+| `not_started`, `stopped`, `failed` | Start; × deletes. A disabled Starting… replaces both until the preview opens. |
 | `submitting`, `queued`, `preparing`, `unreachable` | Stop |
 | `ready_to_connect` | Stop, Connect |
 | `connecting` | Stop, Connecting… (disabled) |

@@ -23,7 +23,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     private readonly hostRuntime = new Map<string, HostRuntime>();
     private draftAlias: string | null = null;
-    private draft: (LaunchDraft & { sessionId: string }) | null = null;
+    private draft: (LaunchDraft & { sessionId: string; wallMinutes: number }) | null = null;
     private preparing = false; // one prepare at a time, so one draft follows another
     private readonly shared: vscode.Disposable[] = [];
     private readonly opening = new Map<string, ReturnType<typeof setTimeout>>(); // each open's own fallback timer
@@ -97,6 +97,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         addSession: m => this.createSession(m),
         refreshSlurmDiscovery: ({ alias }) => this.fetchSlurmDiscovery(alias, true),
         prepareLaunchSession: ({ sessionId }) => {
+            if (this.starting.has(sessionId)) { return; }
             this.starting.add(sessionId);
             void this.pushState();
             void this.prepareLaunchSession(sessionId).finally(() => { this.starting.delete(sessionId); void this.pushState(); });
@@ -300,12 +301,12 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         this.draft = null;
         if (!draft) { return; }
         const session = getSession(draft.sessionId);
-        if (session) { this.submit(session, () => this.slurm.start(session, draft)); }
+        if (session) { this.submit(session, () => this.slurm.start(session, draft), draft.wallMinutes); }
     }
 
     // A fresh run: the walltime re-anchors when the new job starts, and a Slurm job id is the run's while an EC2 instance outlives it.
-    private submit(session: SlurmSession, start: () => Promise<void>) {
-        patch(session, { desired: 'running', observed: undefined, failure: undefined, errorMessage: '', startedAt: undefined, submittedAt: Date.now(), ...!isEc2(session) && { jobId: '' } });
+    private submit(session: SlurmSession, start: () => Promise<void>, wallMinutes = session.resources.wallMinutes) {
+        patch(session, { resources: { ...session.resources, wallMinutes }, desired: 'running', observed: undefined, failure: undefined, errorMessage: '', startedAt: undefined, submittedAt: Date.now(), ...!isEc2(session) && { jobId: '' } });
         live.launching.add(session.id);
         this.runSessionTask(session, 'launch', () => start().finally(() => live.launching.delete(session.id)),
             isEc2(session) ? 'Please check the AWS console for a stray instance.' : 'Please clean up any resources on the cluster if necessary.',
@@ -325,8 +326,10 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
     private async prepareLaunchSession(sessionId: string) {
         const session = this.requireSession(sessionId, 'prepare launch');
-        const wallMinutes = session && !isEc2(session) ? await pickWalltime(session.resources.wallMinutes) : 0;
-        if (!session || wallMinutes === undefined || this.preparing || live.busy.has(session.id) || live.connecting.has(session.id)) { return; } // one prepare at a time; a Start during a connect is a no-op
+        const blocked = (s: SlurmSession) => this.preparing || live.busy.has(s.id) || live.connecting.has(s.id); // one prepare at a time; a Start during a connect is a no-op
+        if (!session || blocked(session)) { return; }
+        const wallMinutes = isEc2(session) ? 0 : await pickWalltime(session.resources.wallMinutes);
+        if (wallMinutes === undefined || blocked(session) || !getSession(sessionId) || !isDeletable(statusOf(session))) { return; } // the pick can outlast the session or its Start
         this.preparing = true;
         live.busy.add(session.id);
         try {
@@ -341,9 +344,10 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         live.busy.add(session.id);
         try {
             if (session.connectionInfo) { await this.monitor.endSession(session); } // the previous run's teardown, before a transport switch hides it
-            patch(session, { transport: configuredTransport(), resources: { ...session.resources, wallMinutes } });
-            const draft = await prepareLaunch(session, this.transports.transportFor(session));
-            this.draft = { sessionId, ...draft };
+            patch(session, { transport: configuredTransport() });
+            await validateSlurmConfig(session, SshManager.getInstance(), this.logger, wallMinutes);
+            const draft = await prepareLaunch(session, this.transports.transportFor(session), wallMinutes);
+            this.draft = { sessionId, wallMinutes, ...draft };
         }
         catch (err) {
             vscode.window.showErrorMessage(errMsg(err));
@@ -366,7 +370,8 @@ function pickWalltime(previous: number): Promise<number | undefined> {
     const pick = vscode.window.createQuickPick<vscode.QuickPickItem & { minutes: number }>();
     pick.title = 'Walltime';
     pick.items = [30, 60, 120, 240, 480, 720, 1440].map(m => ({ label: m < 60 ? `${m} min` : `${m / 60} h`, minutes: m }));
-    pick.activeItems = pick.items.filter(i => i.minutes === previous);
+    const last = pick.items.find(i => i.minutes === previous);
+    if (last) { pick.activeItems = [last]; } // an empty list would clear the default focus
     return new Promise((resolve) => {
         pick.onDidAccept(() => { resolve(pick.selectedItems[0]?.minutes); pick.dispose(); });
         pick.onDidHide(() => { resolve(undefined); pick.dispose(); });
