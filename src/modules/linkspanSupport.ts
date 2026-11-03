@@ -13,7 +13,7 @@ interface SshServerInfo { bind_port: number; id: string }
 
 // Every field of a UsageSample is optional, so any JSON object is one.
 export function parseSample(body: string): UsageSample {
-    const json = parseJson<unknown>(body);
+    const json = parseJson<unknown>(body, (_, v) => v ?? undefined);
     if (typeof json !== 'object' || json === null || Array.isArray(json)) { throw new Error(`Linkspan /usage answered no object: ${body.slice(0, 200)}`); }
     return json;
 }
