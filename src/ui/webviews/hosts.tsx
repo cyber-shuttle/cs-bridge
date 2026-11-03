@@ -4,8 +4,8 @@ import type { HostsState, SshHost } from '@/models';
 import { post, useWebviewState, mount } from '@/ui/platform/vscode';
 import { Row, Stack, Text, Icon, Button } from '@/ui/components/base';
 
-const SOURCE_ICON: Record<SshHost['source'], string> = { user: 'account', system: 'settings-gear' };
-const SOURCE_TITLE: Record<SshHost['source'], string> = { user: 'User SSH config (~/.ssh/config)', system: 'System SSH config (read-only)' };
+const SOURCE_ICON: Record<SshHost['source'], string> = { user: 'account', system: 'settings-gear', cybershuttle: 'cloud' };
+const SOURCE_TITLE: Record<SshHost['source'], string> = { user: 'User SSH config (~/.ssh/config)', system: 'System SSH config (read-only)', cybershuttle: 'CyberShuttle cluster config (read-only)' };
 
 function DetailRow({ label, children }: { label: string; children: ComponentChildren }) {
     return (
@@ -35,7 +35,7 @@ function HostItem({ host }: { host: SshHost }) {
                     ) : null}
                     {/* zoom 0.85 matches the Sessions-view action buttons (e.g. Connect). */}
                     <Row gap={6} justify="flex-end" pad="2px 0 0" style={{ zoom: 0.85 }}>
-                        <Button icon="terminal" onClick={() => post({ command: 'openTerminal', alias: host.alias })}>Terminal</Button>
+                        {src === 'cybershuttle' ? null : <Button icon="terminal" onClick={() => post({ command: 'openTerminal', alias: host.alias })}>Terminal</Button>}
                         {src === 'user' ? <Button icon="edit" onClick={() => post({ command: 'editSshHost', alias: host.alias })}>Edit</Button> : null}
                         {src === 'user' ? <Button icon="trash" onClick={() => post({ command: 'deleteSshHost', alias: host.alias })}>Delete</Button> : null}
                     </Row>

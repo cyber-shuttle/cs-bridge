@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- CyberShuttle hosts **(experimental)**: signed in, your cluster configs are hosts. The CyberShuttle API runs their jobs, without SSH.
+  A login the host leaves to you, such as a one-time code, opens the SSH authentication panel.
+
+### Removed
+
+- The `csbridge.transport` setting and **Default Transport**: an SSH host's run always uses a Dev Tunnel, a CyberShuttle host's the CyberShuttle API.
+
 ## [0.4.1] - 2026-11-03
 
 ### Fixed

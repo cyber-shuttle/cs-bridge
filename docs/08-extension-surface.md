@@ -30,7 +30,6 @@ Only `csbridge.menu` appears in the Command Palette. The other contributed comma
 | Setting | Values |
 |---|---|
 | `csbridge.experimentalFeatures` | `false` (default) or `true` |
-| `csbridge.transport` | `devtunnel` (default) or `link`. `link` applies only with `csbridge.experimentalFeatures`. |
 
 **Menu** (`menu.ts`). The menu is one QuickPick that walks a stack of pages. Escape goes back a page. It does so
 through the `csbridge.menuNested` context and a keybinding. The root page:
@@ -38,13 +37,11 @@ through the `csbridge.menuNested` context and a keybinding. The root page:
 - Create New SSH Session, then a host list;
 - Add SSH Host, then the pasted `ssh` command, then an alias;
 - Create Cloud VM **(experimental)**, shown once signed in to AWS, then region, instance type and image;
-- Default Transport **(experimental)**;
 - Accounts: sign in or out of CyberShuttle **(experimental)**, Microsoft DevTunnel and AWS **(experimental)**.
 
 The CyberShuttle and Microsoft labels are cached. They are filled when the menu is built. They are refreshed when it
 opens and after each item action. The AWS label is read live.
 
-- Default Transport writes `csbridge.transport` to user settings.
 - Sign In to Microsoft DevTunnel asks VS Code for a Microsoft session with `clearSessionPreference`. This lets you pick
   another account. Sign Out runs VS Code's `_signOutOfAccount`. It signs that account out of VS Code as a whole.
 - Sign In to CyberShuttle opens the device-code page in the browser. It then waits in a cancellable notification that

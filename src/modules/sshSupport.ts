@@ -52,6 +52,7 @@ export class SshManager {
     // One persistent shell per SSH host, plus a per-SSH-host serial queue so a single in-flight command owns the streams.
     private readonly shells = new Map<string, HostShell>();
     private readonly queues = new Map<string, Promise<unknown>>();
+    public cyberShuttleHosts: SshHost[] = [];
 
     private constructor(private readonly extensionUri: vscode.Uri) {
         if (process.platform !== 'win32') { CS_SSH_CONTROL_DIR = privateControlDir(); }
@@ -85,6 +86,7 @@ export class SshManager {
         return mergeHostsByPriority(
             this.readHostsFile(USER_SSH_CONFIG_PATH, 'user'),
             this.readHostsFile(SYSTEM_SSH_CONFIG_PATH, 'system'),
+            this.cyberShuttleHosts,
         );
     }
 
@@ -236,7 +238,7 @@ export class SshManager {
     }
 
     // SSH auth prompt in a monospace webview (renderAuthHtml); resolves to the response, or undefined on dismiss.
-    private promptAuth(shell: HostShell, alias: string, prompt: string): Promise<string | undefined> {
+    promptAuth(shell: Pick<HostShell, 'openPrompts'>, alias: string, prompt: string): Promise<string | undefined> {
         const nonce = crypto.randomBytes(16).toString('hex');
         const panel = vscode.window.createWebviewPanel(
             'csbridge.sshAuth', `SSH Authentication — ${alias}`,

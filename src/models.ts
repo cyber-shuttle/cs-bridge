@@ -28,6 +28,7 @@ export interface SlurmSession {
     failure?: string;
     owner?: string; // the window driving the live session, for as long as that window beats
     alias: string; // the SSH host the job is submitted from
+    clusterConfigId?: string;
     account: string; // '' submits without --account
     partition: string;
     rootFolder: string;
@@ -38,7 +39,7 @@ export interface SlurmSession {
     errorMessage: string;
     transport: 'devtunnel' | 'link'; // the latest run's route to Linkspan
     devtunnel?: { id: string; cluster: string };
-    planeId?: string; // the latest link run's cs-plane session
+    planeId?: string; // the CyberShuttle API process of the latest link run
     connectionInfo?: ConnectionInfo;
     ec2?: Ec2Spec; // an EC2 session: alias is aws-<region>, jobId the instance id, resources zero, transport unused
 }
@@ -73,7 +74,8 @@ export interface SshHost {
     hostname?: string;
     user?: string;
     extraDirectives?: string[]; // "Key Value" ssh_config lines other than HostName/User
-    source: 'user' | 'system'; // user is editable, system is read-only
+    source: 'user' | 'system' | 'cybershuttle'; // only user is editable
+    clusterConfigId?: string;
 }
 
 export type NonEmpty<T> = readonly [T, ...T[]];

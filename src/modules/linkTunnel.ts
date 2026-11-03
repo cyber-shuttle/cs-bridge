@@ -1,35 +1,17 @@
 // The link transport's tunnel clients, shaped like the Dev Tunnels SDK's so transport's session-level functions
-// drive either pair. The tunnel is a cs-plane session and its connect token the Jupyter token from `/access`. A
-// ForwardRelayClient has no upstream connection of its own: each forwarded port is a 127.0.0.1 listener whose every
-// accepted socket rides a fresh WebSocket to a forward URL: cs-plane's for link, Linkspan's over a Dev Tunnel.
+// drive either pair. The tunnel is the run's CyberShuttle API process and its connect token the run token from `/access`.
+// A ForwardRelayClient has no upstream connection of its own: each forwarded port is a 127.0.0.1 listener whose every
+// accepted socket rides a fresh WebSocket to Linkspan's forward: through the CyberShuttle API's proxy for link, over a Dev Tunnel otherwise.
 import * as net from 'node:net';
-import { SlurmSession } from '../models';
-import { Plane, PlaneError, PLANE_URL } from '../plane';
+import { Plane, PLANE_URL } from '../plane';
 import type { TunnelRef, TunnelRelayClient } from './transport';
 
 export class LinkManagementClient {
     constructor(private readonly plane: Plane) { }
 
-    // cs-plane answers /access only for a READY session, so this also gates on Linkspan holding its link.
+    // The CyberShuttle API answers /access only for a linked run, and 409 before, so this also gates on Linkspan holding its link.
     async getTunnel({ tunnelId }: TunnelRef): Promise<TunnelRef> {
-        return { tunnelId, accessTokens: { connect: (await this.plane.sessionAccess(tunnelId)).jupyter.token } };
-    }
-
-    // cs-plane cannot change a walltime, so each run gets a new session. A reused key would restart its run count.
-    // A 404 is a session deleted elsewhere.
-    async defineTunnel(session: SlurmSession, wallMinutes: number) {
-        if (session.planeId) {
-            await this.deleteTunnel({ tunnelId: session.planeId }).catch((err) => {
-                if (!(err instanceof PlaneError && err.status === 404)) { throw err; }
-            });
-        }
-        return (await this.plane.createSession({ ...session, resources: { ...session.resources, wallMinutes } }, `${session.id}:${Date.now()}`)).id;
-    }
-
-    // cs-plane deletes only a stopped session.
-    async deleteTunnel({ tunnelId }: TunnelRef) {
-        await this.plane.stopSession(tunnelId);
-        await this.plane.deleteSession(tunnelId);
+        return { tunnelId, accessTokens: { connect: (await this.plane.processAccess(tunnelId)).app.token } };
     }
 }
 
@@ -38,8 +20,7 @@ export class ForwardRelayClient {
     private readonly listeners: Promise<net.Server>[] = [];
     private readonly sockets = new Set<net.Socket>();
     private disposed = false;
-    protected forwardUrl = '';
-    protected protocols: string[] = [];
+    protected forwardUrl: (port: number) => string = () => '';
 
     constructor(private readonly WebSocket: typeof globalThis.WebSocket = globalThis.WebSocket) { }
 
@@ -67,7 +48,7 @@ export class ForwardRelayClient {
     }
 
     private bridge(local: net.Socket, remotePort: number) {
-        const remote = new this.WebSocket(`${this.forwardUrl}${remotePort}`, this.protocols);
+        const remote = new this.WebSocket(this.forwardUrl(remotePort));
         this.sockets.add(local);
         remote.binaryType = 'arraybuffer';
         // No backpressure: SSH channel windows bound the ssh stream, and Linkspan's API responses are small.
@@ -78,12 +59,16 @@ export class ForwardRelayClient {
     }
 }
 
+export const linkspanUrl = (processId: string, controlPort: number) => `${PLANE_URL}/processes/${processId}/proxy/${controlPort}/api/v1`;
+
 export class LinkRelayClient extends ForwardRelayClient {
+    constructor(private readonly controlPort: number, WebSocket?: typeof globalThis.WebSocket) { super(WebSocket); }
+
     async connect(tunnel: TunnelRef) {
         const token = tunnel.accessTokens?.connect;
-        if (!token) { throw new Error('cs-plane returned no connect token for the session.'); }
-        this.forwardUrl = `${PLANE_URL.replace(/^http/, 'ws')}/sessions/${tunnel.tunnelId}/forward/`;
-        this.protocols = ['cybershuttle.v1', `capability.${token}`];
+        if (!token) { throw new Error('CyberShuttle returned no connect token for the session.'); }
+        const forward = `${linkspanUrl(tunnel.tunnelId, this.controlPort).replace(/^http/, 'ws')}/forward/`;
+        this.forwardUrl = port => `${forward}${port}?token=${token}`; // a WebSocket cannot carry a header
     }
 }
 

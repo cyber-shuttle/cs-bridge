@@ -78,15 +78,6 @@
 					"default": false,
 					"tags": ["experimental"],
 					"description": "Enable experimental features that are not yet stable."
-				},
-				"csbridge.transport": {
-					"type": "string",
-					"enum": [
-						"devtunnel",
-						"link"
-					],
-					"default": "devtunnel",
-					"description": "How a session's Linkspan is reached, from its next start. `link` is experimental and applies only with `csbridge.experimentalFeatures`."
 				}
 			}
 		},

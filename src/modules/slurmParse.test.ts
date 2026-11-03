@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSlurmScript, devTunnelLaunch, linkLaunch, classifySchedulerState, parseAccounts, parsePartitionLine, parseSacctStatus, parseSacctUtil, slurmAccount } from './slurmParse';
+import { buildSlurmScript, devTunnelLaunch, classifySchedulerState, parseAccounts, parsePartitionLine, parseSacctStatus, parseSacctUtil, slurmAccount } from './slurmParse';
 import { SlurmJobStatus, SlurmSession } from '../models';
 import { must } from './testSupport';
 
@@ -73,12 +73,6 @@ test('buildSlurmScript emits the resource #SBATCH directives and the Linkspan in
     assert.match(script, /^#SBATCH --gres=gpu:a100:2$/m);
     assert.match(script, /^"\$LINKSPAN_BIN" --port 25000 --tunnel-enable --tunnel-mode devtunnel --tunnel-devtunnel-args '--id tid --cluster use'$/m);
     assert.doesNotMatch(script, /TOKEN|tok'/);
-});
-
-test('buildSlurmScript launches a link session with its URL and no token', () => {
-    const script = buildSlurmScript(scriptSession(), linkLaunch('wss://u', 'secret'), 25000);
-    assert.match(script, /^"\$LINKSPAN_BIN" --port 25000 --tunnel-enable --tunnel-mode link --tunnel-link-args '--url wss:\/\/u'$/m);
-    assert.doesNotMatch(script, /TOKEN|secret/);
 });
 
 // The session every script test starts from; each names only what it varies.

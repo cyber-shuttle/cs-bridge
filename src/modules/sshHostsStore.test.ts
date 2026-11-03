@@ -8,6 +8,7 @@ import {
     deleteHostFromConfigText,
     editHostInConfigText,
     mergeHostsByPriority,
+    cyberShuttleHosts,
     buildSshConfigBlock,
     csHostAlias,
     SSH_RESILIENCE_OPTIONS,
@@ -84,6 +85,13 @@ test('mergeHostsByPriority keeps the first occurrence of each alias (user wins o
     assert.deepEqual(merged.map(h => h.alias), ['a', 'b', 'c']);
     assert.equal(merged.find(h => h.alias === 'b')?.hostname, 'user-b');
     assert.equal(merged.find(h => h.alias === 'b')?.source, 'user');
+});
+
+test('cyberShuttleHosts names each cluster config cs-<name>-<id>, whatever else is listed', () => {
+    const config = (id: string, name: string | null) => ({ slurmClusterConfigId: id, name, slurmClusterId: 'c1', slurmCluster: { clusterName: 'Lab Cluster', headnodeHost: 'login.example.org' }, loginUser: 'u1', workRoot: '/work/u1' });
+    const hosts = cyberShuttleHosts([config('k1aaaaaaa', 'My Lab'), config('k2bbbbbbb', null), config('k3ccccccc', null)]);
+    assert.deepEqual(hosts.map(h => h.alias), ['cs-my-lab-k1aaaaaa', 'cs-lab-cluster-k2bbbbbb', 'cs-lab-cluster-k3cccccc']);
+    assert.deepEqual(hosts[1], { alias: 'cs-lab-cluster-k2bbbbbb', hostname: 'login.example.org', user: 'u1', source: 'cybershuttle', clusterConfigId: 'k2bbbbbbb' });
 });
 
 test('includeIsEffective accepts only an uncommented Include above the first Host/Match block', () => {

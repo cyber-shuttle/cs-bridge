@@ -20,7 +20,7 @@ example `extensionStore`, `logger`, `plane` and `models`.
 | `extensionStore.ts` | session store access, live facts, heartbeats, ownership (`claim`, `owns`, `disown`), `requestStop`, `statusOf` |
 | `storage.ts` | opens extension storage, runs migrations, and watches it for other windows' writes |
 | `sessionRunSupport.ts` | records a finished run. Reads `sacct` for the in-run stats. |
-| `plane.ts` | Apache Airavata client **(experimental)** |
+| `plane.ts` | CyberShuttle API client **(experimental)** |
 | `features.ts`, `models.ts`, `logger.ts` | feature flags, shared types and constants, the output channel |
 
 ### `src/modules/*.ts` — capabilities
@@ -31,7 +31,7 @@ example `extensionStore`, `logger`, `plane` and `models`.
 | Slurm | `slurmLaunch`, `slurmParse`, `slurmSupport` |
 | Linkspan HTTP client | `linkspanSupport` |
 | Dev Tunnels | `tunnelSupport` |
-| Forwarding relay client (both transports); Airavata tunnel clients **(experimental)** | `linkTunnel` |
+| Forwarding relay client (both transports); the CyberShuttle API tunnel clients **(experimental)** | `linkTunnel` |
 | Transport choice and connect steps | `transport` |
 | EC2 **(experimental)** | `ec2`, `aws`, `ec2Session` |
 | Status | `sessionMachine` |
@@ -75,7 +75,7 @@ profile. Its four cases cover:
 | To add | Change |
 |---|---|
 | A backend | Implement `Backend` (`sessionSupport.ts`) with its own `start`. Meet the [backend contract](#backend-contract) below. |
-| A transport | Implement `Transport` (`transport.ts`). Give it a `SlurmSession` field for its tunnel ref, as `devtunnel` and `planeId` are. This is a persisted field. `prepare` writes it and `tunnelRef` reads it. Add the transport to these places: its name to `SlurmSession['transport']` (`models.ts`); its instance to the `Transports` constructor, `transportFor` and `Transports.remove` (`transport.ts`); a `LinkspanLaunch` builder to `slurmParse.ts`; the Default Transport page (`menu.ts`); the `csbridge.transport` enum in `package.json`. The whole transport choice sits behind `cybershuttle`. While that feature is off, `configuredTransport` (`features.ts`) returns `devtunnel` and the menu hides Default Transport. An experimental transport stays behind that gate. A stable one must also be offered outside it. If the transport needs an account, add Sign In and Sign Out items to the menu's Accounts section. Add its label lookup to `refreshAccounts` (`menu.ts`). `signedIn()` gates reconnection at reattach. |
+| A transport | Implement `Transport` (`transport.ts`). Give it a `SlurmSession` field for its tunnel ref, as `devtunnel` and `planeId` are. This is a persisted field. `prepare` (or `SlurmBackend.launch` for link) writes it and `tunnelRef` reads it. Add the transport to these places: its name to `SlurmSession['transport']` (`models.ts`); its instance to the `Transports` constructor, `transportFor` and `Transports.remove` (`transport.ts`); a `LinkspanLaunch` builder to `slurmParse.ts` if a script starts Linkspan on it. The Start writes the name (`sessionProvider.ts`); a run keeps the transport it started with. If the transport needs an account, add Sign In and Sign Out items to the menu's Accounts section. Add its label lookup to `refreshAccounts` (`menu.ts`). `signedIn()` gates reconnection at reattach. |
 | A sidebar view | Add these parts. A provider extending `webviewProvider.ts`. Register it in `extension.ts` under a static `viewType` equal to its `views` id. Its `pushState` posts `{ command: 'state', state }`, the only message `useWebviewState` accepts. Its name in `ViewKind` (`webviewProvider.ts`). Its state type and its message type in `WebviewMessage` (`models.ts`). A root `src/ui/webviews/<name>.tsx`, named as in `ViewKind`, because `renderHtml` loads `out/<name>.js`. An entry point in `esbuild.js`. A `"type": "webview"` entry under `views.csbridge` in `package.json`, with its `id` equal to the `viewType` and a `name`. Add `"when": "!csbridge.remote"` if the view is local-only, as Run History and SSH Hosts are. |
 | A setting | Add it to `contributes.configuration` in `package.json`. Read it with `vscode.workspace.getConfiguration('csbridge')`. List it in [Extension surface](08-extension-surface.md). |
 | A persisted field | See [Schema migrations](10-storage.md#schema-migrations). |
@@ -106,10 +106,10 @@ What the code requires of a backend, as `SlurmBackend` and `Ec2Backend` do it:
 - A write that a poll repeats each tick is made only on change, as `observe` and `setError` do
   (`extensionStore.ts`). Every write reaches every window.
 - `csHostAlias` is the only builder of the per-session SSH host name.
-- Only `transport.ts` maps a record's `transport` to its implementation (`transportFor`). `configuredTransport`
-  (`features.ts`) picks the name a new run records. There are two exceptions:
-  - `sessionSupport.ts` recognises Airavata's not-ready error while preparing;
-  - `validateSlurmConfig` (`slurmLaunch.ts`) dry-runs with a placeholder `devTunnelLaunch` whatever the transport.
+- Only `transport.ts` maps a record's `transport` to its implementation (`transportFor`). The Start
+  (`sessionProvider.ts`) picks the name a new run records. There are two exceptions:
+  - `sessionSupport.ts` recognises the CyberShuttle API's not-ready error while preparing;
+  - `validateSlurmConfig` (`slurmLaunch.ts`) dry-runs with a placeholder `devTunnelLaunch`.
 - Tokens reach the job only as environment assignments on the `sbatch` command (`slurmLaunch.ts`). That command is
   sent over the shell's stdin. Tokens never go in the job script, a process's argv or a file. Exception, to fix in
   code: a submit can fail with empty stderr. Then the command, assignments included, goes into the error. That error

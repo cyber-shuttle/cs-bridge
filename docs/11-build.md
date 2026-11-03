@@ -54,9 +54,9 @@ only for commits that stage `.ts` or `.tsx` files. `build` runs `esbuild.js` onc
   - The login node needs the Slurm clients `sinfo`, `sacctmgr`, `sbatch`, `sacct`, `scancel` and `srun`.
   - The login node needs outbound HTTPS to `github.com` for Linkspan releases.
   - Compute nodes need `bash`, `install`, and `curl` for `srun` usage samples. They also need outbound HTTPS to the
-    Dev Tunnels relay or Apache Airavata.
+    Dev Tunnels relay or the CyberShuttle API.
   - Login and compute nodes share `$HOME` and architecture.
-- **Airavata** **(experimental)** — `https://jupyterapi.cybershuttle.org/api/v1`, for CyberShuttle sign-in and the
+- **CyberShuttle API** **(experimental)** — `https://jupyterapi.cybershuttle.org/api/v1`, for CyberShuttle sign-in and the
   link transport.
 - **AWS EC2 API** **(experimental)** — for EC2 sessions.
 - **A Remote-SSH extension** — CS Bridge opens a `vscode-remote://ssh-remote+…` address. Whichever provider is

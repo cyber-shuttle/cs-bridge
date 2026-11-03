@@ -20,10 +20,9 @@ How windows share these files is in [Cross-window state](03-cross-window-state.m
 | VS Code logs folder | the "CS Bridge" log output channel (`logger.ts`) |
 | VS Code user setting `remote.SSH.serverInstallPath` | an entry for the per-session SSH host of each Slurm session whose record holds a `localPort`, mapped to `/tmp/cs-vscode/<sessionId>`. The entry is written when the owner binds `127.0.0.1:N`. It is left behind when that window closes. Entries not under `/tmp/cs-vscode/` are left alone. |
 | VS Code `globalState` | `csbridge.pendingSummaries`: the queue of pending session summaries |
-| VS Code user setting `csbridge.transport` | written by Default Transport **(experimental)** |
 | `csbridge-ssh` in `$XDG_RUNTIME_DIR` or the temp folder | SSH ControlMaster sockets, not on Windows. If that folder is not private to the user, each window uses a fresh `csbridge-*` temp folder. |
 | OS keychain | the Microsoft account token, held by VS Code |
-| VS Code SecretStorage | `csbridge.plane.credential` and `aws.credentials` **(experimental)**. Each is kept until sign-out, or until Apache Airavata or AWS refuses it. |
+| VS Code SecretStorage | `csbridge.plane.credential` and `aws.credentials` **(experimental)**. Each is kept until sign-out, or until the CyberShuttle API or AWS refuses it. |
 | `cs-askpass-*` in the temp folder | prompt, response and cancel files for one interactive SSH connect. They are removed when its shell exits. |
 | `<file>.lock`, `<file>.tmp` beside `~/.ssh/config` and `ssh_config` | the writer's pid lock and its atomic-rename staging file. A lock whose pid is dead is reclaimed (`fsSupport.ts`). |
 
@@ -51,8 +50,8 @@ extension storage on uninstall.
 
 Removing the storage folder does not clear SecretStorage or the `globalState` summary queue.
 
-Dev Tunnels, Airavata sessions and EC2 resources (instances, key pairs, security groups) live in those accounts.
-Deleting a session removes its own Dev Tunnel, Airavata session or instance. These stay:
+Dev Tunnels, CyberShuttle API processes and EC2 resources (instances, key pairs, security groups) live in those accounts.
+Deleting a session removes its own Dev Tunnel or instance. These stay:
 
 - the per-region EC2 key pair;
 - the `CS-Bridge SSH Access` security group;
@@ -61,16 +60,17 @@ Deleting a session removes its own Dev Tunnel, Airavata session or instance. The
 
 ## Record shape
 
-Field names match Airavata's wire types. The status-related fields are listed in
+Field names match the CyberShuttle API's wire types. The status-related fields are listed in
 [Session status](02-session-status.md#recorded-facts). The others:
 
 | Field | Meaning |
 |---|---|
 | `id` | a uuidv7. Sorting by id gives creation order. |
 | `name` | creation time in ms, or the instance id for an adopted EC2 instance. Its last six characters name the per-session SSH host. |
-| `alias`, `account`, `partition`, `rootFolder`, `resources` | the request. An empty `account` submits without `--account`. `rootFolder` is the folder the window opens. `resources` holds `cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`. |
+| `alias`, `account`, `partition`, `rootFolder`, `resources` | the request. `alias` is the SSH host, or the CyberShuttle host's `cs-<name>-<id>`. An empty `account` submits without `--account`. `rootFolder` is the folder the window opens. `resources` holds `cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`. |
 | `submittedAt` | the last submit, or the creation time before the first |
-| `transport`, `devtunnel`, `planeId` | `transport` is the latest run's transport. `devtunnel` (`{id, cluster}`) is the Dev Tunnel of the last run that used one. It is kept until the next Dev Tunnel Start or until Delete. `planeId` is the latest link run's Airavata session. It is kept until Delete. |
+| `clusterConfigId` | set on a CyberShuttle host. `jobId` is then the process id. |
+| `transport`, `devtunnel`, `planeId` | `transport` is the latest run's transport. `devtunnel` (`{id, cluster}`) is the Dev Tunnel of the last run that used one. It is kept until the next Dev Tunnel Start or until Delete. `planeId` is the CyberShuttle API process of the latest link run. Each link Start replaces it. It is kept until Delete. |
 | `connectionInfo` | `controlPort`. `sshPort`: 0 until Linkspan's SSH server is up, or 22 once an EC2 instance's port 22 answers. `localPort`: the `127.0.0.1` listener bound by the window that last connected. It is kept after that window closes. |
 | `owner` | see [Owner window](03-cross-window-state.md#owner-window) |
 | `ec2` | see [EC2 instances](07-ec2.md#model) |
@@ -94,7 +94,7 @@ locks `~/.ssh/config`. So on a machine without `~/.ssh/`, activation fails until
 
 | Step | Change |
 |---|---|
-| 0 → 1 | inside `~/.cybershuttle`: splits `sessions.json` into `sessions/`, renames fields to Airavata's names, reissues non-uuid ids, turns `metrics/` into `runs/`, removes `ssh_hosts` and its `Include` |
+| 0 → 1 | inside `~/.cybershuttle`: splits `sessions.json` into `sessions/`, renames fields to the CyberShuttle API's names, reissues non-uuid ids, turns `metrics/` into `runs/`, removes `ssh_hosts` and its `Include` |
 | 1 → 2 | moves records and SSH keys from `~/.cybershuttle` into extension storage, removes the old `Include` and CS Bridge's entries in `~/.cybershuttle` |
 | 2 → 3 | replaces the stored status with `desired`, `observed` and `failure` |
 | 3 → 4 | gives each run without a walltime its session's |

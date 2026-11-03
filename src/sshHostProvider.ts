@@ -1,13 +1,17 @@
 import * as vscode from 'vscode';
 import { errMsg } from './logger';
 import { HostsState, HostsMessage } from './models';
+import { Plane } from './plane';
+import { enabled } from './features';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { SshManager } from './modules/sshSupport';
 import { SshConfigEntry, assertValidHost } from './modules/sshCommandParser';
-import { USER_SSH_CONFIG_PATH, addHostToConfigFile, deleteHostFromConfigFile, editHostInConfigFile } from './modules/sshHostsStore';
+import { USER_SSH_CONFIG_PATH, addHostToConfigFile, cyberShuttleHosts, deleteHostFromConfigFile, editHostInConfigFile } from './modules/sshHostsStore';
 
 // Webview provider for the SSH Hosts view: reads user + read-only system SSH config, writes user SSH hosts to ~/.ssh/config.
 export class SshHostProvider extends WebviewProvider<HostsMessage> {
+    constructor(extensionUri: vscode.Uri, private readonly plane: Pick<Plane, 'clusterConfigs'>) { super(extensionUri); }
+
     public static readonly viewType = 'csbridge.hostsView';
     protected readonly viewKind = 'hosts' as const;
     protected readonly handlers: Handlers<HostsMessage> = {
@@ -23,7 +27,10 @@ export class SshHostProvider extends WebviewProvider<HostsMessage> {
     }
 
     // Title-bar action: re-read so hosts added externally (e.g. via Remote-SSH) appear without a window reload.
-    public refreshSshHosts(): void {
+    public async refreshSshHosts(): Promise<void> {
+        this.pushState();
+        const configs = enabled('cybershuttle') ? await this.plane.clusterConfigs().catch((err) => { this.logger.warn(`Listing CyberShuttle hosts failed: ${errMsg(err)}`); return []; }) : [];
+        SshManager.getInstance().cyberShuttleHosts = cyberShuttleHosts(configs);
         this.pushState();
     }
 

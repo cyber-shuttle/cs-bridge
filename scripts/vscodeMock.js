@@ -27,6 +27,7 @@ mock.module('vscode', () => ({
     window: {
         createOutputChannel: () => ({ info: noop, warn: noop, error: noop, trace: noop, dispose: noop }),
         showErrorMessage: async () => undefined, showWarningMessage: async () => undefined, showInformationMessage: async () => undefined,
+        showQuickPick: async items => items[0],
         createQuickPick: () => { const pick = { activeItems: [], onDidHide: noop, dispose: noop, onDidAccept: f => { pick.show = () => { pick.selectedItems = [pick.items.find(i => i.minutes === quickPick.minutes) ?? pick.activeItems[0] ?? pick.items[0]]; f(); }; } }; return pick; },
         createWebviewPanel: () => {
             const received = new EventEmitter(), disposed = new EventEmitter();

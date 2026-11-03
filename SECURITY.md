@@ -40,24 +40,22 @@ when it shows one of them failing.
   regular file. Adding the `Include` and managing hosts set mode `0600` on a newly created temp file. Removing the
   legacy `Include` lines keeps the default file mode. Per-session SSH hosts go to that extension-storage `ssh_config`.
 - Per-session SSH hosts do not verify the remote host key (`StrictHostKeyChecking no`). The relay (Dev Tunnels or
-  Apache Airavata) is trusted. For EC2, the network path to the instance is trusted.
+  the CyberShuttle API) is trusted. For EC2, the network path to the instance is trusted.
 - The job receives a token scoped to hosting one Dev Tunnel, never an account credential. The token is passed as an
   environment variable on `sbatch`. It is not in the job script, a process's argv, or a file CS Bridge writes. Slurm
   may keep the job's environment in its own state and accounting. A failed `sbatch` with empty stderr currently puts
   the token into the error message, the log and the session record.
 - Dev Tunnel sign-in is VS Code's Microsoft account provider. CS Bridge runs no OAuth server and stores no Microsoft
   token.
-- The `link` transport **(experimental)** is an open-source alternative to Microsoft Dev Tunnels, served by Airavata.
-  Its sign-in is CILogon's device grant brokered by Airavata.
+- The `link` transport **(experimental)** is an open-source alternative to Microsoft Dev Tunnels, served by the CyberShuttle API.
+  Its sign-in is CILogon's device grant brokered by the CyberShuttle API. The ID token it returns is the bearer token.
   - The credential is stored only in VS Code's SecretStorage. Each window caches it in memory. It is sent only to
-    Airavata.
-  - The job's link token reaches Linkspan as an environment assignment on `sbatch --export=ALL`. It is not in the job
-    script or a process's argv. A failed `sbatch` with empty stderr currently puts it into the error message, the log
-    and the session record, as for the Dev Tunnel token.
-  - CS Bridge asks Airavata to release the session (`POST /stop`) when the run ends. A failed request, for example
-    while signed out, is logged. A request that Airavata refuses as unauthorized also signs you out of CyberShuttle.
-  - The next Start on the link transport stops the session before attaching. Delete stops and deletes it when you are
-    signed in. If that fails, it is only logged, and the Airavata session is left in your account.
+    the CyberShuttle API.
+  - A CyberShuttle host's Start sends the run's resources and the picked deployment and config ids. The CyberShuttle
+    API logs in under that config, and what you type in the SSH authentication panel for that login goes to it.
+  - CS Bridge asks the CyberShuttle API to stop the run's process (`POST /stop`) when the run ends, and on Delete. A
+    failed request, for example while signed out, is logged. A request that the CyberShuttle API refuses as
+    unauthorized also signs you out of CyberShuttle.
   - The forward token stays in the extension host's memory. Every forward listens on 127.0.0.1 only.
 - AWS credentials **(experimental)** are typed into VS Code and sent only to the EC2 API. They are kept in VS Code's
   SecretStorage until you sign out or AWS refuses a key. The refused key can be the stored one at startup, or one typed
