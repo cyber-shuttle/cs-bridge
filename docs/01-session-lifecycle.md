@@ -61,12 +61,14 @@ For a Slurm session, **Start** first asks for a walltime, from 30 min to 24 h. T
 cancels. `sbatch --test-only` checks the pick before the preview. A refusal shows on the session. The card shows busy
 until the preview opens.
 
+A CyberShuttle host's Start asks for a deployment after the walltime when its cluster has several, then skips steps 2 to 6: the CyberShuttle API submits the job. See [Link transport](06-link-transport.md#steps).
+
 1. **Claim and clean up.** **Start** (`sessionProvider.ts`):
    - ends any monitoring loop with its teardown, or waits for a teardown already in flight;
    - drops an unsubmitted preview;
    - claims the session. It stops if another window owns it.
 
-   If the previous run left connection info, that run's teardown runs now. The configured transport is then written
+   If the previous run left connection info, that run's teardown runs now. The run's transport is then written
    to the record. This way a run keeps the transport it started with.
 
    Start does nothing while:
@@ -84,7 +86,7 @@ until the preview opens.
    - builds the job script with `buildSlurmScript` (`slurmParse.ts`).
 
 3. **Preview.** The script is shown for review. Dismissing the preview drops the draft, runs the teardown and gives up
-   the claim. The teardown releases the transport's hold. For link, it stops the attached Apache Airavata session.
+   the claim. The teardown releases the transport's hold.
 
    **Submit**:
    - discards the draft;
@@ -118,7 +120,7 @@ until the preview opens.
 6. **Submit.**
    - The job script is piped, base64-encoded, into `sbatch`.
    - The transport's token is passed as an environment assignment on the `sbatch` command, with `--export=ALL`. It is
-     `LINKSPAN_TUNNEL_HOST_TOKEN` for a Dev Tunnel and `LINKSPAN_LINK_TOKEN` for the link transport. The command is
+     `LINKSPAN_TUNNEL_HOST_TOKEN`. The command is
      sent over the persistent shell's stdin. This keeps the token out of the job script and any process's argv. A
      failed `sbatch` with empty stderr reports the whole command, token included. The report is shown, logged, and
      recorded as the session's `failure` and `errorMessage`.
@@ -151,7 +153,7 @@ CS Bridge uses these endpoints on the control port. They are in `linkspanSupport
 |---|---|
 | `POST /api/v1/vscode/sessions` with `{ref, authorized_key}` | start, or return, the SSH server for the session's key. `ref` is `ssh-` plus 16 hex characters of the key's SHA-256. |
 | `GET /api/v1/usage` | the live usage sample, and the health check |
-| `WS /api/v1/forward/<port>` | relays one TCP connection to a port on the node. Dev Tunnel transport only. Link uses Airavata's forward. |
+| `WS /api/v1/forward/<port>` | relays one TCP connection to a port a Linkspan task serves. |
 
 ## Monitor
 
@@ -161,7 +163,7 @@ CS Bridge uses these endpoints on the control port. They are in `linkspanSupport
 | Status | Tick |
 |---|---|
 | `submitting`, `queued`, `unreachable`, `stopping`, or no tunnel yet | reads the job state from `sacct`. When the job first reads `RUNNING`, `startedAt` is set from `sacct`'s `ElapsedRaw`. The walltime countdown then follows Slurm's clock. |
-| `preparing` | calls `ensureRemoteSession`. It asks Linkspan for an SSH server that accepts the session's public key. Success records the node's `sshPort`, and the session becomes `ready_to_connect`. Failure means Linkspan is not up yet. The session stays `preparing`, and `errorMessage` records why. The card shows only "Starting Linkspan…". The exception is Airavata's not-ready answer, which is only logged. The first call creates the session's key pair (`sessionPublicKey`, `sshSupport.ts`). |
+| `preparing` | calls `ensureRemoteSession`. It asks Linkspan for an SSH server that accepts the session's public key. Success records the node's `sshPort`, and the session becomes `ready_to_connect`. Failure means Linkspan is not up yet. The session stays `preparing`, and `errorMessage` records why. The card shows only "Starting Linkspan…". The exception is the CyberShuttle API's not-ready answer, which is only logged. The first call creates the session's key pair (`sessionPublicKey`, `sshSupport.ts`). |
 | `ready_to_connect`, `connecting`, `connected` | pulls a usage sample from `/api/v1/usage`. This is the health check. |
 
 Details:
@@ -246,10 +248,9 @@ calls `SlurmBackend.end` (`sessionSupport.ts`), which:
 
 - records the run in Run History;
 - disposes the relay client and clears the session's connection info;
-- releases the run through the transport. For the link transport, this stops the Airavata session.
+- releases the run through the transport. For the link transport, this stops the CyberShuttle API process.
 
-The Dev Tunnel itself is kept until the next Start on the Dev Tunnel transport, or a delete. A Start on the link
-transport leaves it until the delete.
+The Dev Tunnel itself is kept until the next Start on the Dev Tunnel transport, or a delete.
 
 **Walltime.** A session whose deadline (`startedAt` plus walltime) has passed reads as `stopped` even when `sacct`
 cannot be reached. A run whose deadline passed while VS Code was closed is torn down on the next activation.
@@ -271,6 +272,6 @@ confirmation, `confirmAndDeleteSession` (`sessionProvider.ts`):
 1. does nothing while a task for the session runs. Otherwise it ends any loop with its teardown, or waits for a
    teardown in flight, then claims the session. It stops if another window owns it;
 2. disposes this window's relay client;
-3. calls the backend's `remove`. For Slurm, this deletes the session's Dev Tunnel, its Airavata session and its SSH
+3. calls the backend's `remove`. For Slurm, this deletes the session's Dev Tunnel, stops its CyberShuttle API process and deletes its SSH
    key. For EC2, it terminates the instance;
 4. deletes the record and its runs file. Its Run History rows go too. The next `syncSshConfig` drops its SSH host.

@@ -11,8 +11,8 @@ With the default Dev Tunnel transport, CS Bridge opens a VS Code window on a Slu
 2. Linkspan opens an outbound Microsoft Dev Tunnel and, when CS Bridge asks, starts an SSH server on the node.
 3. VS Code connects to that SSH server through the tunnel.
 
-The link transport **(experimental)** is an open-source alternative to Microsoft Dev Tunnels, served by Apache
-Airavata. EC2 sessions **(experimental)** are for when you need a VM rather than a cluster. CS Bridge launches an
+The link transport **(experimental)** is an open-source alternative to Microsoft Dev Tunnels, served by the
+CyberShuttle API. EC2 sessions **(experimental)** are for when you need a VM rather than a cluster. CS Bridge launches an
 instance and opens VS Code on it. It reaches the instance over SSH at its public IP. No Slurm job or Linkspan is
 involved. See [Backends and transports](05-backends-and-transports.md).
 
@@ -52,8 +52,8 @@ Two separate paths reach the cluster:
   partitions, submit, poll and stop Slurm jobs (`scancel`), and install Linkspan.
 - **Work path.** With the Dev Tunnel transport, the tunnel carries only Linkspan's control port. A local listener,
   `127.0.0.1:N`, carries each SSH connection over a WebSocket to Linkspan's `/api/v1/forward/{sshPort}`. Linkspan
-  relays it to the node's SSH server. With the link transport **(experimental)**, the listener's WebSocket goes to
-  Airavata's `/sessions/{id}/forward/{sshPort}`. Airavata forwards any port a Linkspan task serves. Remote-SSH connects
+  relays it to the node's SSH server. With the link transport **(experimental)**, the listener's WebSocket reaches
+  the same Linkspan endpoint through the CyberShuttle API's `/processes/{id}/proxy/{controlPort}/`. Remote-SSH connects
   to `127.0.0.1:N`. With the Dev Tunnel transport, Linkspan's API calls go over HTTPS to the tunnel's
   `*.devtunnels.ms` endpoint for the control port. A window without the relay client samples usage through `srun` on
   the login node.
@@ -76,7 +76,7 @@ Two separate paths reach the cluster:
 | Heartbeat | A file each window rewrites every 20 s. A window without a recent one counts as closed. |
 | Remote window | A VS Code window opened on a compute node. |
 | Backend | What a session runs on: a Slurm job, or an EC2 instance **(experimental)**. |
-| Transport | How the work path is carried: a Dev Tunnel, or link **(experimental)**, an open-source alternative to Microsoft Dev Tunnels served by Airavata. |
+| Transport | How the work path is carried: a Dev Tunnel, or link **(experimental)**, an open-source alternative to Microsoft Dev Tunnels served by the CyberShuttle API. |
 
 ## Documents
 
@@ -89,7 +89,7 @@ Read in this order the first time. Each document also stands on its own.
 | [Cross-window state](03-cross-window-state.md) | shared records, heartbeats, the owner window, reattach and remote windows |
 | [SSH](04-ssh.md) | the per-session SSH host, SSH host management and the SSH transport to the login node |
 | [Backends and transports](05-backends-and-transports.md) | the `Backend` and `Transport` interfaces, the Dev Tunnel transport and feature flags |
-| [Link transport](06-link-transport.md) | the Airavata work path **(experimental)** |
+| [Link transport](06-link-transport.md) | CyberShuttle API work path **(experimental)** |
 | [EC2 instances](07-ec2.md) | sessions on EC2 **(experimental)** |
 | [Extension surface](08-extension-surface.md) | views, commands, settings, the menu, webview messages, card actions, Run History and logging |
 | [Source layout](09-source-layout.md) | where the code lives, how to extend it, invariants and tests |

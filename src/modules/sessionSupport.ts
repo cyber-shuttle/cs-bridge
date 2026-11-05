@@ -1,6 +1,6 @@
 import { ConnectionInfo, Ec2Session, UsageSample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession, isEc2 } from '../models';
 import { Logger, errMsg } from './../logger';
-import { PlaneError } from '../plane';
+import { PlaneError, type Deployment } from '../plane';
 import { getSession, patch, setError, observe, statusOf, live, claim, owns, disown } from '../extensionStore';
 import { recordSessionRun, sacctStats } from '../sessionRunSupport';
 import { SshManager, deleteSessionPrivateKey, hasSessionKey, syncSshConfig } from './sshSupport';
@@ -139,7 +139,7 @@ export class SlurmBackend implements Backend {
     private runs = new Map<string, Tally>(); // this window's tallies per session
 
     // The monitor is built with this backend, so it arrives lazily.
-    constructor(private readonly transports: Pick<Transports, 'transportFor' | 'remove'>, private readonly monitor: () => SessionMonitor) { }
+    constructor(private readonly transports: Pick<Transports, 'transportFor' | 'remove' | 'plane'>, private readonly monitor: () => SessionMonitor) { }
 
     private log(session: SlurmSession, msg: string): void { logger.info(sessionLine(session.name, msg)); }
     private warn(session: SlurmSession, msg: string): void { logger.warn(sessionLine(session.name, msg)); }
@@ -159,17 +159,28 @@ export class SlurmBackend implements Backend {
         this.monitor().startMonitoring(session);
     }
 
+    async launch(session: SlurmSession, deployment: Deployment, wallMinutes: number): Promise<void> {
+        resetLive(session.id);
+        const { processId, batchProcess: { controlPort } } = await this.transports.plane.createProcess(session, wallMinutes, deployment);
+        patch(session, { planeId: processId });
+        await this.transports.plane.launchProcess(processId);
+        patch(session, { jobId: processId, connectionInfo: { sshPort: 0, controlPort }, submittedAt: Date.now() });
+        this.monitor().startMonitoring(session);
+    }
+
+    private jobStatus = (session: SlurmSession) => session.clusterConfigId ? this.transports.plane.jobStatus(session.jobId) : getSlurmJobStatus(session);
+
     // Throws when the job is still running after a refused scancel; the caller then leaves the session as it was.
     async stop(session: SlurmSession): Promise<void> {
         const stopCommand = `scancel ${session.jobId}`;
         this.log(session, `sending stop command: ${stopCommand}`);
         try {
-            await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand); // a Stop is the user's, so the owner window may authenticate for it
+            await (session.clusterConfigId ? this.transports.plane.stopProcess(session.jobId) : SshManager.getInstance().runRemoteCommand(session.alias, stopCommand)); // a Stop is the user's, so the owner window may authenticate for it
             observe(session, SlurmJobStatus.CANCELLED);
             this.log(session, `stop command sent successfully`);
         }
         catch (err) {
-            const read = await getSlurmJobStatus(session).catch(() => undefined); // it may have ended anyway
+            const read = await this.jobStatus(session).catch(() => undefined); // it may have ended anyway
             if (read) { observe(session, read.status); }
             if (!isTerminal(statusOf(session))) { throw new Error(`failed to send stop command: ${errMsg(err)}`, { cause: err }); }
             this.log(session, `job already ended`);
@@ -254,7 +265,7 @@ export class SlurmBackend implements Backend {
             return;
         }
 
-        const { status: slurmStatus, elapsedSeconds } = await getSlurmJobStatus(session);
+        const { status: slurmStatus, elapsedSeconds } = await this.jobStatus(session);
         if (!alive()) { return; }
         this.log(session, `healthcheck (Slurm): status=${slurmStatus}`);
 
@@ -278,7 +289,7 @@ export class SlurmBackend implements Backend {
     // Tunnel health gave up — only an authoritative sacct terminal state may tear the session down; else it's alive, resume pinging.
     private async crossCheckSlurmForDeath(session: SlurmSession, alive: () => boolean): Promise<void> {
         try {
-            const { status } = await getSlurmJobStatus(session);
+            const { status } = await this.jobStatus(session);
             if (!alive()) { return; }
             observe(session, status);
             if (!isTerminal(statusOf(session))) { this.run(session.id).probeFails = 0; }
@@ -312,20 +323,21 @@ export class SlurmBackend implements Backend {
             // Linkspan not up yet, or a tunnel API blip: transient rather than job death, so
             // hold 'preparing' and count it toward the sacct cross-check.
             this.run(session.id).probeFails++;
-            if (err instanceof PlaneError && err.code === 'session_access_unavailable') { this.log(session, `waiting for Linkspan's link to cs-plane`); return; }
+            if (err instanceof PlaneError && err.status === 409) { this.log(session, `waiting for Linkspan's link to the CyberShuttle API`); return; }
             this.warn(session, `Linkspan unreachable (will retry): ${errMsg(err)}`);
             setError(session, `Preparing remote session: ${errMsg(err)}`);
         }
     }
 
     private pullSample(session: SlurmSession, ci: ConnectionInfo): Promise<UsageSample> {
-        if (!isTunnelClientConnected(session.id)) { return getSampleViaSrun(session, ci.controlPort); }
+        if (!session.clusterConfigId && !isTunnelClientConnected(session.id)) { return getSampleViaSrun(session, ci.controlPort); }
         return this.transports.transportFor(session).withLinkspan(session, ci, getSample);
     }
 
     // Throttled sacct refresh, fire-and-forget from the health path (sacctStats swallows its own errors).
     private async refreshStats(session: SlurmSession, alive: () => boolean): Promise<void> {
         const now = Date.now(), run = this.run(session.id);
+        if (session.clusterConfigId) { return; }
         if (run.sacctAt !== undefined && now - run.sacctAt < SACCT_REFRESH_MS) { return; }
         run.sacctAt = now;
         const m = await sacctStats(session);
@@ -335,7 +347,7 @@ export class SlurmBackend implements Backend {
 
 export async function prepareLaunch(session: SlurmSession, transport: Pick<Transport, 'prepare'>, wallMinutes: number): Promise<LaunchDraft> {
     // Fresh connection info with a control port picked before transport.prepare, which puts it on the Dev Tunnel for the
-    // job's host to find, or replaces it with cs-plane's for link.
+    // job's host to find.
     // Trade-off: random high port; ~1/12000 collision on a shared compute node (Linkspan log.Fatals if taken, session then fails) — probe a free port on the node if it ever bites.
     const ci: ConnectionInfo = { sshPort: 0, controlPort: 20000 + Math.floor(Math.random() * 12000) };
     resetLive(session.id);

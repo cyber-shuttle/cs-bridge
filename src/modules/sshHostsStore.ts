@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { parse, LineType, type Directive } from 'ssh-config';
 import { SlurmSession, SshHost, isEc2 } from '../models';
+import type { ClusterConfig } from '../plane';
 import { keyName } from './ec2';
 import { SshConfigEntry, isKeyword } from './sshCommandParser';
 import { lockedUpdateTextFile } from './fsSupport';
@@ -151,6 +152,12 @@ export function mergeHostsByPriority(...lists: SshHost[][]): SshHost[] {
     }
     return [...byAlias.values()];
 }
+
+// No ':' in an alias: a vscode-remote authority refuses one.
+export const cyberShuttleHosts = (configs: ClusterConfig[]): SshHost[] => configs.map(c => ({
+    alias: `cs-${c.name || c.slurmCluster?.clusterName || 'cluster'}-${c.slurmClusterConfigId.slice(0, 8)}`.toLowerCase().replace(/[^a-z0-9.-]+/g, '-'),
+    hostname: c.slurmCluster?.headnodeHost, user: c.loginUser, source: 'cybershuttle', clusterConfigId: c.slurmClusterConfigId,
+}));
 
 export function addHostToConfigFile(filePath: string, entry: SshConfigEntry): void {
     fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });

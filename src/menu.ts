@@ -4,14 +4,13 @@
 import * as vscode from 'vscode';
 import { Logger, errMsg } from './logger';
 import { Plane } from './plane';
-import { SlurmSession, SshHost, EC2_IMAGES, EC2_TYPES } from './models';
+import { SshHost, EC2_IMAGES, EC2_TYPES } from './models';
 import { SessionProvider } from './sessionProvider';
 import { AwsClient } from './modules/aws';
 import { SshHostProvider } from './sshHostProvider';
 import { SshManager } from './modules/sshSupport';
-import { Transports } from './modules/transport';
 import { getMicrosoftAccountLabel, switchDevTunnelAccount } from './modules/tunnelSupport';
-import { configuredTransport, enabled } from './features';
+import { enabled } from './features';
 import { parseHostToken, sshCommandToConfig } from './modules/sshCommandParser';
 
 type Page = { title: string; placeholder?: string; items: Item[]; input?: { value: string; submit: (value: string) => Build | void } };
@@ -30,7 +29,7 @@ export class CsBridgeMenu {
 
     constructor(
         private readonly plane: Plane, private readonly sessions: SessionProvider,
-        private readonly sshHosts: SshHostProvider, private readonly transports: Transports, private readonly aws: AwsClient,
+        private readonly sshHosts: SshHostProvider, private readonly aws: AwsClient,
     ) { void this.refreshAccounts(); }
 
     open(start: Build = this.root): void {
@@ -73,6 +72,7 @@ export class CsBridgeMenu {
     private async refreshAccounts() {
         try { [this.email, this.microsoft] = await Promise.all([this.plane.identity(), getMicrosoftAccountLabel(), enabled('aws') && this.aws.restored]); }
         catch (err) { Logger.getInstance().warn(`Menu account refresh failed: ${errMsg(err)}`); }
+        await this.sshHosts.refreshSshHosts();
     }
 
     private readonly root: Build = () => {
@@ -84,7 +84,6 @@ export class CsBridgeMenu {
                 { label: '$(add) Create New SSH Session', open: this.hosts },
                 { label: '$(server) Add SSH Host', open: this.addHost },
                 ...enabled('aws') && this.aws.regions ? [{ label: '$(cloud) Create Cloud VM', open: this.cloudVm(this.aws.regions) }] : [],
-                ...cybershuttle ? [{ label: '$(arrow-swap) Default Transport', description: this.of(this.current()).label, open: this.transport }] : [],
                 { label: 'Accounts', kind: vscode.QuickPickItemKind.Separator },
                 ...cybershuttle ? [email === null
                     ? { label: '$(sign-in) Sign In to CyberShuttle', run: () => signIn(this.plane) }
@@ -139,25 +138,13 @@ export class CsBridgeMenu {
             }) })),
         }) })),
     });
-
-    private readonly transport: Build = () => ({
-        title: 'Default Transport',
-        items: (['devtunnel', 'link'] as const).map(name => ({
-            label: `${name === this.current() ? '$(check)' : '$(blank)'} ${this.of(name).label}`,
-            description: this.of(name).description,
-            run: () => vscode.workspace.getConfiguration('csbridge').update('transport', name, vscode.ConfigurationTarget.Global),
-        })),
-    });
-
-    private of(transport: SlurmSession['transport']) { return this.transports.transportFor({ transport }); }
-    private current() { return configuredTransport(); }
 }
 
 async function signIn(plane: Plane) {
     const code = await plane.startSignIn();
-    await vscode.env.openExternal(vscode.Uri.parse(code.verificationUriComplete));
+    await vscode.env.openExternal(vscode.Uri.parse(code.verification_uri_complete));
     if (await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Waiting for CyberShuttle sign-in with code ${code.userCode}`, cancellable: true },
+        { location: vscode.ProgressLocation.Notification, title: `Waiting for CyberShuttle sign-in with code ${code.user_code}`, cancellable: true },
         (_progress, token) => plane.awaitSignIn(code, () => token.isCancellationRequested),
     )) { vscode.window.showInformationMessage('Signed in to CyberShuttle.'); }
 }

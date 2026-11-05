@@ -8,7 +8,7 @@ import type { JsonDir } from './modules/store';
 import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, deleteSession, patch, observe, onSessionsChange } from './extensionStore';
 import { initRunStore, appendRun } from './modules/runStore';
 import { newSession, isEc2, Run, SlurmJobStatus, SessionsMessage, SessionsState } from './models';
-import { Backend, Backends, SessionMonitor, prepareLaunch } from './modules/sessionSupport';
+import { Backend, Backends, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
 import { Ec2Backend } from './modules/ec2Session';
 import { SessionProvider } from './sessionProvider';
 import type { Transport } from './modules/transport';
@@ -177,13 +177,13 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
     assert.equal(statusOf(s), 'stopped');
     const released: string[] = [];
     const transport: Transport = {
-        label: 'fake', description: '', management: () => ({ getTunnel: async () => null }),
+        label: 'fake', management: () => ({ getTunnel: async () => null }),
         relayClient: () => ({ connect: async () => { }, waitForForwardedPort: async () => { }, dispose: async () => { } }),
         tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); }, deleteTunnel: async () => { },
         signedIn: async () => true, prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }), release: async (session) => { released.push(session.id); },
     };
     const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
-    const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { } }, aws);
+    const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { }, plane: {} as never }, aws);
     const posted: { command: string; state: SessionsState }[] = [];
     let receive: (m: SessionsMessage) => void = () => { };
     provider.resolveWebviewView({
@@ -229,7 +229,7 @@ test('a walltime Slurm refuses stops the Start before the attach', async (t) => 
         signedIn: async () => true, prepare: async () => { attached = true; return { tunnelArgs: '', sbatchEnv: {} }; }, release: async () => { },
     } as unknown as Transport;
     const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
-    const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { } }, aws);
+    const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { }, plane: {} as never }, aws);
     let receive: (m: SessionsMessage) => void = () => { };
     provider.resolveWebviewView({
         webview: { options: {}, html: '', cspSource: 'x', asWebviewUri: (u: unknown) => u, postMessage: async () => true, onDidReceiveMessage: (l: (m: SessionsMessage) => void) => { receive = l; return { dispose() { } }; } },
@@ -246,19 +246,59 @@ test('a walltime Slurm refuses stops the Start before the attach', async (t) => 
     provider.dispose();
 });
 
+test('a Start on a CyberShuttle host launches a deployment on its cluster through the CyberShuttle API, which reads and stops the job', async (t) => {
+    const commands: string[] = [];
+    t.mock.method(SshManager, 'getInstance', () => ({ runRemoteCommand: async (_: string, command: string) => { commands.push(command); return ''; } }) as never);
+    const s = running();
+    await patch(s, { clusterConfigId: 'k1', jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() } });
+    const calls: string[] = [];
+    const plane = {
+        deployments: async (clusterConfigId: string) => [{ deploymentId: `d-${clusterConfigId}`, label: 'JupyterLab' }],
+        createProcess: async (_s: unknown, _w: number, deployment: { deploymentId: string }) => { calls.push(`create ${deployment.deploymentId}`); return { processId: 'p1', batchProcess: { controlPort: 21234 } }; },
+        launchProcess: async (id: string) => { calls.push(`launch ${id}`); },
+        jobStatus: async (id: string) => { calls.push(`status ${id}`); return { status: SlurmJobStatus.QUEUED, elapsedSeconds: 0 }; },
+        stopProcess: async (id: string) => { calls.push(`stop ${id}`); },
+    };
+    const transport = { signedIn: async () => true, tunnelRef: () => undefined, release: async () => { }, prepare: async () => { throw new Error('not from a script'); } } as unknown as Transport;
+    const transports = { transportFor: () => transport, remove: async () => { }, plane: plane as never };
+    const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
+    const provider = new SessionProvider(vscode.Uri.parse('/ext'), transports, aws);
+    let receive: (m: SessionsMessage) => void = () => { };
+    provider.resolveWebviewView({
+        webview: { options: {}, html: '', cspSource: 'x', asWebviewUri: (u: unknown) => u, postMessage: async () => true, onDidReceiveMessage: (l: (m: SessionsMessage) => void) => { receive = l; return { dispose() { } }; } },
+        visible: true, onDidChangeVisibility: () => ({ dispose() { } }), onDidDispose: () => ({ dispose() { } }),
+    } as never);
+
+    receive({ command: 'prepareLaunchSession', sessionId: s.id });
+    await sleep(20);
+    assert.deepEqual(calls, ['create d-k1', 'launch p1', 'status p1'], 'its cluster\'s deployment, launched and then read by the CyberShuttle API');
+    assert.deepEqual(commands, [], 'no SSH: no sbatch check, no submit, no sacct');
+    assert.equal(s.transport, 'link');
+    assert.equal(s.jobId, 'p1', 'the job id is the process id');
+    assert.equal(s.planeId, 'p1');
+    assert.equal(s.connectionInfo?.controlPort, 21234, 'the control port is the one the CyberShuttle API derives');
+    assert.equal(statusOf(s), 'queued');
+    provider.dispose();
+
+    await new SlurmBackend(transports, () => ({}) as never).stop(s);
+    assert.equal(calls.at(-1), 'stop p1');
+    assert.equal(s.observed?.state, SlurmJobStatus.CANCELLED);
+    assert.deepEqual(commands, []);
+});
+
 test('a second Start during a preview keeps the claim and gives the first attach back', async (t) => {
     t.mock.method(SshManager, 'getInstance', () => ({ runRemoteCommand: async () => '' }) as never);
     const s = running();
     await patch(s, { jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() } });
     const log: string[] = [];
     const transport: Transport = {
-        label: 'fake', description: '', management: () => ({ getTunnel: async () => null }),
+        label: 'fake', management: () => ({ getTunnel: async () => null }),
         relayClient: () => ({ connect: async () => { }, waitForForwardedPort: async () => { }, dispose: async () => { } }),
         tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); }, deleteTunnel: async () => { },
         signedIn: async () => true, prepare: async () => { log.push('attach'); return { tunnelArgs: '', sbatchEnv: {} }; }, release: async () => { log.push('release'); },
     };
     const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
-    const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { } }, aws);
+    const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { }, plane: {} as never }, aws);
     let receive: (m: SessionsMessage) => void = () => { };
     provider.resolveWebviewView({
         webview: { options: {}, html: '', cspSource: 'x', asWebviewUri: (u: unknown) => u, postMessage: async () => true, onDidReceiveMessage: (l: (m: SessionsMessage) => void) => { receive = l; return { dispose() { } }; } },

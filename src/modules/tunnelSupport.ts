@@ -57,7 +57,8 @@ class DevTunnelRelayClient extends ForwardRelayClient {
 
     async connect(tunnel: Tunnel, options?: TunnelConnectionOptions) {
         await this.sdk.connect(tunnel, options);
-        this.forwardUrl = `ws://127.0.0.1:${await forwardedLocalPort(this.sdk, this.controlPort)}/api/v1/forward/`;
+        const local = await forwardedLocalPort(this.sdk, this.controlPort);
+        this.forwardUrl = port => `ws://127.0.0.1:${local}/api/v1/forward/${port}`;
     }
 
     override async dispose() {

@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { configuredTransport } from './features';
 import { errMsg } from './logger';
 import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage, isEc2, newSession } from './models';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
@@ -11,6 +10,7 @@ import { readRecentSamples, onRunsChange } from './modules/runStore';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { Backends, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
 import { Transports, disposeAllTunnelClients, disposeTunnelClient } from './modules/transport';
+import type { Deployment } from './plane';
 import { validateSlurmConfig, LaunchDraft } from './modules/slurmLaunch';
 import { slurmAccount } from './modules/slurmParse';
 import { isTerminal, isDeletable, isStoppable } from './modules/sessionMachine';
@@ -22,6 +22,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     protected readonly viewKind = 'sessions' as const;
 
     private readonly hostRuntime = new Map<string, HostRuntime>();
+    private readonly clusterConfigId = (alias: string) => SshManager.getInstance().getMergedHosts().find(h => h.alias === alias)?.clusterConfigId;
     private draftAlias: string | null = null;
     private draft: (LaunchDraft & { sessionId: string; wallMinutes: number }) | null = null;
     private preparing = false; // one prepare at a time, so one draft follows another
@@ -33,7 +34,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private readonly ec2: Ec2Backend;
     private readonly backends: Backends;
     // Set in a remote window (session-scoped, observe-only); undefined in the sidebar, which alone drives sessions.
-    constructor(extensionUri: vscode.Uri, private readonly transports: Pick<Transports, 'transportFor' | 'remove'>, aws: Pick<AwsClient, 'ec2' | 'ready' | 'onDidSignIn'>, private readonly remoteSessionId?: string) {
+    constructor(extensionUri: vscode.Uri, private readonly transports: Pick<Transports, 'transportFor' | 'remove' | 'plane'>, aws: Pick<AwsClient, 'ec2' | 'ready' | 'onDidSignIn'>, private readonly remoteSessionId?: string) {
         super(extensionUri);
         this.slurm = new SlurmBackend(transports, () => this.monitor);
         this.ec2 = new Ec2Backend(aws, () => this.monitor);
@@ -110,7 +111,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     };
 
     private createSession({ alias, account, partition, rootFolder, resources }: Extract<SessionsMessage, { command: 'addSession' }>): void {
-        const session = newSession({ alias, account: slurmAccount(account), partition, rootFolder, resources });
+        const session = newSession({ alias, account: slurmAccount(account), partition, rootFolder, resources, clusterConfigId: this.clusterConfigId(alias) });
         void this.validateThenPersist(session, () => {
             addSession(session);
             this.draftAlias = null;
@@ -173,7 +174,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         this.validating = true;
         void this.pushState();
         try {
-            await validateSlurmConfig(session, SshManager.getInstance(), this.logger);
+            if (!session.clusterConfigId) { await validateSlurmConfig(session, SshManager.getInstance(), this.logger); }
             persist();
         }
         catch (err) {
@@ -195,7 +196,8 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         if (!force && this.hostRuntime.get(alias)?.phase === 'ready') { void this.pushState(); return; }
         this.logger.info(`Discovering Slurm on SSH host ${alias}`);
         this.setHostRuntime(alias, { phase: 'loading' });
-        getSlurmDiscovery(alias)
+        const clusterConfigId = this.clusterConfigId(alias);
+        (clusterConfigId ? this.transports.plane.discovery(clusterConfigId) : getSlurmDiscovery(alias))
             .then(info => this.setHostRuntime(alias, { phase: 'ready', info }))
             .catch((error) => {
                 this.logger.error('Error discovering Slurm:', error);
@@ -329,22 +331,25 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         const blocked = (s: SlurmSession) => this.preparing || live.busy.has(s.id) || live.connecting.has(s.id); // one prepare at a time; a Start during a connect is a no-op
         if (!session || blocked(session)) { return; }
         const wallMinutes = isEc2(session) ? 0 : await pickWalltime(session.resources.wallMinutes);
-        if (wallMinutes === undefined || blocked(session) || !getSession(sessionId) || !isDeletable(statusOf(session))) { return; } // the pick can outlast the session or its Start
+        const deployment = wallMinutes !== undefined && session.clusterConfigId ? await this.pickDeployment(session.clusterConfigId) : null; // undefined: no deployment picked
+        if (wallMinutes === undefined || deployment === undefined || blocked(session) || !getSession(sessionId) || !isDeletable(statusOf(session))) { return; } // the pick can outlast the session or its Start
         this.preparing = true;
         live.busy.add(session.id);
         try {
             await this.monitor.quiesce(session);
             await this.dropDraft(); // one preview at a time; a repeated Start gives its earlier attach back through the transport it used
+            if (deployment && session.connectionInfo) { await this.monitor.endSession(session); }
         }
         finally { live.busy.delete(session.id); this.preparing = false; }
         if (!this.drive(session)) { return; }
         // An EC2 session has no job script to preview, so Start submits at once.
         if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
+        if (deployment) { patch(session, { transport: 'link' }); this.submit(session, () => this.slurm.launch(session, deployment, wallMinutes), wallMinutes); return; }
         this.preparing = true;
         live.busy.add(session.id);
         try {
             if (session.connectionInfo) { await this.monitor.endSession(session); } // the previous run's teardown, before a transport switch hides it
-            patch(session, { transport: configuredTransport() });
+            patch(session, { transport: 'devtunnel' });
             await validateSlurmConfig(session, SshManager.getInstance(), this.logger, wallMinutes);
             const draft = await prepareLaunch(session, this.transports.transportFor(session), wallMinutes);
             this.draft = { sessionId, wallMinutes, ...draft };
@@ -357,6 +362,14 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         }
         finally { live.busy.delete(session.id); this.preparing = false; }
         void this.pushState();
+    }
+
+    private async pickDeployment(clusterConfigId: string): Promise<Deployment | undefined> {
+        try {
+            const deployments = await this.transports.plane.deployments(clusterConfigId);
+            return deployments.length === 1 ? deployments[0] : await vscode.window.showQuickPick(deployments, { title: 'CyberShuttle Deployment' });
+        }
+        catch (err) { vscode.window.showErrorMessage(`Cannot start on this CyberShuttle host: ${errMsg(err)}`); return undefined; }
     }
 
     private preview(): SessionsState['preview'] {

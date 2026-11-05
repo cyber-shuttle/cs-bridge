@@ -152,22 +152,13 @@ Turn on `csbridge.experimentalFeatures` to try these. They may change or disappe
   other users of a shared account launched. Stopping or deleting one of those affects that user's VM.
 
   EC2 sessions have no Run History or summary. Their cards show region, instance and IP instead of usage and walltime.
-- **CyberShuttle transport** — an open-source alternative to Microsoft Dev Tunnels, served by Apache Airavata. Sign in
-  to CyberShuttle from the menu, then choose **Cybershuttle Link** under **Default Transport**. Sessions use it from
-  their next Start.
+- **CyberShuttle hosts** — sign in to CyberShuttle from the menu, and each cluster config you hold there is also a
+  host. Start asks for a walltime, then a deployment if its cluster has several. The CyberShuttle API submits,
+  reads and stops the job and carries the session, without SSH or a Dev Tunnel.
 
-  The first Start on it creates an Airavata session in your CyberShuttle account. That session holds the description
-  listed under Privacy. Each run asks Airavata to stop it. If that fails, for example while you are signed out, it
-  stays unstopped until one of these happens:
-
-  - the next Start on the CyberShuttle transport;
-  - the session is deleted while you are signed in.
-
-  Deleting it while signed out leaves it unstopped.
-
-  The Airavata session stays in your account until the CS Bridge session is deleted while you are signed in. This
-  also holds after a Start on the Dev Tunnel transport. If that delete fails, it is only logged, and the session is
-  left in your account.
+  Each Start records the run as a process in your CyberShuttle account. That process holds the description listed
+  under Privacy and stays in your account. When a run ends, or the session is deleted, CS Bridge asks CyberShuttle
+  to stop it. If that fails, for example while you are signed out, it is only logged.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/07-ec2.png" alt="EC2 instance sessions" width="360">
 
@@ -303,10 +294,10 @@ CS Bridge currently fails to activate when `~/.ssh` does not exist. Create it fi
 
 CS Bridge collects no analytics. Your SSH credentials and session traffic pass only between you, the cluster and
 Microsoft Dev Tunnels. With the experimental CyberShuttle transport, an open-source alternative to Microsoft Dev
-Tunnels, the following go through Airavata instead:
+Tunnels, the following go through the CyberShuttle API instead:
 
 - sign-in;
-- each session's description (SSH host alias, Slurm account, partition, folder and resources);
+- each run's description (Slurm account, partition and resources);
 - each session's traffic.
 
 AWS credentials **(experimental)** go only to AWS. An EC2 session's traffic goes over SSH directly to its instance.

@@ -26,10 +26,6 @@ export const devTunnelLaunch = (devtunnel: { id: string; cluster: string }, host
     sbatchEnv: { LINKSPAN_TUNNEL_HOST_TOKEN: hostToken },
 });
 
-export const linkLaunch = (url: string, token: string): LinkspanLaunch => ({
-    tunnelArgs: `--tunnel-mode link --tunnel-link-args ${shellQuote(`--url ${url}`)}`, sbatchEnv: { LINKSPAN_LINK_TOKEN: token },
-});
-
 // A GRES name as cs-plane's gpuType: without its gpu: prefix, and 'gpu' for any GPU.
 export const gpuTypeOf = (gres: string): string => gres.replace(/^gpu:?/, '') || 'gpu';
 
@@ -207,7 +203,7 @@ function parseLeadingInt(value: string): number {
     return Number.parseInt(match[0], 10);
 }
 
-function parseGres(rawGres: string): GresInfo[] {
+export function parseGres(rawGres: string): GresInfo[] {
     if (!rawGres || rawGres === '(null)') {
         return [];
     }

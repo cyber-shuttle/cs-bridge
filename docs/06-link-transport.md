@@ -1,57 +1,55 @@
 # Link transport (experimental)
 
-An open-source alternative to Microsoft Dev Tunnels, served by Apache Airavata. The work path goes through Airavata.
+The work path of a CyberShuttle host's session, served by the CyberShuttle API in place of a Microsoft Dev Tunnel.
 Sign-in is a CyberShuttle account. It implements the `Transport` contract in
 [Backends and transports](05-backends-and-transports.md#transport).
 
-The client code still calls the service cs-plane: `plane.ts`, the `planeId` field and the `csbridge.plane.credential`
-key.
+The client code keeps the name plane: `plane.ts`, the `planeId` field and the `csbridge.plane.credential` key.
 
 ## Selection
 
-When `csbridge.experimentalFeatures` is on and `csbridge.transport` is `link`, each Slurm Start records
-`transport: 'link'` on the session. That run's work path goes through Airavata. A run keeps the transport it started
-with. Changing the setting affects the next Start.
+When `csbridge.experimentalFeatures` is on, each cluster config of the signed-in user (`GET /slurm-cluster-configs/me`
+and `/shared-with-me`) is a CyberShuttle host, `cs-<name>-<id>`. Its sessions record `clusterConfigId`, and each Start
+records `transport: 'link'`.
 
-- `planeId` on the record names the Airavata session.
-- The menu's **Default Transport** page sets `csbridge.transport` in user settings.
-- `linkTunnel.ts` implements the same management and relay clients as the Dev Tunnels SDK, on top of Airavata. The
+| Host | Form | Start | Status, stop | Job id |
+|---|---|---|---|---|
+| SSH host | `sinfo`, `sacctmgr` over SSH | walltime; CS Bridge submits over SSH; reached by a Dev Tunnel | `sacct`, `scancel` over SSH | Slurm's |
+| CyberShuttle host | `POST /slurm-cluster-configs/{id}/discover-allocations`; home is the config's `workRoot` | walltime, deployment; the CyberShuttle API submits; no preview | `GET /processes/{id}` (`READY` reads as running), `POST /processes/{id}/stop` | the process id |
+
+- `linkTunnel.ts` implements the same management and relay clients as the Dev Tunnels SDK, on top of the CyberShuttle API. The
   [session lifecycle](01-session-lifecycle.md) therefore runs unchanged.
-- `plane.ts` is the Airavata client, at `https://jupyterapi.cybershuttle.org/api/v1`. Requests time out after 30 s.
+- `plane.ts` is the CyberShuttle API client, at `https://jupyterapi.cybershuttle.org/api/v1`. Requests time out after 30 s.
+  A call that logs in to the cluster (discovery, launch, stop) times out after 330 s, and meanwhile each prompt polled
+  from `ssh-interactive-auths` is asked in the SSH authentication panel.
 
 ## Steps
 
-1. **Sign in.** A CILogon device grant brokered by Airavata (`oauth/device`, then `oauth/device/poll`).
+1. **Sign in.** A CILogon device grant brokered by the CyberShuttle API (`auth/device`, then `auth/token` until it stops answering `202`).
    - The credential is kept in SecretStorage under `csbridge.plane.credential`.
-   - It is refreshed through `oauth/refresh`. The first API call made less than 60 s before its expiry, or after it,
+   - It is refreshed through `auth/token`. The first API call made less than 60 s before its expiry, or after it,
      does the refresh.
-   - It is cleared on a `401`, or when Airavata refuses the refresh with a 4xx.
+   - It is cleared on a `401`, or when the CyberShuttle API refuses the refresh with a 4xx.
    - A 5xx or network error during refresh keeps the credential.
-2. **Prepare.** `Link.prepare` (`transport.ts`), through `LinkManagementClient.defineTunnel` (`linkTunnel.ts`):
-   - stops and deletes the Airavata session in `planeId`, if any, ignoring a `404`;
-   - defines a new one with the picked walltime and a new idempotency key, and saves its id as `planeId`. Airavata
-     cannot change a walltime, and a reused key would restart its run count;
-   - attaches with `tunnelModes: ["link"]`;
-   - replaces the control port with the one Airavata assigns.
-
-   The job script gets `--tunnel-mode link --tunnel-link-args '--url …'`.
-3. **Submit.** The link token is passed as `LINKSPAN_LINK_TOKEN` in `sbatch`'s environment. It is sent over the
-   persistent shell's stdin.
-4. **Readiness.** Airavata answers `/access` only once the session is ready, that is, once Linkspan holds its link.
-   Fetching the tunnel therefore doubles as the readiness check. Airavata may answer `session_access_unavailable`.
+2. **Prepare.** After the walltime, Start asks which deployment on the host's cluster to run, unless it has one
+   (`SessionProvider.pickDeployment`). `SlurmBackend.launch` then creates a `BATCH_JOB` process (`POST /processes`)
+   with the deployment, the cluster config and the run's resources. It saves the id as `planeId` and the answer's
+   `controlPort` as the run's control port. An empty account charges the deployment's default allocation.
+3. **Submit.** `POST /processes/{id}/launch`.
+4. **Readiness.** The CyberShuttle API answers `/access` only once Linkspan holds its link, and `409` before.
+   Fetching the tunnel therefore doubles as the readiness check.
    While it does, the monitor sets no error. Each such answer still counts toward the six failed probes before a
-   `sacct` cross-check.
+   `GET /processes/{id}` cross-check.
 5. **Forward.**
    - `/access` returns a connect token, kept only in memory.
    - Each forwarded port is a listener on `127.0.0.1`, on the same port number as the remote one when it is free.
-   - Each connection to a listener opens a WebSocket to `/sessions/{id}/forward/{port}`, with the subprotocols
-     `cybershuttle.v1` and `capability.<token>`.
-6. **Poll and connect.** As with a Dev Tunnel. Linkspan's API is reached through a forward of its control port.
+   - Each connection to a listener opens a WebSocket to Linkspan's forward through the CyberShuttle API's proxy,
+     `/processes/{id}/proxy/{controlPort}/api/v1/forward/{port}?token=<token>`.
+6. **Poll and connect.** As with a Dev Tunnel. Linkspan's API is reached through the same proxy, with the token
+   in an `Authorization: token` header.
 7. **Stop and delete.**
-   - Ending a run releases the Airavata session with `POST /stop`.
-   - Deleting a session with a `planeId` stops the Airavata session again and sends `DELETE`. This applies whatever
-     the session's current transport. Airavata deletes only a stopped session.
-   - A failed stop or `DELETE` is logged. The record is still deleted.
+   - Ending a run, and deleting a session with a `planeId`, send `POST /processes/{id}/stop`, which a run that
+     has ended answers unchanged. A failure is logged. The process stays in the account.
 
 The link relay client has no keep-alive. The half-open rebuild in [Connect](01-session-lifecycle.md#connect)
 therefore does not apply.
