@@ -153,7 +153,7 @@ Turn on `csbridge.experimentalFeatures` to try these. They may change or disappe
 
   EC2 sessions have no Run History or summary. Their cards show region, instance and IP instead of usage and walltime.
 - **CyberShuttle hosts** — sign in to CyberShuttle from the menu, and each cluster config you hold there is also a
-  host. Start asks for a walltime, then a deployment if its cluster has several. The CyberShuttle API submits,
+  host. Start asks for a walltime, then a deployment if its cluster has several, Base first. The CyberShuttle API submits,
   reads and stops the job and carries the session, without SSH or a Dev Tunnel.
 
   Each Start records the run as a process in your CyberShuttle account. That process holds the description listed

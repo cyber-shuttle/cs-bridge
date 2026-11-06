@@ -56,15 +56,16 @@ test('a CyberShuttle host\'s form, deployments, run and job status come from the
         'slurm-cluster-configs/k1': { slurmClusterConfigId: 'k1', slurmClusterId: 'c1', workRoot: '/work/u1' },
         'slurm-cluster-configs/k1/discover-allocations': { allocations: [{ account: 'lab-alloc', partitions: [] }],
             partitions: [{ name: 'gpu', cpuPerNode: 64, maxMemory: 512000, gres: 'gpu:a100:4(S:0-1),tmpdisk:100G' }, { name: 'cpu', maxProcessors: 32 }] },
-        'slurm-deployments': [{ deploymentId: 'd2', slurmClusterId: 'c2' }, { deploymentId: 'd1', slurmClusterId: 'c1', templateId: 't1', defaultBatchJobConfig: { allocation: 'lab-alloc' } }],
-        'application-templates': [{ templateId: 't1', templateName: 'JupyterLab' }],
+        'slurm-deployments': [{ deploymentId: 'd2', slurmClusterId: 'c2' }, { deploymentId: 'd1', slurmClusterId: 'c1', templateId: 't1', defaultBatchJobConfig: { allocation: 'lab-alloc' } },
+            { deploymentId: 'd3', slurmClusterId: 'c1', templateId: 't3' }],
+        'application-templates': [{ templateId: 't1', templateName: 'JupyterLab' }, { templateId: 't3', templateName: 'Base' }],
         'processes/p1': { lastStatus: { status: 'READY', timestamp: Date.now() } },
     }[path] ?? {} }), live);
     assert.deepEqual(await client.discovery('k1'), { accounts: ['lab-alloc'], homeDir: '/work/u1', partitions: [
         { name: 'gpu', cpuCount: 64, memoryMb: 512000, gres: [{ name: 'gpu:a100', count: 4 }] }, { name: 'cpu', cpuCount: 32, memoryMb: 0, gres: [] }] });
     const deployments = await client.deployments('k1');
-    assert.deepEqual(deployments, [{ deploymentId: 'd1', allocation: 'lab-alloc', label: 'JupyterLab' }], 'only its cluster\'s');
-    await client.createProcess({ clusterConfigId: 'k1', account: '', partition: 'cpu', resources: { cores: 2, memoryMb: 4096, gpuCount: 0 } } as never, 60, must(deployments[0]));
+    assert.deepEqual(deployments, [{ deploymentId: 'd3', allocation: undefined, label: 'Base' }, { deploymentId: 'd1', allocation: 'lab-alloc', label: 'JupyterLab' }], 'only its cluster\'s, Base first');
+    await client.createProcess({ clusterConfigId: 'k1', account: '', partition: 'cpu', resources: { cores: 2, memoryMb: 4096, gpuCount: 0 } } as never, 60, must(deployments[1]));
     assert.deepEqual(JSON.parse(must(calls.at(-1)).body), { processType: 'BATCH_JOB', batchProcess: { deploymentId: 'd1', slurmClusterConfigId: 'k1',
         batchJobConfig: { wallTimeMinutes: 60, allocation: 'lab-alloc', partition: 'cpu', nodes: 1, cpus: 2, mem: '4096M' } } }, 'no account charges the deployment\'s allocation');
     assert.equal((await client.jobStatus('p1')).status, 'running', 'READY is a running job whose link is up');

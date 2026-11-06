@@ -93,7 +93,7 @@ export class Plane {
         const found = deployments.filter(d => d.slurmClusterId === slurmClusterId).map(d => ({ deploymentId: d.deploymentId,
             allocation: d.defaultBatchJobConfig?.allocation, label: templates.find(t => t.templateId === d.templateId)?.templateName ?? d.deploymentId }));
         if (!found.length) { throw new Error('CyberShuttle has no deployment on this cluster; ask an administrator.'); }
-        return found;
+        return found.sort((a, b) => Number(b.label === 'Base') - Number(a.label === 'Base'));
     }
 
     // The CyberShuttle API holds a login open five minutes while the user answers its prompts.

@@ -31,8 +31,8 @@ records `transport: 'link'`.
      does the refresh.
    - It is cleared on a `401`, or when the CyberShuttle API refuses the refresh with a 4xx.
    - A 5xx or network error during refresh keeps the credential.
-2. **Prepare.** After the walltime, Start asks which deployment on the host's cluster to run, unless it has one
-   (`SessionProvider.pickDeployment`). `SlurmBackend.launch` then creates a `BATCH_JOB` process (`POST /processes`)
+2. **Prepare.** After the walltime, Start asks which deployment on the host's cluster to run, unless it has one,
+   listing Base first (`SessionProvider.pickDeployment`). `SlurmBackend.launch` then creates a `BATCH_JOB` process (`POST /processes`)
    with the deployment, the cluster config and the run's resources. It saves the id as `planeId` and the answer's
    `controlPort` as the run's control port. An empty account charges the deployment's default allocation.
 3. **Submit.** `POST /processes/{id}/launch`.
