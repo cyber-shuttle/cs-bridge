@@ -28,7 +28,6 @@ export interface SlurmSession {
     failure?: string;
     owner?: string; // the window driving the live session, for as long as that window beats
     alias: string; // the SSH host the job is submitted from
-    clusterConfigId?: string;
     account: string; // '' submits without --account
     partition: string;
     rootFolder: string;
@@ -39,9 +38,9 @@ export interface SlurmSession {
     errorMessage: string;
     transport: 'devtunnel' | 'link'; // the latest run's route to Linkspan
     devtunnel?: { id: string; cluster: string };
-    planeId?: string; // the CyberShuttle API process of the latest link run
     connectionInfo?: ConnectionInfo;
     ec2?: Ec2Spec; // an EC2 session: alias is aws-<region>, jobId the instance id, resources zero, transport unused
+    plane?: SessionResponse; // a CyberShuttle session, as the CyberShuttle API last listed it
 }
 
 // image is '' when adopted from the account rather than launched here; ip is unset until the instance has a public one.
@@ -82,6 +81,12 @@ export const HOST_SOURCE_ICON: Record<SshHost['source'], string> = { user: 'term
 
 export type NonEmpty<T> = readonly [T, ...T[]];
 export const nonEmpty = <T>(xs: readonly T[]): xs is NonEmpty<T> => xs.length > 0;
+
+export type ProcessState = 'CREATED' | 'SUBMITTED' | 'READY' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export interface SessionRun { processId: string; controlPort: number; state: ProcessState; startedAt: number | null; deadline: number | null; endedAt: number | null; error: string | null }
+export interface SessionResponse { sessionId: string; createdAt: number; slurmClusterConfigId: string; deploymentId: string; account: string; partition: string; resources: Resources; state: ProcessState; live: boolean; runs: NonEmpty<SessionRun> }
+export type PlaneSession = SlurmSession & { plane: SessionResponse };
+export const isPlane = (s: SlurmSession): s is PlaneSession => s.plane !== undefined;
 
 export interface SlurmDiscovery {
     accounts: string[];

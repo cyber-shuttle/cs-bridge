@@ -39,7 +39,7 @@ Each status is derived from recorded facts; see [Session status](02-session-stat
    accounts, gives an empty list.
 3. **Validate and save.** `validateSlurmConfig` runs `sbatch --test-only` with a placeholder script
    (`slurmLaunch.ts`). This applies the site's submit checks without queueing a job. The session is saved
-   (`addSession`), as `not_started`, only if Slurm accepts it. A refusal shows **Session validation failed** with
+   (`addSession`), as `not_started`, only if Slurm accepts it. A refusal shows **Could not add session** with
    Slurm's error. The form stays open.
 
 The form (`HostForm.tsx`, `ui/logic/cluster.ts`) splits partitions into CPU and GPU tabs when both kinds exist. It
@@ -61,7 +61,8 @@ For a Slurm session, **Start** first asks for a walltime, from 30 min to 24 h. T
 cancels. `sbatch --test-only` checks the pick before the preview. A refusal shows on the session. The card shows busy
 until the preview opens.
 
-A CyberShuttle host's Start asks for an environment (a deployment) after the walltime when its cluster has several, then skips steps 2 to 6: the CyberShuttle API submits the job. See [Link transport](06-link-transport.md#steps).
+A CyberShuttle session's Start ends this window's loop and the previous run's connection, with no claim or preview. `POST
+/sessions/{id}/start` then runs it, `submitting` until it answers. See [Link transport](06-link-transport.md#steps).
 
 1. **Claim and clean up.** **Start** (`sessionProvider.ts`):
    - ends any monitoring loop with its teardown, or waits for a teardown already in flight;
@@ -86,7 +87,7 @@ A CyberShuttle host's Start asks for an environment (a deployment) after the wal
    - builds the job script with `buildSlurmScript` (`slurmParse.ts`).
 
 3. **Preview.** The script is shown for review. Dismissing the preview drops the draft, runs the teardown and gives up
-   the claim. The teardown releases the transport's hold.
+   the claim.
 
    **Submit**:
    - discards the draft;
@@ -162,7 +163,7 @@ CS Bridge uses these endpoints on the control port. They are in `linkspanSupport
 
 | Status | Tick |
 |---|---|
-| `submitting`, `queued`, `unreachable`, `stopping`, or no tunnel yet | reads the job state from `sacct`. When the job first reads `RUNNING`, `startedAt` is set from `sacct`'s `ElapsedRaw`. The walltime countdown then follows Slurm's clock. |
+| `submitting`, `queued`, `unreachable`, `stopping`, or no tunnel yet | reads the job state from `sacct`. When the job first reads `RUNNING`, `startedAt` is set from `sacct`'s `ElapsedRaw`. The walltime countdown then follows Slurm's clock. A CyberShuttle session reads nothing: the listing is its job state. |
 | `preparing` | calls `ensureRemoteSession`. It asks Linkspan for an SSH server that accepts the session's public key. Success records the node's `sshPort`, and the session becomes `ready_to_connect`. Failure means Linkspan is not up yet. The session stays `preparing`, and `errorMessage` records why. The card shows only "Starting Linkspan…". The exception is the CyberShuttle API's not-ready answer, which is only logged. The first call creates the session's key pair (`sessionPublicKey`, `sshSupport.ts`). |
 | `ready_to_connect`, `connecting`, `connected` | pulls a usage sample from `/api/v1/usage`. This is the health check. |
 
@@ -179,9 +180,11 @@ Details:
   row, each tick reads `sacct` instead. A terminal job state ends the run. Any other reading resets the count. A
   `sacct` with no row reads as `UNKNOWN`. This shows the session as `queued`, without Connect or probing, until
   `sacct` reports `RUNNING` again. An SSH error during this check keeps the count. The next tick then reads `sacct`
-  again. Apart from a Stop, only `sacct` or the walltime ends a run. A failed probe never does.
+  again. Apart from a Stop, only `sacct` or the walltime ends a run. A failed probe never does. A CyberShuttle session
+  never gives up: only the listing ends its run.
 - **Before and after each tick.** A tick first checks two things. If this window no longer owns the session, the tick
-  stops the loop and disposes the relay client. If the status is terminal, the tick ends the run.
+  stops the loop and disposes the relay client. If the status is terminal, or the job id is no longer the one the loop
+  started on, the tick ends the run.
 
   A tick that reads `sacct` (a status in the first row) and cannot reach the SSH host marks the session `unreachable`
   and sets `errorMessage`. The next good tick clears both. In `preparing` and the connectable statuses, an unreachable
@@ -237,18 +240,18 @@ connect fails with "the job ended", and the monitor tears the run down.
    notification says the session is still running.
 
 In a session's remote window, Stop (card or status bar) also queues the run summary and returns that window to local
-(`remoteSessionController.ts`). The window does the same when the session turns `stopped` or `failed`.
+(`remoteSessionController.ts`). The window does the same when the session turns `stopped` or `failed`, or its run is
+replaced.
 
 A Stop asked while `submitting` is carried out on the first record or heartbeat change after the submit task
-finishes. Only the launching window shows `submitting`. Until `sbatch` returns a job id, other windows show the
+finishes; on a CyberShuttle host it asks you to wait for the start to finish. Only the launching window shows `submitting`. Until `sbatch` returns a job id, other windows show the
 session as `not_started`, with Start and ×. Start or Delete there reports that another window is driving it.
 
 **Teardown.** When a run ends, `endSession` stops the monitoring loop. This releases the owner claim. `endSession` then
 calls `SlurmBackend.end` (`sessionSupport.ts`), which:
 
-- records the run in Run History;
-- disposes the relay client and clears the session's connection info;
-- releases the run through the transport. For the link transport, this stops the CyberShuttle API process.
+- records the run in Run History, except a CyberShuttle run;
+- disposes the relay client and clears the session's connection info.
 
 The Dev Tunnel itself is kept until the next Start on the Dev Tunnel transport, or a delete.
 
@@ -257,12 +260,12 @@ cannot be reached. A run whose deadline passed while VS Code was closed is torn 
 
 **Run History.** `recordSessionRun` (`sessionRunSupport.ts`) snapshots the run and fetches Slurm stats again until
 `MaxRSS` is reported. It makes up to 2 retries, 3 s apart. Runs are de-duplicated by SSH host alias and job id
-(`runStore.ts`). Recording starts without being awaited, before the transport is released. Edge cases:
+(`runStore.ts`). Recording starts without being awaited, before the relay client is disposed. Edge cases:
 
 - A launch that got no job id records nothing.
 - A session deleted during the stats wait keeps no run.
 - Without a fresh `sacct` reading, the in-run stats are kept.
-- An EC2 run records nothing.
+- An EC2 or CyberShuttle run records nothing.
 
 ## Delete
 
@@ -272,6 +275,6 @@ confirmation, `confirmAndDeleteSession` (`sessionProvider.ts`):
 1. does nothing while a task for the session runs. Otherwise it ends any loop with its teardown, or waits for a
    teardown in flight, then claims the session. It stops if another window owns it;
 2. disposes this window's relay client;
-3. calls the backend's `remove`. For Slurm, this deletes the session's Dev Tunnel, stops its CyberShuttle API process and deletes its SSH
-   key. For EC2, it terminates the instance;
+3. calls the backend's `remove`. For Slurm, this deletes the session's Dev Tunnel and its SSH key. For a CyberShuttle
+   session, it sends `DELETE /sessions/{id}` first; a refusal keeps everything. For EC2, it terminates the instance;
 4. deletes the record and its runs file. Its Run History rows go too. The next `syncSshConfig` drops its SSH host.

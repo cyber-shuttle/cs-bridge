@@ -12,13 +12,14 @@ How windows share these files is in [Cross-window state](03-cross-window-state.m
 | Extension storage `sessions/` | one session record per id |
 | Extension storage `runs/` | one file per session: its last 10 runs, last 20 live samples and latest Slurm stats (`runStore.ts`) |
 | Extension storage `windows/` | one heartbeat per window |
+| Extension storage `plane/` | this machine's parts of each CyberShuttle session (`planeSessions.ts`) |
 | Extension storage `ssh_keys/` | per-session keys `id_cshost-<sessionId>` (ed25519, no `.pub` kept); EC2 key pairs `cs-aws-generated-key-<region>-<machine>` **(experimental)** |
-| Extension storage `ssh_config` | the per-session SSH hosts |
+| Extension storage `ssh_config` | the per-session SSH hosts. CyberShuttle entries come from `plane/` parts holding a `localPort`. |
 | Extension storage `schema.json`, `migrate.lock`, `opened.marker` | storage version, its migration lock, and the marker that shows the install message once |
 | `~/.ssh/config` | one `Include` line for the extension's `ssh_config`. It is prepended so per-session hosts match first. Also the `Host` blocks added, edited or deleted in Compute Hosts. |
 | Extension storage `<file>.<uuid>.tmp` beside each record and `schema.json` | staging file for each write (`storage.ts`) |
 | VS Code logs folder | the "CS Bridge" log output channel (`logger.ts`) |
-| VS Code user setting `remote.SSH.serverInstallPath` | an entry for the per-session SSH host of each Slurm session whose record holds a `localPort`, mapped to `/tmp/cs-vscode/<sessionId>`. The entry is written when the owner binds `127.0.0.1:N`. It is left behind when that window closes. Entries not under `/tmp/cs-vscode/` are left alone. |
+| VS Code user setting `remote.SSH.serverInstallPath` | an entry for the per-session SSH host of each Slurm session whose record holds a `localPort`, and of each CyberShuttle session whose `plane/` part does, mapped to `/tmp/cs-vscode/<sessionId>`. The entry is written when the owner binds `127.0.0.1:N`. It is left behind when that window closes. Entries not under `/tmp/cs-vscode/` are left alone. |
 | VS Code `globalState` | `csbridge.pendingSummaries`: the queue of pending session summaries |
 | `csbridge-ssh` in `$XDG_RUNTIME_DIR` or the temp folder | SSH ControlMaster sockets, not on Windows. If that folder is not private to the user, each window uses a fresh `csbridge-*` temp folder. |
 | OS keychain | the Microsoft account token, held by VS Code |
@@ -69,13 +70,23 @@ Field names match the CyberShuttle API's wire types. The status-related fields a
 | `name` | creation time in ms, or the instance id for an adopted EC2 instance. Its last six characters name the per-session SSH host. |
 | `alias`, `account`, `partition`, `rootFolder`, `resources` | the request. `alias` is the SSH host, or the CyberShuttle host's `cs-<name>-<id>`. An empty `account` submits without `--account`. `rootFolder` is the folder the window opens. `resources` holds `cores`, `memoryMb`, `wallMinutes`, `gpuType`, `gpuCount`. |
 | `submittedAt` | the last submit, or the creation time before the first |
-| `clusterConfigId` | set on a CyberShuttle host. `jobId` is then the process id. |
-| `transport`, `devtunnel`, `planeId` | `transport` is the latest run's transport. `devtunnel` (`{id, cluster}`) is the Dev Tunnel of the last run that used one. It is kept until the next Dev Tunnel Start or until Delete. `planeId` is the CyberShuttle API process of the latest link run. Each link Start replaces it. It is kept until Delete. |
+| `transport`, `devtunnel` | `transport` is the latest run's transport. `devtunnel` (`{id, cluster}`) is the Dev Tunnel of the last run that used one. It is kept until the next Dev Tunnel Start or until Delete. |
 | `connectionInfo` | `controlPort`. `sshPort`: 0 until Linkspan's SSH server is up, or 22 once an EC2 instance's port 22 answers. `localPort`: the `127.0.0.1` listener bound by the window that last connected. It is kept after that window closes. |
 | `owner` | see [Owner window](03-cross-window-state.md#owner-window) |
 | `ec2` | see [EC2 instances](07-ec2.md#model) |
 
 A run is a `Run` with `RunStats` and `samples`.
+
+**CyberShuttle sessions.** The CyberShuttle API's listing holds the session. `plane/<sessionId>.json` holds only its
+`PlaneParts`:
+
+| Field | Meaning |
+|---|---|
+| `alias` | the CyberShuttle host's `cs-<name>-<id>` |
+| `name` | the session's creation time in ms |
+| `rootFolder` | the work root. The window opens `<rootFolder>/<processId>`. |
+| `owner` | see [Owner window](03-cross-window-state.md#owner-window) |
+| `ports` | `{processId, sshPort, localPort}` of the run named by `processId` |
 
 ## Schema migrations
 

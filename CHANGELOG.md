@@ -9,7 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - CyberShuttle hosts **(experimental)**: signed in, your cluster configs are hosts. The CyberShuttle API runs their jobs, without SSH.
-  A login the host leaves to you, such as a one-time code, opens the SSH authentication panel.
+  A login the host leaves to you, such as a one-time code, opens the SSH authentication panel. Sessions come from your
+  CyberShuttle account, so one started in Jupyter appears here; Add starts it. They have no Run History or summary.
 
 ### Removed
 

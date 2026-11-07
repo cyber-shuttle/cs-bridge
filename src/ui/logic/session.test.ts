@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ViewSession } from '@/models';
+import { planeResponse } from '@/modules/testSupport';
 import { fmtTime, remainingMs, elapsedRunMs, elapsedLabel, dotColor, sessionActions, cardModel } from './session';
 
 test('fmtTime shows h+m above an hour, m+s below', () => {
@@ -23,6 +24,7 @@ test('remainingMs counts down from startedAt, else returns the full walltime', (
     assert.equal(remainingMs({ resources: hour, startedAt: 1_000 }, 1_000), 3_600_000);
     assert.equal(remainingMs({ resources: hour, startedAt: 1_000 }, 601_000), 3_000_000);
     assert.equal(remainingMs({ resources: hour, startedAt: undefined }, 999_999), 3_600_000);
+    assert.equal(remainingMs({ resources: hour, startedAt: 1_000, plane: planeResponse({}, { deadline: 61_000 }) }, 1_000), 60_000);
 });
 
 test('elapsedRunMs is elapsed-since-start, capped at the wall limit, 0 before start', () => {
@@ -77,7 +79,7 @@ test('cardModel: an HPC job and an EC2 instance differ only in chips, details an
     const ec2 = { region: 'us-east-1', type: 't3.micro', image: '', user: 'ubuntu', ip: '1.2.3.4' };
     const aws = cardModel(sess('connected', { ...base, ec2 }), 601_000);
     assert.deepEqual([aws.kind, aws.theme, aws.chips, aws.details, aws.status.text], ['AWS', 'warning', ['t3.micro', 'Ubuntu 24.04 LTS'], ['us-east-1', '42', '1.2.3.4'], 'Running']);
-    assert.deepEqual([hpc.driverIcon, cardModel(sess('connected', { ...base, clusterConfigId: 'k1' }), 0).driverIcon], ['terminal', 'cloud'], 'the CyberShuttle API drives a cluster config\'s session');
+    assert.deepEqual([hpc.driverIcon, cardModel(sess('connected', { ...base, plane: planeResponse() }), 0).driverIcon], ['terminal', 'cloud'], 'the CyberShuttle API drives a cluster config\'s session');
     assert.equal(cardModel(sess('preparing', base), 0).status.text, 'Starting Linkspan…');
     assert.equal(cardModel(sess('preparing', { ...base, ec2 }), 0).status.text, 'Booting…');
     const starting = cardModel(sess('stopped', { ...base, starting: true }), 0);

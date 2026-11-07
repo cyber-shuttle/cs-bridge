@@ -1,4 +1,5 @@
-import { SshHost } from '../models';
+import { SshHost, isPlane } from '../models';
+import { planeParts } from './planeSessions';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -298,13 +299,14 @@ export class SshManager {
 // Keeps the extension's ssh_config and the remote.SSH.serverInstallPath map equal to what the records say; idempotent, so
 // every window runs it on every change. Remote-SSH reads the setting at connect, so a caller about to open a window awaits it.
 export async function syncSshConfig(): Promise<void> {
-    const sessions = getAllSessions();
-    const text = renderSshConfig(sessions, sshKeyPath, vscode.env.machineId);
+    const sessions = getAllSessions().filter(s => !isPlane(s));
+    const plane = planeParts(); // local parts alone: this runs before the first listing
+    const text = renderSshConfig(sessions, plane, sshKeyPath, vscode.env.machineId);
     lockedUpdateTextFile(CS_SSH_CONFIG_PATH, cur => (cur === text ? null : text), 0o600);
     try {
         const cfg = vscode.workspace.getConfiguration('remote.SSH');
         const current = cfg.get<Record<string, string>>('serverInstallPath') ?? {};
-        const next = renderServerInstallPaths(sessions, current);
+        const next = renderServerInstallPaths(sessions, plane, current);
         if (JSON.stringify(next) !== JSON.stringify(current)) { await cfg.update('serverInstallPath', next, vscode.ConfigurationTarget.Global); }
     }
     catch (err) {

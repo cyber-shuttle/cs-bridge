@@ -50,7 +50,7 @@ function sessionV1(r: V0Session): V2Session {
         rootFolder: r.rootFolder ?? r.workingDirectory ?? '',
         resources: r.resources ?? { cores: r.cpus ?? 0, memoryMb: Math.round((parseFloat(r.memory ?? '') || 0) * 1024), wallMinutes: minutes(r.wallTime), ...gpu(r.gpuClass) },
         jobId: r.jobId ?? '', submittedAt: r.submittedAt ?? 0, startedAt: r.startedAt, errorMessage: r.errorMessage ?? '',
-        transport: r.transport ?? 'devtunnel', planeId: r.planeId,
+        transport: r.transport ?? 'devtunnel',
         devtunnel: r.devtunnel ?? (r.tunnelId ? { id: r.tunnelId, cluster } : undefined),
         connectionInfo: ports.sshPort || ports.controlPort ? ports : undefined, // a preparing session keeps its control port
     };

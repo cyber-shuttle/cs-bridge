@@ -1,7 +1,6 @@
 // How a session's run reaches its Linkspan: an in-process Dev Tunnel (the default) or the CyberShuttle API's link WebSocket.
-// A Transport is its tunnel clients plus the launch and the run's release. transportFor reads the record's `transport`,
-// and nothing outside this module branches on it. Delete removes both transports' tunnels, since a record keeps whatever
-// either one's earlier runs left behind.
+// A Transport is its tunnel clients plus the launch. transportFor reads the record's `transport`, and nothing outside this
+// module branches on it. Delete removes the Dev Tunnel a record keeps from its last Dev Tunnel run.
 import { ConnectionInfo, SlurmSession } from '../models';
 import { Logger, errMsg } from '../logger';
 import { Plane } from '../plane';
@@ -42,13 +41,11 @@ export interface Tunnels {
     tunnelRef(session: SlurmSession): TunnelRef | undefined; // the run's tunnel, once prepared
     ensureTunnel(session: SlurmSession, ci: ConnectionInfo): Promise<void>;
     withLinkspan<T>(session: SlurmSession, ci: ConnectionInfo, call: (baseUrl: string, headers: Record<string, string>) => Promise<T>): Promise<T>;
-    deleteTunnel(session: SlurmSession): Promise<void>;
 }
 
 export interface Transport extends Tunnels {
     signedIn(): Promise<boolean>; // without prompting
     prepare(session: SlurmSession, ci: ConnectionInfo, wallMinutes: number): Promise<LinkspanLaunch>; // before sbatch: reserve the run's tunnel on its control port
-    release(session: SlurmSession): Promise<void>; // end the run's remote hold and its tokens
 }
 
 const devTunnel = {
@@ -63,7 +60,6 @@ const devTunnel = {
         }
         catch (err) { throw new Error(`Failed to create Dev Tunnel: ${errMsg(err)}`, { cause: err }); }
     },
-    release: async () => { },
 } satisfies Transport;
 
 class Link implements Transport {
@@ -74,7 +70,7 @@ class Link implements Transport {
     management = () => new LinkManagementClient(this.plane);
     relayClient = (_: unknown, ci: ConnectionInfo) => new LinkRelayClient(ci.controlPort);
 
-    tunnelRef = ({ planeId }: SlurmSession) => planeId ? { tunnelId: planeId } : undefined;
+    tunnelRef = ({ plane }: SlurmSession) => plane ? { tunnelId: plane.runs[0].processId } : undefined;
     // The CyberShuttle API proxies any port a Linkspan task serves, so there is nothing to declare.
     async ensureTunnel() { }
 
@@ -88,15 +84,6 @@ class Link implements Transport {
     signedIn = () => this.plane.signedIn();
 
     async prepare(): Promise<LinkspanLaunch> { throw new Error('unreachable: the CyberShuttle API launches link runs'); }
-
-    // Idempotent: an ended process answers unchanged.
-    async release({ name, planeId }: SlurmSession) {
-        if (!planeId) { return; }
-        await this.plane.stopProcess(planeId).catch(err => logger.warn(`Session ${name}: stopping the CyberShuttle API process failed: ${err}`));
-    }
-
-    // The CyberShuttle API keeps a run's process; only an administrator deletes it.
-    deleteTunnel = this.release;
 }
 
 export class Transports {
@@ -106,9 +93,7 @@ export class Transports {
 
     readonly transportFor = (session: Pick<SlurmSession, 'transport'>): Transport => (session.transport === 'link' ? this.link : devTunnel);
 
-    async remove(session: SlurmSession) {
-        for (const t of [devTunnel, this.link]) { await t.deleteTunnel(session); }
-    }
+    readonly remove = deleteDevTunnel;
 }
 
 const activeTunnelClients = new Map<string, TunnelRelayClient>();

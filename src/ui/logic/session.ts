@@ -27,7 +27,7 @@ export function elapsedLabel(since: number, now: number): string {
 }
 
 /** Milliseconds left until the wall-clock deadline; the full walltime if not yet started. */
-export function remainingMs(session: Pick<SlurmSession, 'resources' | 'startedAt'>, now: number): number {
+export function remainingMs(session: Pick<SlurmSession, 'resources' | 'startedAt' | 'plane'>, now: number): number {
     const end = deadline(session);
     return end === undefined ? wallMs(session) : end - now;
 }
@@ -149,7 +149,7 @@ export const cardModel = (s: ViewSession, now: number, remote = false): CardMode
 function card<S extends ViewSession>(s: S, provider: Provider<S>, now: number, remote: boolean): CardModel {
     const actions = sessionActions(s);
     return {
-        kind: provider.kind, driverIcon: s.clusterConfigId ? 'cloud' : 'terminal', theme: provider.theme, icon: STATUS_ICON[s.status], color: dotColor(s.status), chips: provider.chips(s),
+        kind: provider.kind, driverIcon: s.plane ? 'cloud' : 'terminal', theme: provider.theme, icon: STATUS_ICON[s.status], color: dotColor(s.status), chips: provider.chips(s),
         details: provider.details?.(s), status: statusText(s, now, provider),
         actions: remote ? actions.filter(a => a.kind === 'stop') : actions, canDelete: !remote && !s.starting && isDeletable(s.status),
     };

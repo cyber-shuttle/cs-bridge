@@ -11,6 +11,7 @@ class EventEmitter {
 }
 export const panels = [];
 export const quickPick = { minutes: 0 }; // the walltime the next pick answers; 0 takes the preselected one
+export const registered = new Map();
 mock.module('vscode', () => ({
     EventEmitter,
     ThemeColor: class { constructor(id) { this.id = id; } },
@@ -38,7 +39,7 @@ mock.module('vscode', () => ({
         createStatusBarItem: () => ({ show: noop, hide: noop, dispose: noop }),
         createTerminal: () => ({ show: noop }),
     },
-    commands: { executeCommand: async () => undefined, registerCommand: disposable },
+    commands: { executeCommand: async () => undefined, registerCommand: (id, f) => { registered.set(id, f); return { dispose: noop }; } },
     workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback, update: async () => undefined }), workspaceFolders: undefined, onDidChangeConfiguration: disposable },
     authentication: { getSession: async () => undefined, onDidChangeSessions: disposable },
 }));

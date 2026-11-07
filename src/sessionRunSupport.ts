@@ -17,7 +17,7 @@ export async function recordSessionRun(session: SlurmSession): Promise<void> {
     const { id: sessionId, alias, jobId, account, partition, startedAt } = session;
     const run = { sessionId, alias, jobId, account, partition, startedAt, endedAt: Date.now(), finalState: statusOf(session), wallMinutes: session.resources.wallMinutes, samples: readRecentSamples(session.id) };
     const inRun = readSessionStats(session.id);
-    const stats = (!session.clusterConfigId && await fetchStats(run)) || inRun;
+    const stats = await fetchStats(run) || inRun;
     if (getSession(sessionId)) { appendRun({ ...run, stats }); } // a session deleted during the wait keeps no runs file
 }
 

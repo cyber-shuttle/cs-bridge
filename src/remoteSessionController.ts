@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
 import { getSession, statusOf, requestStop, onSessionsChange } from './extensionStore';
 import { isTerminal } from './modules/sessionMachine';
-import { isEc2 } from './models';
+import { isEc2, isPlane } from './models';
+import { errMsg } from './logger';
+import type { Plane } from './plane';
+import { stopPlaneRun } from './modules/planeSessions';
 import { remainingMs, fmtTime, wallMs } from './ui/logic/session';
 import { enqueuePendingSummary } from './summaryPanel';
 import { confirmModal } from './webviewProvider';
@@ -9,7 +12,7 @@ import { confirmModal } from './webviewProvider';
 const WARN_THRESHOLD_MS = 10 * 60_000;
 
 // Lives only in a remote window. Owns the walltime status bar + a Stop button, and the end-to-local:
-// on walltime expiry, terminal status, or the user hitting Stop, queue the summary and convert this window to local.
+// on walltime expiry, terminal status, its run replaced, or the user hitting Stop, queue the summary and convert this window to local.
 export class RemoteSessionController implements vscode.Disposable {
     private readonly item: vscode.StatusBarItem;
     private readonly stopItem: vscode.StatusBarItem;
@@ -17,8 +20,9 @@ export class RemoteSessionController implements vscode.Disposable {
     private readonly ticker: ReturnType<typeof setInterval>;
     private readonly watcher: vscode.Disposable;
     private torndown = false;
+    private jobId?: string;
 
-    constructor(private readonly context: vscode.ExtensionContext, private readonly sessionId: string) {
+    constructor(private readonly context: vscode.ExtensionContext, private readonly sessionId: string, private readonly plane: Pick<Plane, 'stopProcess'>) {
         this.item = vscode.window.createStatusBarItem('csbridge.walltime', vscode.StatusBarAlignment.Left, 1000);
         this.item.command = 'csbridge.sessionsView.focus';
 
@@ -38,7 +42,8 @@ export class RemoteSessionController implements vscode.Disposable {
     private render(): void {
         const s = getSession(this.sessionId);
         if (!s) { return; }
-        if (isTerminal(statusOf(s))) { void this.teardown(); return; }
+        this.jobId ??= s.jobId;
+        if (s.jobId !== this.jobId || isTerminal(statusOf(s))) { void this.teardown(); return; }
 
         if (wallMs(s) <= 0) {
             this.item.text = '$(clock) no limit';
@@ -70,7 +75,13 @@ export class RemoteSessionController implements vscode.Disposable {
 
         this.torndown = true; // claim now so the 1s render tick can't race the reload
         this.stopItem.text = '$(loading~spin) Stopping…';
-        await requestStop(session); // on disk before the reload
+        try { await (isPlane(session) ? stopPlaneRun(this.plane, session) : requestStop(session)); } // on disk before the reload
+        catch (err) {
+            this.torndown = false;
+            this.stopItem.text = '$(debug-stop) Stop';
+            vscode.window.showErrorMessage(`Failed to stop session: ${errMsg(err)}`);
+            return;
+        }
         await this.endToLocal();
     }
 
@@ -80,7 +91,7 @@ export class RemoteSessionController implements vscode.Disposable {
         this.item.hide();
         this.stopItem.hide();
         const session = getSession(this.sessionId);
-        if (session && !isEc2(session)) { await enqueuePendingSummary(this.context, this.sessionId); } // an instance has no Slurm accounting to summarize
+        if (session && !isEc2(session) && !isPlane(session)) { await enqueuePendingSummary(this.context, this.sessionId); } // neither records a run to summarize
         // remote.close reuses this window with remoteAuthority:null → local reload. If unavailable, fall back to closing.
         try { await vscode.commands.executeCommand('workbench.action.remote.close'); }
         catch { void vscode.commands.executeCommand('workbench.action.closeWindow'); }

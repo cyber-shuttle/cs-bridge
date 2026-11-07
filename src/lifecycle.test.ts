@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
-import { afterEach, before, test } from 'node:test';
+import { afterEach, before, test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { panels, quickPick } from '../scripts/vscodeMock.js';
+import { panels, quickPick, registered } from '../scripts/vscodeMock.js';
 import { memoryFiles } from './modules/memoryFiles';
-import { must } from './modules/testSupport';
+import { must, planeResponse } from './modules/testSupport';
 import type { JsonDir } from './modules/store';
-import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, getAllSessions, deleteSession, patch, observe, onSessionsChange } from './extensionStore';
-import { initRunStore, appendRun } from './modules/runStore';
-import { newSession, isEc2, Run, SlurmJobStatus, SessionsMessage, SessionsState } from './models';
+import { initSessionStore, addSession, claim, owns, disown, requestStop, statusOf, live, getSession, sessionForHost, getAllSessions, deleteSession, patch, observe, onSessionsChange } from './extensionStore';
+import { initRunStore, appendRun, readSessionRuns } from './modules/runStore';
+import { initPlaneStore, planeParts, applyPlane, refreshPlane } from './modules/planeSessions';
+import { newSession, isEc2, Run, SlurmJobStatus, SessionsMessage, SessionsState, POLLING_INTERVAL_MS, PlaneSession, SessionResponse } from './models';
 import { Backend, Backends, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
 import { Ec2Backend } from './modules/ec2Session';
 import { SessionProvider } from './sessionProvider';
@@ -17,17 +18,26 @@ import { fakeClient } from './modules/fakeEc2Client';
 import { openSummaryPanel } from './summaryPanel';
 import { sleep } from './modules/util';
 import { SshManager } from './modules/sshSupport';
+import { RemoteSessionController } from './remoteSessionController';
+import { PlaneError } from './plane';
 
 const files = memoryFiles();
 const fail = (err: unknown) => assert.fail(String(err));
 let windows: JsonDir<{ at: number }>;
-before(async () => { [, windows] = await initSessionStore(files, fail); await initRunStore(files, fail); });
-afterEach(() => { for (const s of getAllSessions()) { deleteSession(s.id); } }); // a provider's sweep sees only its own test's records
+before(async () => { [, windows] = await initSessionStore(files, fail); await initRunStore(files, fail); await initPlaneStore(files, fail); });
+afterEach(() => { for (const s of getAllSessions()) { deleteSession(s.id); } for (const [id] of planeParts()) { deleteSession(id); } }); // a provider's sweep sees only its own test's records
 const running = () => {
     const s = newSession({ alias: 'delta', account: '', partition: 'cpu', rootFolder: '/home/u', resources: { cores: 1, memoryMb: 1024, wallMinutes: 30 } });
     addSession({ ...s, jobId: '7', observed: { state: SlurmJobStatus.RUNNING, at: Date.now() }, startedAt: Date.now() - 1000 });
     return must(getSession(s.id));
 };
+
+test('a CyberShuttle session\'s remote window knows itself from local parts before any listing', async () => {
+    applyPlane(planeResponse(), { alias: 'cs-lab-k1aaaaaa', rootFolder: '/work/u1' });
+    await refreshPlane({ signedIn: async () => false } as never, () => { }); // signed out: no listing
+    assert.equal(getSession('s1'), undefined);
+    assert.equal(sessionForHost('cs-lab-k1aaaaaa-000123'), 's1');
+});
 
 test('a Stop asked by another window is claimed only once that window stops beating', async () => {
     const s = running();
@@ -170,17 +180,16 @@ test('a teardown that the record write re-enters runs once, and a prepare leaves
     assert.ok(draft.connectionInfo.controlPort >= 20000);
 });
 
-test('a relaunch preview outlives a heartbeat, and dropping it releases the attach it made', async (t) => {
+test('a relaunch preview outlives a heartbeat, and dropping it gives the claim back', async (t) => {
     t.mock.method(SshManager, 'getInstance', () => ({ runRemoteCommand: async () => '' }) as never);
     const s = running();
     await patch(s, { jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() }, connectionInfo: { sshPort: 40, controlPort: 21000, localPort: 5 } });
     assert.equal(statusOf(s), 'stopped');
-    const released: string[] = [];
     const transport: Transport = {
         label: 'fake', management: () => ({ getTunnel: async () => null }),
         relayClient: () => ({ connect: async () => { }, waitForForwardedPort: async () => { }, dispose: async () => { } }),
-        tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); }, deleteTunnel: async () => { },
-        signedIn: async () => true, prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }), release: async (session) => { released.push(session.id); },
+        tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); },
+        signedIn: async () => true, prepare: async () => ({ tunnelArgs: '', sbatchEnv: {} }),
     };
     const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
     const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { }, plane: {} as never }, aws);
@@ -196,7 +205,6 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
     receive({ command: 'prepareLaunchSession', sessionId: s.id });
     await sleep(20);
     quickPick.minutes = 0;
-    assert.deepEqual(released, [s.id], 'the old run is torn down before the next is prepared');
     assert.equal(s.connectionInfo, undefined);
     assert.equal(state()?.preview?.sessionId, s.id, 'the preview is up');
     assert.match(must(state()?.preview).script, /^#SBATCH --time=01:00:00$/m, 'the picked walltime');
@@ -211,7 +219,6 @@ test('a relaunch preview outlives a heartbeat, and dropping it releases the atta
 
     receive({ command: 'dismissPreview' });
     await sleep(20);
-    assert.deepEqual(released, [s.id, s.id], 'the prepared attach is released');
     assert.equal(state()?.preview, null);
     assert.equal(owns(s), false, 'the claim is given back');
     provider.dispose();
@@ -226,7 +233,7 @@ test('a walltime Slurm refuses stops the Start before the attach', async (t) => 
     }) as never);
     let attached = false;
     const transport = {
-        signedIn: async () => true, prepare: async () => { attached = true; return { tunnelArgs: '', sbatchEnv: {} }; }, release: async () => { },
+        signedIn: async () => true, prepare: async () => { attached = true; return { tunnelArgs: '', sbatchEnv: {} }; },
     } as unknown as Transport;
     const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
     const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { }, plane: {} as never }, aws);
@@ -246,47 +253,56 @@ test('a walltime Slurm refuses stops the Start before the attach', async (t) => 
     provider.dispose();
 });
 
-test('a Start on a CyberShuttle host launches a deployment on its cluster through the CyberShuttle API, which reads and stops the job', async (t) => {
+const planeSession = (r = planeResponse()) => {
+    applyPlane(r, { alias: 'cs-lab-k1aaaaaa', rootFolder: '/work/u1' });
+    return must(getSession(r.sessionId)) as PlaneSession;
+};
+const linkTransports = { transportFor: () => ({ label: 'fake', tunnelRef: () => undefined }) as never, remove: async () => { }, plane: {} as never };
+
+test('a CyberShuttle session is read from the listing, never polled for its job', async (t) => {
     const commands: string[] = [];
-    t.mock.method(SshManager, 'getInstance', () => ({ runRemoteCommand: async (_: string, command: string) => { commands.push(command); return ''; } }) as never);
-    const s = running();
-    await patch(s, { clusterConfigId: 'k1', jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() } });
-    const calls: string[] = [];
-    const plane = {
-        deployments: async (clusterConfigId: string) => [{ deploymentId: `d-${clusterConfigId}`, label: 'JupyterLab' }],
-        createProcess: async (_s: unknown, _w: number, deployment: { deploymentId: string }) => { calls.push(`create ${deployment.deploymentId}`); return { processId: 'p1', batchProcess: { controlPort: 21234 } }; },
-        launchProcess: async (id: string) => { calls.push(`launch ${id}`); },
-        jobStatus: async (id: string) => { calls.push(`status ${id}`); return { status: SlurmJobStatus.QUEUED, elapsedSeconds: 0 }; },
-        stopProcess: async (id: string) => { calls.push(`stop ${id}`); },
-    };
-    const transport = { signedIn: async () => true, tunnelRef: () => undefined, release: async () => { }, prepare: async () => { throw new Error('not from a script'); } } as unknown as Transport;
-    const transports = { transportFor: () => transport, remove: async () => { }, plane: plane as never };
-    const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
-    const provider = new SessionProvider(vscode.Uri.parse('/ext'), transports, aws);
-    let receive: (m: SessionsMessage) => void = () => { };
-    provider.resolveWebviewView({
-        webview: { options: {}, html: '', cspSource: 'x', asWebviewUri: (u: unknown) => u, postMessage: async () => true, onDidReceiveMessage: (l: (m: SessionsMessage) => void) => { receive = l; return { dispose() { } }; } },
-        visible: true, onDidChangeVisibility: () => ({ dispose() { } }), onDidDispose: () => ({ dispose() { } }),
-    } as never);
-
-    receive({ command: 'prepareLaunchSession', sessionId: s.id });
-    await sleep(20);
-    assert.deepEqual(calls, ['create d-k1', 'launch p1', 'status p1'], 'its cluster\'s deployment, launched and then read by the CyberShuttle API');
-    assert.deepEqual(commands, [], 'no SSH: no sbatch check, no submit, no sacct');
-    assert.equal(s.transport, 'link');
-    assert.equal(s.jobId, 'p1', 'the job id is the process id');
-    assert.equal(s.planeId, 'p1');
-    assert.equal(s.connectionInfo?.controlPort, 21234, 'the control port is the one the CyberShuttle API derives');
+    t.mock.method(SshManager, 'getInstance', () => ({ runRemoteCommand: async (_: string, c: string) => { commands.push(c); return ''; } }) as never);
+    applyPlane(planeResponse({}, { state: 'SUBMITTED', startedAt: null, deadline: null }), { alias: 'cs-lab-k1aaaaaa', rootFolder: '/work/u1' });
+    const s = must(getSession('s1'));
+    await new SlurmBackend(linkTransports, () => ({}) as never).tick(s, () => true);
+    assert.deepEqual(commands, [], 'no sacct');
     assert.equal(statusOf(s), 'queued');
-    provider.dispose();
-
-    await new SlurmBackend(transports, () => ({}) as never).stop(s);
-    assert.equal(calls.at(-1), 'stop p1');
-    assert.equal(s.observed?.state, SlurmJobStatus.CANCELLED);
-    assert.deepEqual(commands, []);
 });
 
-test('a second Start during a preview keeps the claim and gives the first attach back', async (t) => {
+test('a CyberShuttle run that ends in the listing is torn down once and records no run', async (t) => {
+    const commands: string[] = [];
+    t.mock.method(SshManager, 'getInstance', () => ({ runRemoteCommand: async (_: string, c: string) => { commands.push(c); return ''; } }) as never);
+    const s = planeSession();
+    await patch(s, { connectionInfo: { sshPort: 40, controlPort: 21234, localPort: 5 } });
+    applyPlane(planeResponse({}, { state: 'CANCELLED' }));
+    const monitor: SessionMonitor = new SessionMonitor(new Backends(new SlurmBackend(linkTransports, () => monitor), {} as never));
+    monitor.startMonitoring(s);
+    await sleep(20);
+    await monitor.quiesce(s);
+    assert.equal(s.connectionInfo, undefined);
+    assert.equal(JSON.parse(must(files.texts.get('plane/s1.json'))).ports, undefined);
+    assert.deepEqual(readSessionRuns('s1'), []);
+    assert.deepEqual(commands, [], 'no sacct for its stats');
+});
+
+// Review Focus 3. Waits one POLLING_INTERVAL_MS for the loop's second tick.
+test('a run replaced between two listings ends this window\'s hold on the old one, and its remote window', { timeout: 2 * POLLING_INTERVAL_MS }, async (t) => {
+    const s = planeSession();
+    const ended: string[] = [];
+    const monitor = new SessionMonitor(new Backends({ label: 'fake', async tick() { }, async end(x) { ended.push(x.id); }, async stop() { }, async connect() { return true; }, async remove() { }, forget() { } }, {} as never));
+    monitor.startMonitoring(s);
+    const closed: string[] = [];
+    t.mock.method(vscode.commands, 'executeCommand', async (c: string) => { closed.push(c); });
+    const remote = new RemoteSessionController({} as never, 's1', {} as never);
+    applyPlane(planeResponse({}, { processId: 'p2', state: 'SUBMITTED', startedAt: null, deadline: null }));
+    await sleep(POLLING_INTERVAL_MS + 50);
+    assert.deepEqual(ended, ['s1'], 'the loop bound to p1 ends once p1 is gone');
+    assert.equal(monitor.monitoring('s1'), false);
+    assert.ok(closed.includes('workbench.action.remote.close'));
+    remote.dispose();
+});
+
+test('a second Start during a preview prepares again and keeps the claim', async (t) => {
     t.mock.method(SshManager, 'getInstance', () => ({ runRemoteCommand: async () => '' }) as never);
     const s = running();
     await patch(s, { jobId: '7', observed: { state: SlurmJobStatus.COMPLETED, at: Date.now() } });
@@ -294,8 +310,8 @@ test('a second Start during a preview keeps the claim and gives the first attach
     const transport: Transport = {
         label: 'fake', management: () => ({ getTunnel: async () => null }),
         relayClient: () => ({ connect: async () => { }, waitForForwardedPort: async () => { }, dispose: async () => { } }),
-        tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); }, deleteTunnel: async () => { },
-        signedIn: async () => true, prepare: async () => { log.push('attach'); return { tunnelArgs: '', sbatchEnv: {} }; }, release: async () => { log.push('release'); },
+        tunnelRef: () => undefined, ensureTunnel: async () => { }, withLinkspan: async () => { throw new Error('unused'); },
+        signedIn: async () => true, prepare: async () => { log.push('attach'); return { tunnelArgs: '', sbatchEnv: {} }; },
     };
     const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
     const provider = new SessionProvider(vscode.Uri.parse('/ext'), { transportFor: () => transport, remove: async () => { }, plane: {} as never }, aws);
@@ -308,7 +324,212 @@ test('a second Start during a preview keeps the claim and gives the first attach
     await sleep(20);
     receive({ command: 'prepareLaunchSession', sessionId: s.id });
     await sleep(20);
-    assert.deepEqual(log, ['attach', 'release', 'attach']);
+    assert.deepEqual(log, ['attach', 'attach']);
     assert.equal(owns(s), true, 'the new preview holds the claim');
     provider.dispose();
+});
+
+function provider(t: TestContext, plane: object) {
+    const commands: string[] = [];
+    t.mock.method(SshManager, 'getInstance', () => ({
+        getMergedHosts: () => [{ alias: 'cs-lab-k1aaaaaa', clusterConfigId: 'k1aaaaaaaa', source: 'cybershuttle' }],
+        runRemoteCommand: async (_: string, c: string) => { commands.push(c); return ''; },
+    }) as never);
+    const aws = { ec2: undefined, ready: async () => { throw new Error('signed out'); }, onDidSignIn: () => ({ dispose() { } }) };
+    const p = new SessionProvider(vscode.Uri.parse('/ext'), { ...linkTransports, plane: plane as never }, aws);
+    t.after(() => p.dispose());
+    const posted: { command: string; state: SessionsState }[] = [];
+    let receive: (m: SessionsMessage) => void = () => { };
+    p.resolveWebviewView({
+        webview: { options: {}, html: '', cspSource: 'x', asWebviewUri: (u: unknown) => u, postMessage: async (m: { command: string; state: SessionsState }) => { posted.push(m); return true; }, onDidReceiveMessage: (l: (m: SessionsMessage) => void) => { receive = l; return { dispose() { } }; } },
+        visible: true, onDidChangeVisibility: () => ({ dispose() { } }), onDidDispose: () => ({ dispose() { } }),
+    } as never);
+    return { receive, state: () => posted.at(-1)?.state, commands };
+}
+
+test('Add on a CyberShuttle host creates and launches the session through the CyberShuttle API', async (t) => {
+    const calls: unknown[][] = [];
+    const plane = { deployments: async () => [{ deploymentId: 'd1', label: 'Base' }], createSession: async (...a: unknown[]) => { calls.push(a); return planeResponse({}, { state: 'SUBMITTED', startedAt: null, deadline: null }); } };
+    const { receive, state, commands } = provider(t, plane);
+    quickPick.minutes = 120;
+    receive({ command: 'addSession', alias: 'cs-lab-k1aaaaaa', account: '', partition: 'cpu', rootFolder: '/work/u1', resources: { cores: 2, memoryMb: 4096, wallMinutes: 0 } });
+    await sleep(20);
+    quickPick.minutes = 0;
+    assert.deepEqual(calls, [['k1aaaaaaaa', { account: '', partition: 'cpu', resources: { cores: 2, memoryMb: 4096, wallMinutes: 0 } }, 120, { deploymentId: 'd1', label: 'Base' }]]);
+    assert.deepEqual(commands, [], 'no SSH');
+    const s = must(getSession('s1'));
+    assert.deepEqual([s.alias, s.rootFolder, statusOf(s)], ['cs-lab-k1aaaaaa', '/work/u1/p1', 'queued']);
+    assert.equal(state()?.draftAlias, null);
+});
+
+test('a launch the CyberShuttle API answers as failed shows its reason on the card', async (t) => {
+    const plane = { deployments: async () => [{ deploymentId: 'd1', label: 'Base' }], createSession: async () => planeResponse({}, { state: 'FAILED', error: 'the deployment has no template' }) };
+    const { receive } = provider(t, plane);
+    receive({ command: 'addSession', alias: 'cs-lab-k1aaaaaa', account: 'lab-alloc', partition: 'cpu', rootFolder: '/work/u1', resources: { cores: 2, memoryMb: 4096, wallMinutes: 0 } });
+    await sleep(20);
+    const s = must(getSession('s1'));
+    assert.deepEqual([statusOf(s), s.failure], ['failed', 'the deployment has no template']);
+});
+
+test('a create the CyberShuttle API refuses shows its message in the form\'s alert', async (t) => {
+    const plane = { deployments: async () => [{ deploymentId: 'd1', label: 'Base' }], createSession: async () => { throw new PlaneError(400, 'Allocation cannot be blank'); } };
+    const { receive, state } = provider(t, plane);
+    receive({ command: 'addSession', alias: 'cs-lab-k1aaaaaa', account: '', partition: 'cpu', rootFolder: '/work/u1', resources: { cores: 2, memoryMb: 4096, wallMinutes: 0 } });
+    await sleep(20);
+    assert.deepEqual(state()?.alert, { title: 'Could not add session', message: 'Allocation cannot be blank' });
+    assert.equal(state()?.validating, false);
+});
+
+test('Start runs an ended session again with the picked walltime, showing submitting until it answers', async (t) => {
+    const s = planeSession(planeResponse({}, { state: 'COMPLETED' }));
+    const started = Promise.withResolvers<SessionResponse>();
+    const calls: unknown[][] = [];
+    const { receive, state } = provider(t, { startSession: (...a: unknown[]) => { calls.push(a); return started.promise; } });
+    quickPick.minutes = 60;
+    receive({ command: 'prepareLaunchSession', sessionId: 's1' });
+    await sleep(20);
+    quickPick.minutes = 0;
+    assert.deepEqual(calls, [['s1', 60]]);
+    assert.equal(statusOf(s), 'submitting');
+    started.resolve(planeResponse({}, { processId: 'p2', state: 'SUBMITTED', startedAt: null, deadline: null }));
+    await sleep(20);
+    assert.deepEqual([s.jobId, statusOf(s)], ['p2', 'queued']);
+    addSession(newSession({ alias: 'lab', account: '', partition: 'cpu', rootFolder: '/home/u', resources: { cores: 1, memoryMb: 1024, wallMinutes: 30 } }));
+    await sleep(20);
+    assert.equal(must(state()).sessions[0]?.id, 's1', 'CyberShuttle sessions list first');
+});
+
+test('a Start answered as failed after one that threw shows the run\'s reason, not the old error', async (t) => {
+    const s = planeSession(planeResponse({}, { state: 'COMPLETED' }));
+    let answer = (): Promise<SessionResponse> => Promise.reject(new Error('network down'));
+    const { receive, state } = provider(t, { startSession: () => answer() });
+    receive({ command: 'prepareLaunchSession', sessionId: 's1' });
+    await sleep(20);
+    assert.match(s.errorMessage, /network down/);
+    answer = async () => planeResponse({}, { processId: 'p2', state: 'FAILED', error: 'the deployment has no template' });
+    receive({ command: 'prepareLaunchSession', sessionId: 's1' });
+    await sleep(20);
+    const card = must(state()?.sessions.find(x => x.id === 's1'));
+    assert.deepEqual([card.status, card.errorMessage || card.failure], ['failed', 'the deployment has no template'], 'the card\'s reason');
+});
+
+const confirm = (t: TestContext) => t.mock.method(vscode.window, 'showWarningMessage', async (_: string, __: unknown, label: string) => label);
+function errors(t: TestContext): string[] {
+    const shown: string[] = [];
+    t.mock.method(vscode.window, 'showErrorMessage', async (m: string) => { shown.push(m); });
+    return shown;
+}
+
+test('Stop on a CyberShuttle session stops its current run from this window, owner or not', async (t) => {
+    const s = planeSession();
+    await files.write('windows/other.json', JSON.stringify({ at: Date.now() }));
+    await windows.reload('other');
+    await patch(s, { owner: 'other' });
+    const stopped = Promise.withResolvers<void>();
+    const calls: string[] = [];
+    const { receive } = provider(t, { stopProcess: (id: string) => { calls.push(id); return stopped.promise; } });
+    confirm(t);
+    receive({ command: 'stopSessionExecution', sessionId: 's1' });
+    await sleep(20);
+    assert.deepEqual(calls, ['p1']);
+    assert.equal(statusOf(s), 'stopping');
+    stopped.resolve();
+    applyPlane(planeResponse({}, { state: 'CANCELLED' }));
+    assert.equal(statusOf(s), 'stopped');
+});
+
+test('a Stop during a CyberShuttle Start asks to wait instead of dropping it', async (t) => {
+    const s = planeSession(planeResponse({}, { state: 'COMPLETED' }));
+    const started = Promise.withResolvers<SessionResponse>();
+    const stops: string[] = [];
+    const { receive } = provider(t, { startSession: () => started.promise, stopProcess: async (id: string) => { stops.push(id); } });
+    const told: string[] = [];
+    t.mock.method(vscode.window, 'showInformationMessage', async (m: string) => { told.push(m); });
+    receive({ command: 'prepareLaunchSession', sessionId: 's1' });
+    await sleep(20);
+    receive({ command: 'stopSessionExecution', sessionId: 's1' });
+    await sleep(20);
+    assert.deepEqual([stops, told], [[], ['Wait for the start to finish, then stop.']]);
+    started.resolve(planeResponse({}, { processId: 'p2', state: 'SUBMITTED', startedAt: null, deadline: null }));
+    await sleep(20);
+    assert.equal(statusOf(s), 'queued');
+});
+
+// Review Focus 5
+test('a refused Stop leaves the session running with the reason, and a remote window stays', async (t) => {
+    const s = planeSession();
+    const plane = { stopProcess: async () => { throw new PlaneError(502, 'scancel failed'); } };
+    const shown = errors(t);
+    const { receive } = provider(t, plane);
+    confirm(t);
+    receive({ command: 'stopSessionExecution', sessionId: 's1' });
+    await sleep(20);
+    assert.equal(statusOf(s), 'preparing');
+    assert.match(s.errorMessage, /scancel failed/);
+    const closed: string[] = [];
+    t.mock.method(vscode.commands, 'executeCommand', async (c: string) => { closed.push(c); });
+    const items: { text: string }[] = [];
+    t.mock.method(vscode.window, 'createStatusBarItem', () => { const i = { text: '', show() { }, hide() { }, dispose() { } }; items.push(i); return i; });
+    const remote = new RemoteSessionController({} as never, 's1', plane);
+    shown.length = 0;
+    await must(registered.get('csbridge.stopRemoteSession'))();
+    assert.equal(closed.includes('workbench.action.remote.close'), false);
+    assert.ok(shown.some(m => /scancel failed/.test(m)));
+    assert.equal(items[1]?.text, '$(debug-stop) Stop', 'Stop is restored');
+    remote.dispose();
+});
+
+test('a Stop that succeeds after a refused one leaves no stale error', async (t) => {
+    const s = planeSession();
+    let answer = async (): Promise<void> => { throw new PlaneError(502, 'scancel failed'); };
+    const { receive } = provider(t, { stopProcess: () => answer() });
+    confirm(t);
+    receive({ command: 'stopSessionExecution', sessionId: 's1' });
+    await sleep(20);
+    assert.match(s.errorMessage, /scancel failed/);
+    answer = async () => { };
+    receive({ command: 'stopSessionExecution', sessionId: 's1' });
+    await sleep(20);
+    assert.equal(statusOf(s), 'stopping');
+    assert.equal(s.errorMessage, '');
+});
+
+test('a run replaced while the monitor prepares it gets none of the old run\'s ports', async () => {
+    const s = planeSession();
+    const answered = Promise.withResolvers<{ bind_port: number }>();
+    const transport = { label: 'fake', tunnelRef: () => ({ tunnelId: s.jobId }), ensureTunnel: async () => { }, withLinkspan: () => answered.promise };
+    const monitor: SessionMonitor = new SessionMonitor(new Backends(new SlurmBackend({ ...linkTransports, transportFor: () => transport as never }, () => monitor), {} as never));
+    monitor.startMonitoring(s); // the first tick asks p1's Linkspan for its sshd
+    await sleep(5);
+    applyPlane(planeResponse({}, { processId: 'p2' }));
+    answered.resolve({ bind_port: 40 });
+    await sleep(20);
+    assert.equal(JSON.parse(must(files.texts.get('plane/s1.json'))).ports, undefined);
+    assert.equal(s.connectionInfo?.sshPort, 0);
+    await monitor.quiesce(s);
+});
+
+test('Delete removes the session from the CyberShuttle API, then its local parts', async (t) => {
+    planeSession(planeResponse({}, { state: 'COMPLETED' }));
+    const calls: string[] = [];
+    const { receive } = provider(t, { deleteSession: async (id: string) => { calls.push(id); } });
+    confirm(t);
+    receive({ command: 'deleteSession', sessionId: 's1' });
+    await sleep(20);
+    assert.deepEqual(calls, ['s1']);
+    assert.equal(getSession('s1'), undefined);
+    assert.deepEqual(planeParts(), []);
+});
+
+// Review Focus 4
+test('a Delete the CyberShuttle API refuses keeps everything local', async (t) => {
+    planeSession(planeResponse({}, { state: 'COMPLETED' }));
+    const shown = errors(t);
+    const { receive } = provider(t, { deleteSession: async () => { throw new PlaneError(409, 'the session is live'); } });
+    confirm(t);
+    receive({ command: 'deleteSession', sessionId: 's1' });
+    await sleep(20);
+    assert.ok(getSession('s1'));
+    assert.deepEqual(planeParts().map(([id]) => id), ['s1']);
+    assert.ok(shown.some(m => /the session is live/.test(m)));
 });

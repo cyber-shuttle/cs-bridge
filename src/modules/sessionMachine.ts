@@ -4,7 +4,8 @@ import { SessionStatus as Status, SlurmJobStatus, SlurmSession } from '../models
 export const wallMs = (session: Pick<SlurmSession, 'resources'>): number => session.resources.wallMinutes * 60_000;
 
 // When Slurm kills the job; none before it starts or without a --time.
-export function deadline({ resources, startedAt }: Pick<SlurmSession, 'resources' | 'startedAt'>): number | undefined {
+export function deadline({ resources, startedAt, plane }: Pick<SlurmSession, 'resources' | 'startedAt' | 'plane'>): number | undefined {
+    if (plane) { return plane.runs[0].deadline ?? undefined; }
     const total = wallMs({ resources });
     return startedAt !== undefined && total > 0 ? startedAt + total : undefined;
 }
@@ -34,18 +35,18 @@ interface LiveFacts {
     unreachable: boolean; // the last poll failed to reach the backend
 }
 
-type Facts = Pick<SlurmSession, 'desired' | 'observed' | 'failure' | 'jobId' | 'startedAt' | 'resources' | 'connectionInfo'>;
+type Facts = Pick<SlurmSession, 'desired' | 'observed' | 'failure' | 'jobId' | 'startedAt' | 'resources' | 'connectionInfo' | 'plane'>;
 const ENDED: SlurmJobStatus[] = [SlurmJobStatus.COMPLETED, SlurmJobStatus.CANCELLED, SlurmJobStatus.TIMEOUT];
 const DIED: SlurmJobStatus[] = [SlurmJobStatus.FAILED, SlurmJobStatus.OUT_OF_MEMORY];
 
 // Derived, not stored, so no writer has a status another writer must guard against.
 export function deriveStatus(s: Facts, live: LiveFacts, now: number): Status {
-    if (s.failure) { return 'failed'; }
     if (live.launching) { return 'submitting'; }
+    if (s.failure) { return 'failed'; }
     if (!s.jobId) { return 'not_started'; }
     const state = s.observed?.state ?? SlurmJobStatus.UNKNOWN;
     if (DIED.includes(state)) { return 'failed'; }
-    if (ENDED.includes(state) || isWallTimeExpired(s, now)) { return 'stopped'; }
+    if (ENDED.includes(state) || (!s.plane && isWallTimeExpired(s, now))) { return 'stopped'; }
     if (s.desired === 'stopped') { return 'stopping'; }
     const sshUp = !!s.connectionInfo?.sshPort;
     if (live.unreachable && !sshUp) { return 'unreachable'; }
