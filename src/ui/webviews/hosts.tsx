@@ -4,7 +4,7 @@ import type { HostsState, SshHost } from '@/models';
 import { post, useWebviewState, mount } from '@/ui/platform/vscode';
 import { Row, Stack, Text, Icon, Button } from '@/ui/components/base';
 
-const SOURCE_ICON: Record<SshHost['source'], string> = { user: 'account', system: 'settings-gear', cybershuttle: 'cloud' };
+const SOURCE_ICON: Record<SshHost['source'], string> = { user: 'terminal', system: 'settings-gear', cybershuttle: 'cloud' };
 const SOURCE_TITLE: Record<SshHost['source'], string> = { user: 'User SSH config (~/.ssh/config)', system: 'System SSH config (read-only)', cybershuttle: 'CyberShuttle cluster config (read-only)' };
 
 function DetailRow({ label, children }: { label: string; children: ComponentChildren }) {

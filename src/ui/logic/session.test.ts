@@ -77,6 +77,7 @@ test('cardModel: an HPC job and an EC2 instance differ only in chips, details an
     const ec2 = { region: 'us-east-1', type: 't3.micro', image: '', user: 'ubuntu', ip: '1.2.3.4' };
     const aws = cardModel(sess('connected', { ...base, ec2 }), 601_000);
     assert.deepEqual([aws.kind, aws.theme, aws.chips, aws.details, aws.status.text], ['AWS', 'warning', ['t3.micro', 'Ubuntu 24.04 LTS'], ['us-east-1', '42', '1.2.3.4'], 'Running']);
+    assert.deepEqual([hpc.driverIcon, cardModel(sess('connected', { ...base, clusterConfigId: 'k1' }), 0).driverIcon], ['terminal', 'cloud'], 'the CyberShuttle API drives a cluster config\'s session');
     assert.equal(cardModel(sess('preparing', base), 0).status.text, 'Starting Linkspan…');
     assert.equal(cardModel(sess('preparing', { ...base, ec2 }), 0).status.text, 'Booting…');
     const starting = cardModel(sess('stopped', { ...base, starting: true }), 0);

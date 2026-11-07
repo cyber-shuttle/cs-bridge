@@ -116,6 +116,7 @@ const AWS: Provider<ViewSession & Ec2Session> = {
 
 interface CardModel {
     kind: Provider['kind'];
+    driverIcon: 'cloud' | 'terminal';
     theme: Provider['theme'];
     icon: { name: string; spin?: boolean };
     color: string;
@@ -148,7 +149,7 @@ export const cardModel = (s: ViewSession, now: number, remote = false): CardMode
 function card<S extends ViewSession>(s: S, provider: Provider<S>, now: number, remote: boolean): CardModel {
     const actions = sessionActions(s);
     return {
-        kind: provider.kind, theme: provider.theme, icon: STATUS_ICON[s.status], color: dotColor(s.status), chips: provider.chips(s),
+        kind: provider.kind, driverIcon: s.clusterConfigId ? 'cloud' : 'terminal', theme: provider.theme, icon: STATUS_ICON[s.status], color: dotColor(s.status), chips: provider.chips(s),
         details: provider.details?.(s), status: statusText(s, now, provider),
         actions: remote ? actions.filter(a => a.kind === 'stop') : actions, canDelete: !remote && !s.starting && isDeletable(s.status),
     };
