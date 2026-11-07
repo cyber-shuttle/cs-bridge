@@ -91,16 +91,23 @@ test('a device sign-in starts at the CyberShuttle API, polls until complete and 
     assert.equal(JSON.parse(must(secrets.get(CREDENTIAL_KEY))).refreshToken, 'r');
 });
 
-test('a login the launch raises is asked of the user, and the answer posted before the launch returns', async () => {
+test('a login raised after the launch returned is asked in this window, which names itself on every call', async () => {
     const answered = Promise.withResolvers<unknown>();
+    const connections = new Set<string | null>();
+    let launched = false;
     const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
     const client = new Plane({ get: async () => JSON.stringify(live), store: async () => undefined, delete: async () => undefined }, async (url, init) => {
         const path = String(url).slice(PLANE_URL.length + 1);
-        if (path === 'processes/p1/launch') { await answered.promise; }
-        else if (path === 'ssh-interactive-auths') { return json([{ authId: 'a1', hostName: 'login.example.org', loginUser: 'u1', banner: 'Welcome', prompts: [{ text: 'Passcode: ' }] }]); }
+        connections.add(new Headers(init?.headers).get('X-Connection-Id'));
+        if (path === 'processes/p1/launch') { launched = true; }
+        else if (path === 'ssh-interactive-auths') { return json(launched ? [{ authId: 'a1', hostName: 'login.example.org', loginUser: 'u1', banner: 'Welcome', prompts: [{ text: 'Passcode: ' }] }] : []); }
         else { answered.resolve([path, JSON.parse(String(init?.body))]); }
         return json({});
-    }, async (host, prompt) => `${host}|${prompt}`);
+    });
     await client.launchProcess('p1');
+    const answering = client.answerLogins(async (host, prompt) => `${host}|${prompt}`);
     assert.deepEqual(await answered.promise, ['ssh-interactive-auths/a1/response', { responses: ['u1@login.example.org|Welcome\nPasscode: '] }]);
+    answering.dispose();
+    assert.equal(connections.size, 1);
+    assert.match(String([...connections][0]), /^[0-9a-f-]{36}$/);
 });

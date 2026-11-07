@@ -2,6 +2,7 @@
 // stops; its Linkspan links back and the API forwards its ports. Sign-in is CILogon's device grant, brokered by the
 // CyberShuttle API because it holds the client secret: the user approves a short code in the browser while this polls
 // to redeem it; the ID token answered is the bearer.
+import { randomUUID } from 'node:crypto';
 import type * as vscode from 'vscode';
 import { NonEmpty, SlurmDiscovery, SlurmJobStatus, SlurmSession } from './models';
 import { parseJson } from './modules/json';
@@ -10,6 +11,8 @@ import { sleep } from './modules/util';
 
 export const PLANE_URL = 'https://jupyterapi.cybershuttle.org/api/v1';
 export const CREDENTIAL_KEY = 'csbridge.plane.credential';
+// The CyberShuttle API holds a login open five minutes while the user answers its prompts.
+const LOGIN_TIMEOUT = 330_000;
 
 interface DeviceCode { device_code: string; user_code: string; verification_uri_complete: string; interval: number }
 interface Tokens { id_token: string; refresh_token?: string; expires_in: number }
@@ -32,9 +35,10 @@ export class PlaneError extends Error {
 export class Plane {
     private credential?: Credential | null;
     private refreshing?: Promise<void>;
+    // Names this window to the CyberShuttle API, which shows a login's prompts only to the connection that started it.
+    private readonly connection = randomUUID();
 
-    constructor(private readonly secrets: Pick<vscode.SecretStorage, 'get' | 'store' | 'delete'>, private readonly fetchImpl = fetch,
-        private readonly askLogin: (host: string, prompt: string) => Promise<string | undefined> = async () => undefined) { }
+    constructor(private readonly secrets: Pick<vscode.SecretStorage, 'get' | 'store' | 'delete'>, private readonly fetchImpl = fetch) { }
 
     startSignIn() { return this.request<DeviceCode>('auth/device', 'POST'); }
 
@@ -66,8 +70,8 @@ export class Plane {
         return this.api<{ processId: string; batchProcess: { controlPort: number } }>('processes', 'POST', { processType: 'BATCH_JOB', batchProcess });
     }
 
-    launchProcess(id: string) { return this.loggingIn(`processes/${id}/launch`); }
-    stopProcess(id: string) { return this.loggingIn(`processes/${id}/stop`); }
+    launchProcess(id: string) { return this.api(`processes/${id}/launch`, 'POST'); }
+    stopProcess(id: string) { return this.api(`processes/${id}/stop`, 'POST', undefined, LOGIN_TIMEOUT); }
     processAccess(id: string) { return this.api<{ app: { token: string } }>(`processes/${id}/access`); }
 
     async jobStatus(id: string): Promise<{ status: SlurmJobStatus; elapsedSeconds: number }> {
@@ -91,7 +95,7 @@ export class Plane {
 
     async discovery(id: string): Promise<SlurmDiscovery> {
         const [{ workRoot }, { allocations, partitions }] = await Promise.all([this.api<ClusterConfig>(`slurm-cluster-configs/${id}`),
-            this.loggingIn<{ allocations: { account: string }[]; partitions: NonEmpty<Partition> }>(`slurm-cluster-configs/${id}/discover-allocations`)]);
+            this.api<{ allocations: { account: string }[]; partitions: NonEmpty<Partition> }>(`slurm-cluster-configs/${id}/discover-allocations`, 'POST', undefined, LOGIN_TIMEOUT)]);
         const info = (p: Partition) => ({ name: p.name, cpuCount: p.cpuPerNode ?? p.maxProcessors ?? 0, memoryMb: p.maxMemory ?? 0, gres: parseGres(p.gres ?? '') });
         const [first, ...rest] = partitions;
         return { accounts: allocations.map(a => a.account), partitions: [info(first), ...rest.map(info)], homeDir: workRoot };
@@ -106,17 +110,18 @@ export class Plane {
         return found.sort((a, b) => Number(b.label === 'Base') - Number(a.label === 'Base'));
     }
 
-    // The CyberShuttle API holds a login open five minutes while the user answers its prompts.
-    private async loggingIn<T = unknown>(path: string): Promise<T> {
-        let done = false;
+    // Every prompt polled is this window's own, however long after its request the login runs, as a submission's does.
+    answerLogins(askLogin: (host: string, prompt: string) => Promise<string | undefined>): { dispose(): void } {
+        let live = true;
         void (async () => {
-            while (await sleep(1000), !done) {
+            while (await sleep(2000), live) {
                 try {
+                    if (!await this.signedIn()) { continue; }
                     const [login] = await this.api<Login[]>('ssh-interactive-auths');
                     if (!login) { continue; }
                     const responses: string[] = [];
                     for (const { text } of login.prompts) {
-                        const answer = await this.askLogin(`${login.loginUser}@${login.hostName}`, [login.banner, login.instruction, text].filter(Boolean).join('\n'));
+                        const answer = await askLogin(`${login.loginUser}@${login.hostName}`, [login.banner, login.instruction, text].filter(Boolean).join('\n'));
                         if (answer === undefined) { break; }
                         responses.push(answer);
                     }
@@ -125,8 +130,7 @@ export class Plane {
                 catch { /* the next poll retries */ }
             }
         })();
-        try { return await this.api<T>(path, 'POST', undefined, 330_000); }
-        finally { done = true; }
+        return { dispose: () => { live = false; } };
     }
 
     private async api<T = unknown>(path: string, method = 'GET', body?: unknown, timeout?: number): Promise<T> {
@@ -168,7 +172,7 @@ export class Plane {
 
     // T is the server's documented response shape; the body is trusted as such, as every wire client here does.
     private async request<T>(path: string, method: string, body?: unknown, token?: string, timeout = 30_000): Promise<T> {
-        const headers = { 'Content-Type': 'application/json', ...token && { Authorization: `Bearer ${token}` } };
+        const headers = { 'Content-Type': 'application/json', 'X-Connection-Id': this.connection, ...token && { Authorization: `Bearer ${token}` } };
         const response = await this.fetchImpl(`${PLANE_URL}/${path}`, { method, headers, body: JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
         let value: (T & { message?: string; fieldErrors?: { message: string }[] }) | undefined;
         try { value = parseJson((await response.text()) || 'null'); } // 204 carries no body
