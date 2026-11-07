@@ -18,7 +18,7 @@ Each status is derived from recorded facts; see [Session status](02-session-stat
 
 ## Create
 
-1. **Pick a host.** The menu's **Create New SSH Session** lists SSH hosts. Picking one calls `startSessionDraft`
+1. **Pick a host.** The menu's **Create New Session** lists compute hosts. Picking one calls `startSessionDraft`
    (`sessionProvider.ts`). This focuses the Sessions view and shows a draft form.
 2. **Discover the cluster.** The form's options come from the login node (`getSlurmDiscovery`, `slurmSupport.ts`).
    Once discovery succeeds, they are cached per SSH host in this window, until the form's **Refresh** or **Retry**.

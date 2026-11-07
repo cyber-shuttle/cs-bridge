@@ -135,7 +135,7 @@ export class SessionMonitor {
 
 interface Tally { probeFails: number; sacctAt?: number }
 export class SlurmBackend implements Backend {
-    readonly label = 'SSH host';
+    readonly label = 'Compute host';
     private runs = new Map<string, Tally>(); // this window's tallies per session
 
     // The monitor is built with this backend, so it arrives lazily.

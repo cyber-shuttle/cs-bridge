@@ -134,8 +134,8 @@ export function editHostInConfigText(text: string, alias: string, edit: SshConfi
     const config = parse(text);
     const found = config.find({ Host: alias });
     const section = found && 'config' in found ? found : undefined;
-    if (!section) { throw new Error(`SSH host ${alias} is not in ~/.ssh/config.`); }
-    if (edit.Host !== alias && config.find({ Host: edit.Host })) { throw new Error(`SSH host ${edit.Host} already exists.`); }
+    if (!section) { throw new Error(`Compute host ${alias} is not in ~/.ssh/config.`); }
+    if (edit.Host !== alias && config.find({ Host: edit.Host })) { throw new Error(`Compute host ${edit.Host} already exists.`); }
     section.value = edit.Host;
     for (const [param, value] of [['User', edit.User], ['HostName', edit.HostName]] as const) {
         const i = section.config.findIndex(line => 'param' in line && isKeyword(line.param, param));

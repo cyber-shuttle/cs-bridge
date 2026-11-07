@@ -89,8 +89,8 @@ export class CsBridgeMenu {
         return {
             title: 'CS Bridge',
             items: [
-                { label: '$(add) Create New SSH Session', open: this.hosts },
-                { label: '$(server) Add SSH Host', open: this.addHost },
+                { label: '$(add) Create New Session', open: this.hosts },
+                { label: '$(server) Add Compute Host', open: this.addHost },
                 ...enabled('aws') && this.aws.regions ? [{ label: '$(cloud) Create Cloud VM', open: this.cloudVm(this.aws.regions) }] : [],
                 { label: 'Accounts', kind: vscode.QuickPickItemKind.Separator },
                 ...cybershuttle ? [email === null
@@ -109,8 +109,8 @@ export class CsBridgeMenu {
     private readonly hosts: Build = () => {
         const merged = SshManager.getInstance().getMergedHosts();
         return {
-            title: 'Create New SSH Session',
-            placeholder: merged.length ? 'Select an SSH host to configure a session on' : 'No SSH hosts configured yet — add one with Add SSH Host.',
+            title: 'Create New Session',
+            placeholder: merged.length ? 'Select a compute host to configure a session on' : 'No compute hosts yet — add one with Add Compute Host.',
             items: merged.sort((a, b) => a.alias.localeCompare(b.alias)).map(h => ({
                 label: `$(${HOST_SOURCE_ICON[h.source]}) ${h.alias}`, description: destination(h),
                 run: () => this.sessions.startSessionDraft(h.alias),
@@ -119,9 +119,9 @@ export class CsBridgeMenu {
     };
 
     readonly addHost: Build = () => ({
-        ...ask('Add SSH Host', `Type an SSH command, e.g. ssh hello@microsoft.com -A${this.clusters.length ? ', or pick a CyberShuttle cluster' : ''}`, '', (command) => {
+        ...ask('Add Compute Host', `Type an SSH command, e.g. ssh hello@microsoft.com -A${this.clusters.length ? ', or pick a CyberShuttle cluster' : ''}`, '', (command) => {
             const entry = sshCommandToConfig(command);
-            return () => ask('Add SSH Host: Alias', 'Press Enter to use this alias, or type your own', entry.Host, alias => this.sshHosts.saveSshHost({ ...entry, Host: alias }));
+            return () => ask('Add Compute Host: Alias', 'Press Enter to use this alias, or type your own', entry.Host, alias => this.sshHosts.saveSshHost({ ...entry, Host: alias }));
         }),
         items: this.clusters.map(c => ({ label: `$(${HOST_SOURCE_ICON.cybershuttle}) ${c.clusterName}`, description: c.headnodeHost, open: this.addCluster(c) })),
     });
@@ -135,9 +135,9 @@ export class CsBridgeMenu {
 
     readonly editHost = (alias: string): Build => () => {
         const host = SshManager.getInstance().getMergedHosts().find(h => h.alias === alias);
-        if (!host) { throw new Error(`SSH host ${alias} is no longer configured.`); }
-        return ask('Edit SSH Host: Alias', 'Press Enter to keep this alias, or type a new one', alias, newAlias => () =>
-            ask('Edit SSH Host: Destination', '[user@]hostname', destination(host), (dest) => {
+        if (!host) { throw new Error(`Compute host ${alias} is no longer configured.`); }
+        return ask('Edit Compute Host: Alias', 'Press Enter to keep this alias, or type a new one', alias, newAlias => () =>
+            ask('Edit Compute Host: Destination', '[user@]hostname', destination(host), (dest) => {
                 const { hostname, username } = parseHostToken(dest);
                 this.sshHosts.saveSshHost({ Host: newAlias, HostName: hostname, ...username && { User: username } }, alias);
             }));

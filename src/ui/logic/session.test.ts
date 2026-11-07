@@ -87,7 +87,7 @@ test('cardModel: an HPC job and an EC2 instance differ only in chips, details an
 test('cardModel: status text carries the error where there is one, with a hover title', () => {
     const base = { errorMessage: '', submittedAt: 1_000, resources: { cores: 1, memoryMb: 1, wallMinutes: 1 } };
     assert.deepEqual(cardModel(sess('queued', base), 61_000).status, { text: 'Queued (1m 0s)' });
-    assert.deepEqual(cardModel(sess('unreachable', base), 0).status, { text: 'SSH host unreachable — retrying…', title: undefined });
+    assert.deepEqual(cardModel(sess('unreachable', base), 0).status, { text: 'Compute host unreachable — retrying…', title: undefined });
     assert.deepEqual(cardModel(sess('unreachable', { ...base, errorMessage: 'ssh: timeout' }), 0).status, { text: 'Unreachable: ssh: timeout', title: 'ssh: timeout' });
     assert.deepEqual(cardModel(sess('stopped', { ...base, errorMessage: 'ssh: timeout' }), 0).status, { text: 'Stopped', title: 'ssh: timeout' });
     assert.deepEqual(cardModel(sess('failed', { ...base, errorMessage: 'OOM' }), 0).status, { text: 'Failed: OOM', title: 'OOM' });

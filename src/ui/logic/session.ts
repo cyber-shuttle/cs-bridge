@@ -137,7 +137,7 @@ function statusText<S extends ViewSession>(s: S, now: number, provider: Provider
         case 'ready_to_connect':
         case 'connected': return { text: provider.running(s, now) };
         case 'connecting': return { text: 'Connecting…' };
-        case 'unreachable': return { text: err ? `Unreachable: ${err}` : 'SSH host unreachable — retrying…', title: err };
+        case 'unreachable': return { text: err ? `Unreachable: ${err}` : 'Compute host unreachable — retrying…', title: err };
         case 'stopping': return { text: 'Stopping…' };
         case 'stopped': return { text: 'Stopped', title: err };
         case 'failed': { const why = err || s.failure; return { text: why ? `Failed: ${why}` : 'Failed', title: why }; } // a newer error first; the failure outlives a cleared one

@@ -90,7 +90,7 @@
 			},
 			{
 				"command": "csbridge.addHost",
-				"title": "Add SSH Host",
+				"title": "Add Compute Host",
 				"category": "CS Bridge",
 				"icon": "$(add)"
 			},

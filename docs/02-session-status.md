@@ -50,7 +50,7 @@ Each window computes these from `extensionStore.live` and the window heartbeats:
 | `launching` | This window is submitting the job. |
 | `connecting` | This window is opening a connection. |
 | `connected` | This window holds a connection, or any window's heartbeat names the session as its remote window. For EC2, "holds a connection" means this window has connected the session. It also does that when it takes over a running instance. |
-| `unreachable` | This window's last poll could not reach the SSH host or the AWS API. A failing `sacct` on a reachable host reads as `UNKNOWN` instead. A failed `/usage` or Linkspan call counts as a failed probe. |
+| `unreachable` | This window's last poll could not reach the compute host or the AWS API. A failing `sacct` on a reachable host reads as `UNKNOWN` instead. A failed `/usage` or Linkspan call counts as a failed probe. |
 
 ## Derivation
 

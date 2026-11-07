@@ -46,7 +46,7 @@ function HostItem({ host }: { host: SshHost }) {
 
 function HostList({ state }: { state: HostsState }) {
     const hosts = state.sshHosts; // user entries first, as getMergedHosts orders them
-    if (hosts.length === 0) { return <Text muted style={{ margin: '4px 0' }}>No SSH hosts yet — use + above.</Text>; }
+    if (hosts.length === 0) { return <Text muted style={{ margin: '4px 0' }}>No compute hosts yet — use + above.</Text>; }
     return <>{hosts.map(host => <HostItem key={host.alias} host={host} />)}</>;
 }
 
