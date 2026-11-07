@@ -20,8 +20,10 @@ records `transport: 'link'`.
 - `linkTunnel.ts` implements the same management and relay clients as the Dev Tunnels SDK, on top of the CyberShuttle API. The
   [session lifecycle](01-session-lifecycle.md) therefore runs unchanged.
 - `plane.ts` is the CyberShuttle API client, at `https://jupyterapi.cybershuttle.org/api/v1`. Requests time out after 30 s.
-  A call that logs in to the cluster (discovery, launch, stop) times out after 330 s, and meanwhile each prompt polled
-  from `ssh-interactive-auths` is asked in the SSH authentication panel.
+  A call that logs in to the cluster (discovery, stop) times out after 330 s.
+- Every call carries the window's `X-Connection-Id`. The CyberShuttle API shows a login's prompts only to the connection
+  that started it, including a submission's, which logs in after the launch returns.
+- While signed in, the window polls `ssh-interactive-auths` every 2 s and asks each prompt in the SSH authentication panel.
 
 ## Steps
 

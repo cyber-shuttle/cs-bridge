@@ -34,7 +34,8 @@ export async function activate(context: vscode.ExtensionContext) {
     SshManager.initInstance(context.extensionUri, context.globalStorageUri.fsPath);
     context.subscriptions.push(onSessionsChange(() => void syncSshConfig()));
     void syncSshConfig();
-    const plane = new Plane(context.secrets, fetch, (host, prompt) => SshManager.getInstance().promptAuth({ openPrompts: new Set() }, host, prompt));
+    const plane = new Plane(context.secrets);
+    context.subscriptions.push(plane.answerLogins((host, prompt) => SshManager.getInstance().promptAuth({ openPrompts: new Set() }, host, prompt)));
     const transports = new Transports(plane);
     const aws = new AwsClient(context.secrets);
     const sessionProvider = new SessionProvider(context.extensionUri, transports, aws, id);
