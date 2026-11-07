@@ -1,8 +1,10 @@
 import { Logger } from './logger';
-import { SessionStatus, SlurmJobStatus, SlurmSession } from './models';
+import { SessionStatus, SlurmJobStatus, SlurmSession, isPlane } from './models';
 import { deriveStatus } from './modules/sessionMachine';
 import { Files, JsonDir, replaceFields } from './modules/store';
 import { deleteRunsFile } from './modules/runStore';
+import { forgetPlane, onPlaneChange, patchPlane, planeParts, planeSessions } from './modules/planeSessions';
+import { csHostAlias } from './modules/sshHostsStore';
 
 const logger = Logger.getInstance();
 
@@ -32,11 +34,16 @@ export async function initSessionStore(files: Files, onError: (err: unknown) => 
 }
 
 export function getAllSessions(): SlurmSession[] {
-    return sessions.values();
+    return [...sessions.values(), ...planeSessions()];
 }
 
 export function getSession(sessionId: string): SlurmSession | undefined {
-    return sessions.get(sessionId);
+    return sessions.get(sessionId) ?? planeSessions().find(s => s.id === sessionId);
+}
+
+// The session whose per-session SSH host is `host`: the local records, then the CyberShuttle sessions' local parts.
+export function sessionForHost(host: string): string | undefined {
+    return sessions.values().find(s => csHostAlias(s) === host)?.id ?? planeParts().find(([, p]) => csHostAlias(p) === host)?.[0];
 }
 
 export function addSession(session: SlurmSession) {
@@ -44,7 +51,7 @@ export function addSession(session: SlurmSession) {
 }
 
 export function patch(session: SlurmSession, fields: Partial<SlurmSession>): Promise<void> {
-    return sessions.patch(session.id, fields);
+    return isPlane(session) ? patchPlane(session, fields) : sessions.patch(session.id, fields);
 }
 
 // Written only on change: the monitor says it every tick.
@@ -92,6 +99,7 @@ export const requestStop = (session: SlurmSession): Promise<void> => patch(sessi
 
 export function deleteSession(sessionId: string) {
     sessions.delete(sessionId);
+    forgetPlane(sessionId);
     deleteRunsFile(sessionId);
 }
 
@@ -128,7 +136,7 @@ export function windowState(s: SlurmSession): { isCurrent: boolean; windowAlive:
 
 // Heartbeats and live sets fire it too.
 export function onSessionsChange(listener: () => void): { dispose(): void } {
-    const subs = [sessions.onDidChange(listener), windows.onDidChange(listener)];
+    const subs = [sessions.onDidChange(listener), windows.onDidChange(listener), onPlaneChange(listener)];
     liveListeners.add(listener);
     return { dispose: () => { subs.forEach(s => s.dispose()); liveListeners.delete(listener); } };
 }

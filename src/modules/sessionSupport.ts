@@ -1,6 +1,6 @@
-import { ConnectionInfo, Ec2Session, UsageSample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession, isEc2 } from '../models';
+import { ConnectionInfo, Ec2Session, UsageSample, POLLING_INTERVAL_MS, SlurmJobStatus, SlurmSession, isEc2, isPlane } from '../models';
 import { Logger, errMsg } from './../logger';
-import { PlaneError, type Deployment } from '../plane';
+import { PlaneError } from '../plane';
 import { getSession, patch, setError, observe, statusOf, live, claim, owns, disown } from '../extensionStore';
 import { recordSessionRun, sacctStats } from '../sessionRunSupport';
 import { SshManager, deleteSessionPrivateKey, hasSessionKey, syncSshConfig } from './sshSupport';
@@ -44,7 +44,7 @@ export class Backends {
 
 // One independent poll loop per active session. No shared lock: each loop mutates
 // only its own session and a patch applies synchronously, so ticks never race.
-interface Loop { session: SlurmSession; timer: ReturnType<typeof setInterval>; ticking: boolean }
+interface Loop { session: SlurmSession; jobId: string; timer: ReturnType<typeof setInterval>; ticking: boolean }
 export class SessionMonitor {
     private loops = new Map<string, Loop>();
     private ending = new Map<string, Promise<void>>(); // each session's teardown while it runs
@@ -84,12 +84,13 @@ export class SessionMonitor {
                 await disposeTunnelClient(sessionId);
                 return;
             }
-            if (isTerminal(statusOf(session))) {
+            // A run replaced between two listings: this loop's hold is on the old one.
+            if (session.jobId !== loop.jobId || isTerminal(statusOf(session))) {
                 void this.endSession(session);
                 return;
             }
 
-            const alive = () => this.loops.get(sessionId) === loop;
+            const alive = () => this.loops.get(sessionId) === loop && session.jobId === loop.jobId;
             await this.backends.use(session, (b, s) => b.tick(s, alive));
             if (!alive()) { return; } // a Stop ended the loop meanwhile
             if (live.unreachable.delete(session.id)) { setError(session, ''); }
@@ -110,7 +111,7 @@ export class SessionMonitor {
     // No-op if already running or not yet launched. The first poll fires now so status isn't stale for a full interval.
     public startMonitoring(session: SlurmSession): void {
         if (!session.jobId || this.loops.has(session.id) || !claim(session)) { return; }
-        this.loops.set(session.id, { session, timer: setInterval(() => void this.tick(session.id), POLLING_INTERVAL_MS), ticking: false });
+        this.loops.set(session.id, { session, jobId: session.jobId, timer: setInterval(() => void this.tick(session.id), POLLING_INTERVAL_MS), ticking: false });
         logger.info(sessionLine(session.name, `monitoring started (JobId=${session.jobId})`));
         void this.tick(session.id);
     }
@@ -159,28 +160,17 @@ export class SlurmBackend implements Backend {
         this.monitor().startMonitoring(session);
     }
 
-    async launch(session: SlurmSession, deployment: Deployment, wallMinutes: number): Promise<void> {
-        resetLive(session.id);
-        const { processId, batchProcess: { controlPort } } = await this.transports.plane.createProcess(session, wallMinutes, deployment);
-        patch(session, { planeId: processId });
-        await this.transports.plane.launchProcess(processId);
-        patch(session, { jobId: processId, connectionInfo: { sshPort: 0, controlPort }, submittedAt: Date.now() });
-        this.monitor().startMonitoring(session);
-    }
-
-    private jobStatus = (session: SlurmSession) => session.clusterConfigId ? this.transports.plane.jobStatus(session.jobId) : getSlurmJobStatus(session);
-
     // Throws when the job is still running after a refused scancel; the caller then leaves the session as it was.
     async stop(session: SlurmSession): Promise<void> {
         const stopCommand = `scancel ${session.jobId}`;
         this.log(session, `sending stop command: ${stopCommand}`);
         try {
-            await (session.clusterConfigId ? this.transports.plane.stopProcess(session.jobId) : SshManager.getInstance().runRemoteCommand(session.alias, stopCommand)); // a Stop is the user's, so the owner window may authenticate for it
+            await SshManager.getInstance().runRemoteCommand(session.alias, stopCommand); // a Stop is the user's, so the owner window may authenticate for it
             observe(session, SlurmJobStatus.CANCELLED);
             this.log(session, `stop command sent successfully`);
         }
         catch (err) {
-            const read = await this.jobStatus(session).catch(() => undefined); // it may have ended anyway
+            const read = await getSlurmJobStatus(session).catch(() => undefined); // it may have ended anyway
             if (read) { observe(session, read.status); }
             if (!isTerminal(statusOf(session))) { throw new Error(`failed to send stop command: ${errMsg(err)}`, { cause: err }); }
             this.log(session, `job already ended`);
@@ -195,14 +185,16 @@ export class SlurmBackend implements Backend {
         }
         live.connecting.add(session.id);
         const transport = this.transports.transportFor(session);
+        const { jobId } = session;
+        const ended = () => isTerminal(statusOf(session)) || session.jobId !== jobId;
         try {
             if (!hasSessionKey(session.id)) { throw new Error('SSH private key not found for session'); }
             const ci = await ensureRemoteSession(transport, session); // idempotent; refreshes tunnel creds for reattach
-            // These awaits can run tens of seconds against a dead node; a job that ended meanwhile gets nothing written.
-            if (isTerminal(statusOf(session))) { throw new Error('the job ended'); }
+            // These awaits can run tens of seconds against a dead node; a job that ended or was replaced meanwhile gets nothing written.
+            if (ended()) { throw new Error('the job ended'); }
             patch(session, { connectionInfo: ci });
             const localPort = await connectSessionToTunnel(transport, session, ci, () => void this.reconnect(session.id));
-            if (isTerminal(statusOf(session))) { throw new Error('the job ended'); }
+            if (ended()) { throw new Error('the job ended'); }
             patch(session, { connectionInfo: { ...ci, localPort } });
             await syncSshConfig();
             return true;
@@ -228,7 +220,7 @@ export class SlurmBackend implements Backend {
     }
 
     async remove(session: SlurmSession): Promise<void> {
-        await this.transports.remove(session);
+        await (isPlane(session) ? this.transports.plane.deleteSession(session.id) : this.transports.remove(session));
         deleteSessionPrivateKey(session.id);
     }
 
@@ -264,8 +256,9 @@ export class SlurmBackend implements Backend {
             });
             return;
         }
+        if (isPlane(session)) { return; } // the listing reads its job
 
-        const { status: slurmStatus, elapsedSeconds } = await this.jobStatus(session);
+        const { status: slurmStatus, elapsedSeconds } = await getSlurmJobStatus(session);
         if (!alive()) { return; }
         this.log(session, `healthcheck (Slurm): status=${slurmStatus}`);
 
@@ -279,17 +272,16 @@ export class SlurmBackend implements Backend {
     }
 
     async end(session: SlurmSession): Promise<void> {
-        void recordSessionRun(session); // before the release, which a Start could overtake
+        if (!isPlane(session)) { void recordSessionRun(session); } // before the disconnect, which a Start could overtake
         const transport = this.transports.transportFor(session);
         await disconnectSessionFromTunnel(transport, session)
             .catch(err => logger.error(`Session ${session.name}: Failed to disconnect from its ${transport.label}:`, err));
-        await transport.release(session);
     }
 
     // Tunnel health gave up — only an authoritative sacct terminal state may tear the session down; else it's alive, resume pinging.
     private async crossCheckSlurmForDeath(session: SlurmSession, alive: () => boolean): Promise<void> {
         try {
-            const { status } = await this.jobStatus(session);
+            const { status } = await getSlurmJobStatus(session);
             if (!alive()) { return; }
             observe(session, status);
             if (!isTerminal(statusOf(session))) { this.run(session.id).probeFails = 0; }
@@ -302,8 +294,7 @@ export class SlurmBackend implements Backend {
     // Probe over the tunnel until PROBE_GIVEUP consecutive failures, then fall back
     // to an authoritative sacct cross-check. The probe differs by phase.
     private async pingOrCrossCheck(session: SlurmSession, alive: () => boolean, probe: () => Promise<void>): Promise<void> {
-        // Cloud sessions cross-check after one failure: their status is a single API call.
-        if (this.run(session.id).probeFails < (session.clusterConfigId ? 1 : PROBE_GIVEUP)) { await probe(); }
+        if (isPlane(session) || this.run(session.id).probeFails < PROBE_GIVEUP) { await probe(); }
         else { await this.crossCheckSlurmForDeath(session, alive); }
     }
 
@@ -331,14 +322,14 @@ export class SlurmBackend implements Backend {
     }
 
     private pullSample(session: SlurmSession, ci: ConnectionInfo): Promise<UsageSample> {
-        if (!session.clusterConfigId && !isTunnelClientConnected(session.id)) { return getSampleViaSrun(session, ci.controlPort); }
+        if (!isPlane(session) && !isTunnelClientConnected(session.id)) { return getSampleViaSrun(session, ci.controlPort); }
         return this.transports.transportFor(session).withLinkspan(session, ci, getSample);
     }
 
     // Throttled sacct refresh, fire-and-forget from the health path (sacctStats swallows its own errors).
     private async refreshStats(session: SlurmSession, alive: () => boolean): Promise<void> {
         const now = Date.now(), run = this.run(session.id);
-        if (session.clusterConfigId) { return; }
+        if (isPlane(session)) { return; }
         if (run.sacctAt !== undefined && now - run.sacctAt < SACCT_REFRESH_MS) { return; }
         run.sacctAt = now;
         const m = await sacctStats(session);

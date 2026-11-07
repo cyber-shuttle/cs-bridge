@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveStatus, observedEc2, isTerminal, isDeletable, isStoppable, isReachable, isWallTimeExpired } from './sessionMachine';
+import { deadline, deriveStatus, observedEc2, isTerminal, isDeletable, isStoppable, isReachable, isWallTimeExpired } from './sessionMachine';
 import { SlurmJobStatus } from '../models';
+import { planeResponse } from './testSupport';
 
 test('status-category predicates classify each status correctly', () => {
     assert.deepEqual((['stopped', 'failed'] as const).map(isTerminal), [true, true]);
@@ -83,4 +84,13 @@ test('deriveStatus: the races the stored status had to guard are impossible by c
 test('observedEc2 maps instance states onto the Slurm vocabulary', () => {
     assert.deepEqual((['pending', 'running', 'stopping', 'stopped', 'terminated'] as const).map(observedEc2),
         [SlurmJobStatus.RUNNING, SlurmJobStatus.RUNNING, SlurmJobStatus.RUNNING, SlurmJobStatus.CANCELLED, SlurmJobStatus.FAILED]);
+});
+
+test('a CyberShuttle session ends when the API says so, against the API\'s deadline', () => {
+    const plane = planeResponse({}, { startedAt: 1_000, deadline: 5_000 });
+    const s = { desired: 'running' as const, jobId: 'p1', observed: { state: SlurmJobStatus.RUNNING, at: 0 }, startedAt: 1_000, resources: { cores: 1, memoryMb: 1, wallMinutes: 60 }, connectionInfo: { sshPort: 0, controlPort: 1 }, plane };
+    const idle = { launching: false, connecting: false, connected: false, unreachable: false };
+    assert.equal(deadline(s), 5_000, 'the API\'s deadline, not startedAt plus walltime');
+    assert.equal(deriveStatus(s, idle, 9_999_999), 'preparing', 'a passed deadline alone does not end it');
+    assert.equal(deriveStatus({ ...s, failure: 'no template' }, { ...idle, launching: true }, 0), 'submitting', 'a Start in this window shows over the last run\'s failure');
 });

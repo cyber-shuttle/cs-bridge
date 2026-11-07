@@ -8,3 +8,4 @@ export interface FakePanel {
 }
 export const panels: FakePanel[];
 export const quickPick: { minutes: number };
+export const registered: Map<string, (...args: unknown[]) => unknown>;

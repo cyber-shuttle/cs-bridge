@@ -23,6 +23,7 @@ On the session record, shared by every window:
 | `failure` | Why a launch failed. `fail` sets it when a submit fails. The next Submit clears it. |
 | `jobId` | For Slurm: the job id. It is empty until `sbatch` returns, and each Submit clears it. For EC2: the instance id. It is kept across Starts while the instance exists. A Start that launches a new instance replaces it. |
 | `startedAt`, `resources.wallMinutes` | When the job started, and its walltime. Together they give its deadline. |
+| `plane` | A CyberShuttle session's last API response. Its `observed`, `failure`, `startedAt` and deadline come from `runs[0]`. Its `desired` and `errorMessage` live in each window's memory, so a Stop does not cross windows. |
 | `connectionInfo.sshPort` | The node's SSH server port. It is set once Linkspan has started the server. For EC2 it is 22, set once the instance's port 22 answers. |
 | `errorMessage` | The latest error. The card shows it only for `unreachable`, `stopped` (as a tooltip) and `failed`. `fail` sets it together with `failure`. The next success, Stop or Submit clears it. Unlike `failure`, it does not change the status. |
 
@@ -58,11 +59,11 @@ Each window computes these from `extensionStore.live` and the window heartbeats:
 
 | Order | Status | When |
 |---|---|---|
-| 1 | `failed` | a failure is recorded |
-| 2 | `submitting` | this window is launching it |
+| 1 | `submitting` | this window is launching it |
+| 2 | `failed` | a failure is recorded |
 | 3 | `not_started` | no job has been submitted |
 | 4 | `failed` | the job state is `FAILED` or `OUT_OF_MEMORY` |
-| 5 | `stopped` | the job state is `COMPLETED`, `CANCELLED` or `TIMEOUT`, or the deadline has passed |
+| 5 | `stopped` | the job state is `COMPLETED`, `CANCELLED` or `TIMEOUT`, or the deadline has passed. A CyberShuttle session ignores the deadline |
 | 6 | `stopping` | the user asked to stop and the job has not ended yet |
 | 7 | `unreachable` | the last poll failed and the node's SSH port is unknown |
 | 8 | `queued` | the job is not running yet |

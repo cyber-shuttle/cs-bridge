@@ -153,12 +153,15 @@ Turn on `csbridge.experimentalFeatures` to try these. They may change or disappe
 
   EC2 sessions have no Run History or summary. Their cards show region, instance and IP instead of usage and walltime.
 - **CyberShuttle hosts** — sign in to CyberShuttle from the menu, and each cluster config you hold there is also a
-  host. Start asks for a walltime, then an environment if its cluster has several, Base first. The CyberShuttle API submits,
-  reads and stops the job and carries the session, without SSH or a Dev Tunnel.
+  host. **Add** asks for a walltime, then an environment if the cluster has several, and starts the session. Sessions
+  started in Jupyter appear here too. **Start** asks for a walltime. The CyberShuttle API submits,
+  reads and stops the job and carries the session, without SSH or a Dev Tunnel. As with EC2, these sessions have no
+  Run History or summary. Each run works in its own folder, `<work root>/<process id>`: Start opens a fresh one, and
+  the last run's files stay in theirs.
 
   Each Start records the run as a process in your CyberShuttle account. That process holds the description listed
-  under Privacy and stays in your account. When a run ends, or the session is deleted, CS Bridge asks CyberShuttle
-  to stop it. If that fails, for example while you are signed out, it is only logged.
+  under Privacy. CyberShuttle Stop works from any window. Delete removes the session and its runs from your
+  CyberShuttle account, then its key.
 
 <img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/07-ec2.png" alt="EC2 instance sessions" width="360">
 

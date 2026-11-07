@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { Files, Steps, migrate } from './modules/store';
 import { initSessionStore } from './extensionStore';
 import { initRunStore } from './modules/runStore';
+import { initPlaneStore } from './modules/planeSessions';
 
 export function storageFiles(root: vscode.Uri): Files {
     const fs = vscode.workspace.fs;
@@ -33,7 +34,7 @@ export async function openStorage(context: vscode.ExtensionContext, legacy: (fil
     const root = context.globalStorageUri;
     const files = storageFiles(root);
     await migrate(files, legacy(files, root.fsPath));
-    const dirs = [...await initSessionStore(files, onError), await initRunStore(files, onError)];
+    const dirs = [...await initSessionStore(files, onError), await initRunStore(files, onError), await initPlaneStore(files, onError)];
     const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, '*/*.json'));
     const reload = (uri: vscode.Uri) => {
         const [dir, name = ''] = uri.path.split('/').slice(-2);

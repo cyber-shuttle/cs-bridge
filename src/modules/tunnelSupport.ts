@@ -78,7 +78,6 @@ export const devTunnels = {
         if (!devtunnel || !token) { throw new Error('The session has no Dev Tunnel to reach Linkspan through.'); }
         return call(`https://${devtunnel.id}-${ci.controlPort}.${devtunnel.cluster}.devtunnels.ms/api/v1`, { 'X-Tunnel-Authorization': `tunnel ${token}` });
     },
-    deleteTunnel: deleteDevTunnel,
 } satisfies Tunnels;
 
 export async function deleteDevTunnel(session: SlurmSession): Promise<void> {

@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import { errMsg } from './logger';
-import { Ec2Spec, HostRuntime, SlurmSession, SessionsState, SessionsMessage, isEc2, newSession } from './models';
+import { Ec2Spec, HostRuntime, PlaneSession, SlurmSession, SessionsState, SessionsMessage, isEc2, isPlane, newSession } from './models';
 import { Handlers, WebviewProvider, confirmModal } from './webviewProvider';
 import { SshManager, openSshWindow } from './modules/sshSupport';
 import { getSlurmDiscovery } from './modules/slurmSupport';
 import { csHostAlias } from './modules/sshHostsStore';
 import { addSession, deleteSession, getSession, getAllSessions, patch, setError, onSessionsChange, windowState, statusOf, fail, live, claim, owns, disown, requestStop } from './extensionStore';
-import { readRecentSamples, onRunsChange } from './modules/runStore';
+import { readRecentSamples, onRunsChange, resetLive } from './modules/runStore';
+import { applyPlane, stopPlaneRun } from './modules/planeSessions';
 import { getMicrosoftAccountLabel } from './modules/tunnelSupport';
 import { Backends, SessionMonitor, SlurmBackend, prepareLaunch } from './modules/sessionSupport';
 import { Transports, disposeAllTunnelClients, disposeTunnelClient } from './modules/transport';
@@ -69,8 +70,9 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         if (this.remoteSessionId) { return; }
         for (const s of getAllSessions()) {
             const status = statusOf(s);
-            // The owner carries out a Stop asked anywhere; without a beating owner, this window takes it.
-            if (status === 'stopping') { if (claim(s)) { this.runStop(s); } continue; }
+            // The owner carries out a Stop asked anywhere; without a beating owner, this window takes it. A CyberShuttle Stop
+            // was sent by the window it was asked in.
+            if (status === 'stopping') { if (!isPlane(s) && claim(s)) { this.runStop(s); } continue; }
             // A run ended by the clock while no window had its loop (the walltime passed with VS Code closed) is still torn
             // down; a record this window owns without a loop is in a task's or a preview's hands.
             if (isTerminal(status)) { if (s.connectionInfo && !owns(s) && claim(s)) { void this.monitor.endSession(s).finally(() => this.settle(s)); } continue; }
@@ -110,10 +112,25 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         deleteSession: ({ sessionId }) => void this.confirmAndDeleteSession(sessionId),
     };
 
-    private createSession({ alias, account, partition, rootFolder, resources }: Extract<SessionsMessage, { command: 'addSession' }>): void {
-        const session = newSession({ alias, account: slurmAccount(account), partition, rootFolder, resources, clusterConfigId: this.clusterConfigId(alias) });
-        void this.validateThenPersist(session, () => {
+    private createSession(m: Extract<SessionsMessage, { command: 'addSession' }>): void {
+        const configId = this.clusterConfigId(m.alias);
+        if (configId) { void this.createPlaneSession(configId, m); return; }
+        const { alias, account, partition, rootFolder, resources } = m;
+        const session = newSession({ alias, account: slurmAccount(account), partition, rootFolder, resources });
+        void this.validateThenPersist(async () => {
+            await validateSlurmConfig(session, SshManager.getInstance(), this.logger);
             addSession(session);
+            this.draftAlias = null;
+        });
+    }
+
+    private async createPlaneSession(clusterConfigId: string, { alias, account, partition, rootFolder, resources }: Extract<SessionsMessage, { command: 'addSession' }>): Promise<void> {
+        const wallMinutes = await pickWalltime(0);
+        if (wallMinutes === undefined) { return; }
+        const deployment = await this.pickDeployment(clusterConfigId);
+        if (!deployment) { return; }
+        await this.validateThenPersist(async () => {
+            applyPlane(await this.transports.plane.createSession(clusterConfigId, { account: slurmAccount(account), partition, resources }, wallMinutes, deployment), { alias, rootFolder });
             this.draftAlias = null;
         });
     }
@@ -140,7 +157,8 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
 
         const confirmed = await confirmModal('Delete session?', 'Delete', isEc2(session)
             ? 'This terminates the instance, deleting its disk, and removes the session record.'
-            : 'This deletes the session record and cleans up its SSH config entry and key file.');
+            : isPlane(session) ? 'This deletes the session and its runs from your CyberShuttle account, and its SSH config entry and key file.'
+                : 'This deletes the session record and cleans up its SSH config entry and key file.');
         if (!confirmed || live.busy.has(sessionId)) { return; } // a task in flight holds the run this delete would tear down
 
         live.busy.add(sessionId);
@@ -169,17 +187,14 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private validating = false;
     private alert: SessionsState['alert'] = null;
 
-    private async validateThenPersist(session: SlurmSession, persist: () => void): Promise<void> {
+    private async validateThenPersist(persist: () => Promise<void>): Promise<void> {
         if (this.validating) { return; }
         this.validating = true;
         void this.pushState();
-        try {
-            if (!session.clusterConfigId) { await validateSlurmConfig(session, SshManager.getInstance(), this.logger); }
-            persist();
-        }
+        try { await persist(); }
         catch (err) {
-            this.logger.error('Session validation failed:', err);
-            this.alert = { title: 'Session validation failed', message: errMsg(err) };
+            this.logger.error('Could not add session:', err);
+            this.alert = { title: 'Could not add session', message: errMsg(err) };
         }
         finally {
             this.validating = false;
@@ -222,7 +237,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
                         if (live.windowAlive) { clearTimeout(this.opening.get(s.id)); this.opening.delete(s.id); }
                         return { ...s, status: statusOf(s), ...live, opening: this.opening.has(s.id), starting: this.starting.has(s.id), samples: readRecentSamples(s.id) };
                     })
-                    .sort((a, b) => b.id.localeCompare(a.id)), // newest first
+                    .sort((a, b) => Number(!!b.plane) - Number(!!a.plane) || (a.plane ? 0 : b.id.localeCompare(a.id))), // CyberShuttle sessions in the API's order, then local ones newest first
                 draftAlias: this.draftAlias,
                 hostRuntime: Object.fromEntries(this.hostRuntime),
                 preview: this.preview(),
@@ -287,9 +302,11 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
             return;
         }
 
+        if (isPlane(session) && live.busy.has(session.id)) { vscode.window.showInformationMessage('Wait for the start to finish, then stop.'); return; }
         if (!await confirmModal('Stop session?', 'Stop', 'This stops the running job.')) { return; }
 
-        requestStop(session); // the record change runs the stop in the owner window
+        if (isPlane(session)) { this.runSessionTask(session, 'stop', () => stopPlaneRun(this.transports.plane, session), 'The session is still running.', setError); }
+        else { requestStop(session); } // the record change runs the stop in the owner window
     }
 
     // A stop the backend could not send leaves the session as it was; one it sent is followed by the run's teardown.
@@ -331,20 +348,18 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         const blocked = (s: SlurmSession) => this.preparing || live.busy.has(s.id) || live.connecting.has(s.id); // one prepare at a time; a Start during a connect is a no-op
         if (!session || blocked(session)) { return; }
         const wallMinutes = isEc2(session) ? 0 : await pickWalltime(session.resources.wallMinutes);
-        const deployment = wallMinutes !== undefined && session.clusterConfigId ? await this.pickDeployment(session.clusterConfigId) : null; // undefined: no deployment picked
-        if (wallMinutes === undefined || deployment === undefined || blocked(session) || !getSession(sessionId) || !isDeletable(statusOf(session))) { return; } // the pick can outlast the session or its Start
+        if (wallMinutes === undefined || blocked(session) || !getSession(sessionId) || !isDeletable(statusOf(session))) { return; } // the pick can outlast the session or its Start
+        if (isPlane(session)) { this.startPlaneSession(session, wallMinutes); return; }
         this.preparing = true;
         live.busy.add(session.id);
         try {
             await this.monitor.quiesce(session);
             await this.dropDraft(); // one preview at a time; a repeated Start gives its earlier attach back through the transport it used
-            if (deployment && session.connectionInfo) { await this.monitor.endSession(session); }
         }
         finally { live.busy.delete(session.id); this.preparing = false; }
         if (!this.drive(session)) { return; }
         // An EC2 session has no job script to preview, so Start submits at once.
         if (isEc2(session)) { this.submit(session, () => this.ec2.start(session)); return; }
-        if (deployment) { patch(session, { transport: 'link' }); this.submit(session, () => this.slurm.launch(session, deployment, wallMinutes), wallMinutes); return; }
         this.preparing = true;
         live.busy.add(session.id);
         try {
@@ -362,6 +377,19 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
         }
         finally { live.busy.delete(session.id); this.preparing = false; }
         void this.pushState();
+    }
+
+    private startPlaneSession(session: PlaneSession, wallMinutes: number): void {
+        this.runSessionTask(session, 'start', async () => {
+            live.launching.add(session.id);
+            try {
+                await this.monitor.quiesce(session);
+                if (session.connectionInfo) { await this.monitor.endSession(session); }
+                applyPlane(await this.transports.plane.startSession(session.id, wallMinutes));
+                resetLive(session.id);
+            }
+            finally { live.launching.delete(session.id); }
+        }, 'Check the session in a moment.', setError);
     }
 
     private async pickDeployment(clusterConfigId: string): Promise<Deployment | undefined> {

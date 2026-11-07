@@ -26,6 +26,7 @@ What the files contain is in [Storage](10-storage.md).
 - The read, merge and rename are not locked across windows:
   - Two overlapping writes to the same record keep only the later one's record.
   - A write that overlaps a delete can bring the record back.
+- Each window lists the CyberShuttle API's sessions every 5 s and keeps the listing in memory only (`planeSessions.ts`).
 
 ## Heartbeats
 
@@ -56,7 +57,8 @@ This way one loop writes the job's state.
   - a task finishes with no loop running;
   - the user dismisses the script preview.
 - Only the owner polls the job, holds the relay client, connects, and carries out **Stop**. A Stop clicked in
-  another window is written to the record. The owner carries it out.
+  another window is written to the record. The owner carries it out. A CyberShuttle Stop is not handed to the owner;
+  the clicking window sends it.
 - A window that loses the claim stops polling the session on its next tick. It also disposes its relay client then.
 - Four statuses come from this window's live facts, so they show only in the owner window. Another local window shows
   them differently:
@@ -78,7 +80,7 @@ This way one loop writes the job's state.
 Each local window runs `reattachLiveSessions` (`sessionProvider.ts`). It runs on activation. It also runs on every
 change to the session records, heartbeats or live facts. For each session it:
 
-- runs a pending Stop if the session is `stopping` and this window can claim it;
+- runs a pending Stop if the session is `stopping`, is not a CyberShuttle session, and this window can claim it;
 - tears down a terminal session that still has connection info, if no live window owns it and this window can claim
   it. This covers a walltime that passed while VS Code was closed;
 - starts monitoring a live session that no window owns;
@@ -88,7 +90,8 @@ change to the session records, heartbeats or live facts. For each session it:
 ## Remote windows
 
 A remote window recognises itself from the `ssh-remote+<session host>` address of its first workspace folder.
-`extension.ts` compares that address with `csHostAlias` of every session. The window then:
+`sessionForHost` (`extensionStore.ts`) compares that address with `csHostAlias` of every local record, then of every
+CyberShuttle session's local parts in `plane/`. It needs no listing. The window then:
 
 - shows only its own session, with **Stop** as its only action;
 - sets the `csbridge.remote` context. This hides the Compute Hosts and Run History views and the menu.
@@ -98,9 +101,10 @@ A remote window recognises itself from the `ssh-remote+<session host>` address o
 - A status bar item counts down the walltime. It turns to a warning colour with 10 minutes left. For a session
   without a walltime (EC2), it reads "no limit".
 - Stop asks for confirmation and writes the stop request for the owner window. It then returns the window to local at
-  once. It does not wait for the job to end.
-- When the session ends or is stopped, the controller:
-  1. queues the session for a summary (Slurm only, at most 8 queued, in `globalState`);
+  once. It does not wait for the job to end. A CyberShuttle Stop is sent from this window; a refusal shows its reason,
+  restores Stop and keeps the window.
+- When the session ends, is stopped or has its run replaced, the controller:
+  1. queues the session for a summary (SSH hosts only, at most 8 queued, in `globalState`);
   2. runs `workbench.action.remote.close`, which reloads the window as a local one. If that command fails, the window
      closes.
 - The next local activation shows the oldest queued summary (`consumePendingSummary`, `summaryPanel.ts`). This is

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { parse, LineType, type Directive } from 'ssh-config';
 import { SlurmSession, SshHost, isEc2 } from '../models';
 import type { ClusterConfig } from '../plane';
+import type { PlaneParts } from './planeSessions';
 import { keyName } from './ec2';
 import { SshConfigEntry, isKeyword } from './sshCommandParser';
 import { lockedUpdateTextFile } from './fsSupport';
@@ -35,21 +36,26 @@ export const csHostAlias = ({ alias, name }: Pick<SlurmSession, 'alias' | 'name'
 export const sessionKeyName = (sessionId: string): string => `id_cshost-${sessionId}`;
 
 // The whole file from the records, so no window edits it in place and nothing is left behind.
-export function renderSshConfig(sessions: SlurmSession[], keyPath: (name: string) => string, machine: string): string {
-    return sessions.flatMap((s) => {
+export function renderSshConfig(sessions: SlurmSession[], plane: [string, PlaneParts][], keyPath: (name: string) => string, machine: string): string {
+    const local = sessions.flatMap((s) => {
         const ci = s.connectionInfo;
         if (isEc2(s)) { return ci?.sshPort && s.ec2.ip ? [buildSshConfigBlock(s.id, csHostAlias(s), s.ec2.ip, ci.sshPort, s.ec2.user, keyPath(keyName(s.ec2.region, machine)))] : []; }
         // The custom SSH server ignores the user.
-        // A CyberShuttle session's first connection can take about 30 s.
-        return ci?.localPort ? [buildSshConfigBlock(s.id, csHostAlias(s), '127.0.0.1', ci.localPort, 'cs-ssh-user', keyPath(sessionKeyName(s.id)), s.clusterConfigId ? '60' : undefined)] : [];
-    }).map(block => `${block}\n`).join('');
+        return ci?.localPort ? [buildSshConfigBlock(s.id, csHostAlias(s), '127.0.0.1', ci.localPort, 'cs-ssh-user', keyPath(sessionKeyName(s.id)))] : [];
+    });
+    // A CyberShuttle session's first connection can take about 30 s.
+    const remote = plane.flatMap(([id, p]) => (p.ports?.localPort ? [buildSshConfigBlock(id, csHostAlias(p), '127.0.0.1', p.ports.localPort, 'cs-ssh-user', keyPath(sessionKeyName(id)), '60')] : []));
+    return [...local, ...remote].map(block => `${block}\n`).join('');
 }
 
 // Pins each Slurm session's server to node-local /tmp, not $HOME/.vscode-server: on HPC $HOME is a shared network fs
 // where stalls miss the ptyHost heartbeat and one account's sessions fight over a single tree.
 const SERVER_INSTALL_ROOT = '/tmp/cs-vscode/';
-export function renderServerInstallPaths(sessions: SlurmSession[], current: Record<string, string>): Record<string, string> {
-    const ours = Object.fromEntries(sessions.filter(s => !isEc2(s) && s.connectionInfo?.localPort).map(s => [csHostAlias(s), `${SERVER_INSTALL_ROOT}${s.id}`]));
+export function renderServerInstallPaths(sessions: SlurmSession[], plane: [string, PlaneParts][], current: Record<string, string>): Record<string, string> {
+    const ours = Object.fromEntries([
+        ...sessions.filter(s => !isEc2(s) && s.connectionInfo?.localPort).map(s => [csHostAlias(s), `${SERVER_INSTALL_ROOT}${s.id}`]),
+        ...plane.filter(([, p]) => p.ports?.localPort).map(([id, p]) => [csHostAlias(p), `${SERVER_INSTALL_ROOT}${id}`]),
+    ]);
     return { ...Object.fromEntries(Object.entries(current).filter(([, dir]) => !dir.startsWith(SERVER_INSTALL_ROOT))), ...ours };
 }
 
@@ -156,8 +162,11 @@ export function mergeHostsByPriority(...lists: SshHost[][]): SshHost[] {
 }
 
 // No ':' in an alias: a vscode-remote authority refuses one.
+export const cyberShuttleAlias = (c: ClusterConfig): string =>
+    `cs-${c.name || c.slurmCluster?.clusterName || 'cluster'}-${c.slurmClusterConfigId.slice(0, 8)}`.toLowerCase().replace(/[^a-z0-9.-]+/g, '-');
+
 export const cyberShuttleHosts = (configs: ClusterConfig[]): SshHost[] => configs.map(c => ({
-    alias: `cs-${c.name || c.slurmCluster?.clusterName || 'cluster'}-${c.slurmClusterConfigId.slice(0, 8)}`.toLowerCase().replace(/[^a-z0-9.-]+/g, '-'),
+    alias: cyberShuttleAlias(c),
     hostname: c.slurmCluster?.headnodeHost, user: c.loginUser, source: 'cybershuttle', clusterConfigId: c.slurmClusterConfigId,
 }));
 

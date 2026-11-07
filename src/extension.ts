@@ -2,14 +2,14 @@ import * as vscode from 'vscode';
 import { Logger, errMsg } from './logger';
 import { legacySteps } from './modules/schema';
 import { openStorage } from './storage';
-import { startBeat, detachWindow, getAllSessions, onSessionsChange } from './extensionStore';
-import { csHostAlias } from './modules/sshHostsStore';
+import { startBeat, detachWindow, sessionForHost, onSessionsChange, deleteSession } from './extensionStore';
 import { Plane } from './plane';
 import { SessionProvider } from './sessionProvider';
 import { AwsClient } from './modules/aws';
 import { SshHostProvider } from './sshHostProvider';
 import { StatsProvider } from './statsProvider';
-import { SshManager, syncSshConfig } from './modules/sshSupport';
+import { SshManager, deleteSessionPrivateKey, syncSshConfig } from './modules/sshSupport';
+import { watchPlane } from './modules/planeSessions';
 import { Transports } from './modules/transport';
 import { RemoteSessionController } from './remoteSessionController';
 import { consumePendingSummary } from './summaryPanel';
@@ -35,6 +35,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(onSessionsChange(() => void syncSshConfig()));
     void syncSshConfig();
     const plane = new Plane(context.secrets);
+    context.subscriptions.push(watchPlane(plane, (id) => { deleteSession(id); deleteSessionPrivateKey(id); }));
     context.subscriptions.push(plane.answerLogins((host, prompt) => SshManager.getInstance().promptAuth({ openPrompts: new Set() }, host, prompt)));
     const transports = new Transports(plane);
     const aws = new AwsClient(context.secrets);
@@ -60,7 +61,7 @@ export async function activate(context: vscode.ExtensionContext) {
     void sessionProvider.reattachLiveSessions();
 
     if (id) {
-        context.subscriptions.push(new RemoteSessionController(context, id));
+        context.subscriptions.push(new RemoteSessionController(context, id, plane));
     }
     else {
         void consumePendingSummary(context);
@@ -79,10 +80,8 @@ export async function activate(context: vscode.ExtensionContext) {
 function remoteSessionId(folder: vscode.Uri): string | undefined {
     const prefix = 'ssh-remote+';
     if (!folder.authority.startsWith(prefix)) { return undefined; }
-    const alias = folder.authority.slice(prefix.length);
-    // The alias carries no id, so reconstruct each session's and match. Safe here: extensionKind:ui runs this window's
-    // extension host locally, so it can read the local session store (already initialized above).
-    return getAllSessions().find(s => csHostAlias(s) === alias)?.id;
+    // Safe here: extensionKind:ui runs this window's extension host locally, so it can read the local session store.
+    return sessionForHost(folder.authority.slice(prefix.length));
 }
 
 export function deactivate() {

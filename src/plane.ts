@@ -4,7 +4,7 @@
 // to redeem it; the ID token answered is the bearer.
 import { randomUUID } from 'node:crypto';
 import type * as vscode from 'vscode';
-import { NonEmpty, SlurmDiscovery, SlurmJobStatus, SlurmSession } from './models';
+import { NonEmpty, SessionResponse, SlurmDiscovery, SlurmSession } from './models';
 import { parseJson } from './modules/json';
 import { parseGres } from './modules/slurmParse';
 import { sleep } from './modules/util';
@@ -19,14 +19,10 @@ interface Tokens { id_token: string; refresh_token?: string; expires_in: number 
 interface Credential { idToken: string; refreshToken?: string; expiresAt: number }
 export interface ClusterConfig { slurmClusterConfigId: string; name?: string | null; slurmClusterId: string; slurmCluster?: { clusterName: string; headnodeHost: string } | null; loginUser: string; workRoot: string }
 interface Partition { name: string; cpuPerNode?: number | null; maxProcessors?: number | null; maxMemory?: number | null; gres?: string | null }
-interface DeploymentRecord { deploymentId: string; templateId?: string | null; slurmClusterId?: string | null; defaultBatchJobConfig?: { allocation: string } | null }
+interface DeploymentRecord { deploymentId: string; templateId?: string | null; slurmClusterId?: string | null }
 export interface Cluster { slurmClusterId: string; clusterName: string; headnodeHost: string }
-export interface Deployment { deploymentId: string; label: string; allocation?: string }
+export interface Deployment { deploymentId: string; label: string }
 interface Login { authId: string; hostName: string; loginUser: string; banner?: string; instruction?: string; prompts: { text: string }[] }
-const JOB_STATUS: Record<string, SlurmJobStatus> = {
-    CREATED: SlurmJobStatus.QUEUED, SUBMITTED: SlurmJobStatus.QUEUED, RUNNING: SlurmJobStatus.RUNNING, READY: SlurmJobStatus.RUNNING,
-    COMPLETED: SlurmJobStatus.COMPLETED, FAILED: SlurmJobStatus.FAILED, CANCELLED: SlurmJobStatus.CANCELLED,
-};
 
 export class PlaneError extends Error {
     constructor(public readonly status: number, message: string) { super(message); }
@@ -64,20 +60,19 @@ export class Plane {
         return email;
     }
 
-    createProcess({ clusterConfigId, account, partition, resources: { cores, memoryMb, gpuCount } }: SlurmSession, wallMinutes: number, deployment: Deployment) {
-        const batchProcess = { deploymentId: deployment.deploymentId, slurmClusterConfigId: clusterConfigId,
-            batchJobConfig: { wallTimeMinutes: wallMinutes, allocation: account || deployment.allocation, partition, nodes: 1, cpus: cores, mem: `${memoryMb}M`, gpus: gpuCount || undefined } };
-        return this.api<{ processId: string; batchProcess: { controlPort: number } }>('processes', 'POST', { processType: 'BATCH_JOB', batchProcess });
+    sessions() { return this.api<SessionResponse[]>('sessions/me'); }
+
+    createSession(clusterConfigId: string, { account, partition, resources: { cores, memoryMb, gpuCount, gpuType } }: Pick<SlurmSession, 'account' | 'partition' | 'resources'>, wallMinutes: number, deployment: Deployment) {
+        return this.api<SessionResponse>('sessions', 'POST', { slurmClusterConfigId: clusterConfigId, deploymentId: deployment.deploymentId, account, partition,
+            resources: { cores, memoryMb, wallMinutes, gpuCount: gpuCount || undefined, gpuType: gpuCount && gpuType !== 'gpu' ? gpuType : undefined } });
     }
 
-    launchProcess(id: string) { return this.api(`processes/${id}/launch`, 'POST'); }
+    startSession(sessionId: string, wallMinutes: number) { return this.api<SessionResponse>(`sessions/${sessionId}/start`, 'POST', { wallMinutes }); }
+    deleteSession(sessionId: string) { return this.api<void>(`sessions/${sessionId}`, 'DELETE'); }
+    clusterConfig(id: string) { return this.api<ClusterConfig>(`slurm-cluster-configs/${id}`); }
+
     stopProcess(id: string) { return this.api(`processes/${id}/stop`, 'POST', undefined, LOGIN_TIMEOUT); }
     processAccess(id: string) { return this.api<{ app: { token: string } }>(`processes/${id}/access`); }
-
-    async jobStatus(id: string): Promise<{ status: SlurmJobStatus; elapsedSeconds: number }> {
-        const { lastStatus } = await this.api<{ lastStatus?: { status?: string | null; timestamp?: number | null } | null }>(`processes/${id}`);
-        return { status: JOB_STATUS[String(lastStatus?.status)] ?? SlurmJobStatus.UNKNOWN, elapsedSeconds: Math.max(0, (Date.now() - (lastStatus?.timestamp ?? Date.now())) / 1000) };
-    }
 
     async clusterConfigs(): Promise<ClusterConfig[]> {
         if (!await this.signedIn()) { return []; }
@@ -94,7 +89,7 @@ export class Plane {
     }
 
     async discovery(id: string): Promise<SlurmDiscovery> {
-        const [{ workRoot }, { allocations, partitions }] = await Promise.all([this.api<ClusterConfig>(`slurm-cluster-configs/${id}`),
+        const [{ workRoot }, { allocations, partitions }] = await Promise.all([this.clusterConfig(id),
             this.api<{ allocations: { account: string }[]; partitions: NonEmpty<Partition> }>(`slurm-cluster-configs/${id}/discover-allocations`, 'POST', undefined, LOGIN_TIMEOUT)]);
         const info = (p: Partition) => ({ name: p.name, cpuCount: p.cpuPerNode ?? p.maxProcessors ?? 0, memoryMb: p.maxMemory ?? 0, gres: parseGres(p.gres ?? '') });
         const [first, ...rest] = partitions;
@@ -102,10 +97,10 @@ export class Plane {
     }
 
     async deployments(clusterConfigId: string): Promise<Deployment[]> {
-        const [{ slurmClusterId }, deployments, templates] = await Promise.all([this.api<ClusterConfig>(`slurm-cluster-configs/${clusterConfigId}`),
+        const [{ slurmClusterId }, deployments, templates] = await Promise.all([this.clusterConfig(clusterConfigId),
             this.api<DeploymentRecord[]>('slurm-deployments'), this.api<{ templateId: string; templateName: string }[]>('application-templates')]);
         const found = deployments.filter(d => d.slurmClusterId === slurmClusterId).map(d => ({ deploymentId: d.deploymentId,
-            allocation: d.defaultBatchJobConfig?.allocation, label: templates.find(t => t.templateId === d.templateId)?.templateName ?? d.deploymentId }));
+            label: templates.find(t => t.templateId === d.templateId)?.templateName ?? d.deploymentId }));
         if (!found.length) { throw new Error('CyberShuttle has no deployment on this cluster; ask an administrator.'); }
         return found.sort((a, b) => Number(b.label === 'Base') - Number(a.label === 'Base'));
     }

@@ -67,7 +67,7 @@ function HostFormFields({ alias, info, validating }: { alias: string; info: Slur
                 </>
             )}
             <Button onClick={submit} disabled={validating}>
-                {validating ? <Row gap={4}><Spinner size={12} /> Validating…</Row> : 'Add'}
+                {validating ? <Row gap={4}><Spinner size={12} /> Adding…</Row> : 'Add'}
             </Button>
         </Stack>
     );
