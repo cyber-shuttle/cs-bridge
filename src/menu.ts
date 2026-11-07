@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import { Logger, errMsg } from './logger';
 import { Plane } from './plane';
-import { SshHost, EC2_IMAGES, EC2_TYPES } from './models';
+import { SshHost, EC2_IMAGES, EC2_TYPES, HOST_SOURCE_ICON } from './models';
 import { SessionProvider } from './sessionProvider';
 import { AwsClient } from './modules/aws';
 import { SshHostProvider } from './sshHostProvider';
@@ -103,8 +103,8 @@ export class CsBridgeMenu {
         return {
             title: 'Create New SSH Session',
             placeholder: merged.length ? 'Select an SSH host to configure a session on' : 'No SSH hosts configured yet — add one with Add SSH Host.',
-            items: merged.map(h => ({
-                label: h.alias, description: destination(h),
+            items: merged.sort((a, b) => a.alias.localeCompare(b.alias)).map(h => ({
+                label: `$(${HOST_SOURCE_ICON[h.source]}) ${h.alias}`, description: destination(h),
                 run: () => this.sessions.startSessionDraft(h.alias),
             })),
         };

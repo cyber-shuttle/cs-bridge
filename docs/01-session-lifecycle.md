@@ -61,7 +61,7 @@ For a Slurm session, **Start** first asks for a walltime, from 30 min to 24 h. T
 cancels. `sbatch --test-only` checks the pick before the preview. A refusal shows on the session. The card shows busy
 until the preview opens.
 
-A CyberShuttle host's Start asks for a deployment after the walltime when its cluster has several, then skips steps 2 to 6: the CyberShuttle API submits the job. See [Link transport](06-link-transport.md#steps).
+A CyberShuttle host's Start asks for an environment (a deployment) after the walltime when its cluster has several, then skips steps 2 to 6: the CyberShuttle API submits the job. See [Link transport](06-link-transport.md#steps).
 
 1. **Claim and clean up.** **Start** (`sessionProvider.ts`):
    - ends any monitoring loop with its teardown, or waits for a teardown already in flight;

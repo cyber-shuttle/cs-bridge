@@ -367,7 +367,7 @@ export class SessionProvider extends WebviewProvider<SessionsMessage> implements
     private async pickDeployment(clusterConfigId: string): Promise<Deployment | undefined> {
         try {
             const deployments = await this.transports.plane.deployments(clusterConfigId);
-            return deployments.length === 1 ? deployments[0] : await vscode.window.showQuickPick(deployments, { title: 'CyberShuttle Deployment' });
+            return deployments.length === 1 ? deployments[0] : await vscode.window.showQuickPick(deployments, { title: 'Choose Environment' });
         }
         catch (err) { vscode.window.showErrorMessage(`Cannot start on this CyberShuttle host: ${errMsg(err)}`); return undefined; }
     }

@@ -8,7 +8,7 @@ import { SshManager } from './modules/sshSupport';
 import { SshConfigEntry, assertValidHost } from './modules/sshCommandParser';
 import { USER_SSH_CONFIG_PATH, addHostToConfigFile, cyberShuttleHosts, deleteHostFromConfigFile, editHostInConfigFile } from './modules/sshHostsStore';
 
-// Webview provider for the SSH Hosts view: reads user + read-only system SSH config, writes user SSH hosts to ~/.ssh/config.
+// Webview provider for the Compute Hosts view: reads user + read-only system SSH config, writes user SSH hosts to ~/.ssh/config.
 export class SshHostProvider extends WebviewProvider<HostsMessage> {
     constructor(extensionUri: vscode.Uri, private readonly plane: Pick<Plane, 'clusterConfigs'>) { super(extensionUri); }
 

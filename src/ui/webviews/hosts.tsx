@@ -1,10 +1,9 @@
 import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import type { HostsState, SshHost } from '@/models';
+import { HOST_SOURCE_ICON, type HostsState, type SshHost } from '@/models';
 import { post, useWebviewState, mount } from '@/ui/platform/vscode';
 import { Row, Stack, Text, Icon, Button } from '@/ui/components/base';
 
-const SOURCE_ICON: Record<SshHost['source'], string> = { user: 'terminal', system: 'settings-gear', cybershuttle: 'cloud' };
 const SOURCE_TITLE: Record<SshHost['source'], string> = { user: 'User SSH config (~/.ssh/config)', system: 'System SSH config (read-only)', cybershuttle: 'CyberShuttle cluster config (read-only)' };
 
 function DetailRow({ label, children }: { label: string; children: ComponentChildren }) {
@@ -23,7 +22,7 @@ function HostItem({ host }: { host: SshHost }) {
         <Stack>
             <Row gap={4} pad="3px 0" style={{ cursor: 'pointer' }} onClick={() => setOpen(!open)}>
                 <Icon name={open ? 'chevron-down' : 'chevron-right'} />
-                <Icon name={SOURCE_ICON[src]} title={SOURCE_TITLE[src]} />
+                <Icon name={HOST_SOURCE_ICON[src]} title={SOURCE_TITLE[src]} />
                 <Text weight={600} ellipsis>{host.alias}</Text>
             </Row>
             {open ? (

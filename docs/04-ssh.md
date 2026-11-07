@@ -90,7 +90,7 @@ The VS Code server goes to node-local `/tmp` rather than `$HOME/.vscode-server`,
 
 ## SSH hosts
 
-The SSH Hosts view and the menu list hosts from two files:
+The Compute Hosts view and the menu list hosts from two files:
 
 - `~/.ssh/config`, editable;
 - the system `ssh_config`, read-only: `/etc/ssh/ssh_config`, or `%ProgramData%\ssh\ssh_config` on Windows.

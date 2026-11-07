@@ -78,6 +78,8 @@ export interface SshHost {
     clusterConfigId?: string;
 }
 
+export const HOST_SOURCE_ICON: Record<SshHost['source'], string> = { user: 'terminal', system: 'settings-gear', cybershuttle: 'cloud' };
+
 export type NonEmpty<T> = readonly [T, ...T[]];
 export const nonEmpty = <T>(xs: readonly T[]): xs is NonEmpty<T> => xs.length > 0;
 

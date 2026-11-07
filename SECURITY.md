@@ -34,7 +34,7 @@ when it shows one of them failing.
   - add one `Include` of its own `ssh_config` in VS Code's extension storage;
   - remove the `Include` lines that versions up to 0.2.x added for `~/.cybershuttle`. On Windows those lines stay and
     must be removed by hand;
-  - add, edit or delete the hosts you manage in the SSH Hosts view.
+  - add, edit or delete the hosts you manage in the Compute Hosts view.
 
   Each such write replaces the file through a temp file and rename. As a result, a symlinked `~/.ssh/config` becomes a
   regular file. Adding the `Include` and managing hosts set mode `0600` on a newly created temp file. Removing the

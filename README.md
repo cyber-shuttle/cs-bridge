@@ -36,7 +36,7 @@ sessions connect.
 
 ### Use the clusters you already have
 
-The SSH Hosts view lists the hosts in your `~/.ssh/config`. It also lists the system SSH config, read-only. It does not
+The Compute Hosts view lists the hosts in your `~/.ssh/config`. It also lists the system SSH config, read-only. It does not
 show:
 
 - hosts in included files;
@@ -53,7 +53,7 @@ here. Adding over it leaves both.
 Renaming or removing a host that sessions use cuts those sessions off. Their status checks and Stop go to the old
 alias. Stop a session's job before you rename or remove its host.
 
-<img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/01-hosts.png" alt="SSH Hosts view" width="360">
+<img src="https://raw.githubusercontent.com/cyber-shuttle/CS-Bridge/HEAD/docs/media/01-hosts.png" alt="Compute Hosts view" width="360">
 
 ### Request a compute node from a form
 
@@ -153,7 +153,7 @@ Turn on `csbridge.experimentalFeatures` to try these. They may change or disappe
 
   EC2 sessions have no Run History or summary. Their cards show region, instance and IP instead of usage and walltime.
 - **CyberShuttle hosts** — sign in to CyberShuttle from the menu, and each cluster config you hold there is also a
-  host. Start asks for a walltime, then a deployment if its cluster has several, Base first. The CyberShuttle API submits,
+  host. Start asks for a walltime, then an environment if its cluster has several, Base first. The CyberShuttle API submits,
   reads and stops the job and carries the session, without SSH or a Dev Tunnel.
 
   Each Start records the run as a process in your CyberShuttle account. That process holds the description listed
@@ -227,7 +227,7 @@ CS Bridge currently fails to activate when `~/.ssh` does not exist. Create it fi
    CS Bridge keeps one login per cluster open for as long as a VS Code window that used the cluster stays open. Except
    on Windows:
 
-   - CS Bridge's own commands and the terminals it opens from the SSH Hosts view share that login.
+   - CS Bridge's own commands and the terminals it opens from the Compute Hosts view share that login.
    - The login stays open for ten minutes after the window closes.
 
    `ssh`, `scp` or `rsync` you run yourself authenticate separately.
