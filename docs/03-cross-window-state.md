@@ -91,7 +91,7 @@ A remote window recognises itself from the `ssh-remote+<session host>` address o
 `extension.ts` compares that address with `csHostAlias` of every session. The window then:
 
 - shows only its own session, with **Stop** as its only action;
-- sets the `csbridge.remote` context. This hides the SSH Hosts and Run History views and the menu.
+- sets the `csbridge.remote` context. This hides the Compute Hosts and Run History views and the menu.
 
 `RemoteSessionController` (`remoteSessionController.ts`) runs only there:
 

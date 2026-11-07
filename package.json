@@ -65,7 +65,7 @@
 				{
 					"type": "webview",
 					"id": "csbridge.hostsView",
-					"name": "SSH Hosts",
+					"name": "Compute Hosts",
 					"icon": "resources/csbridge.svg",
 					"when": "!csbridge.remote"
 				}
@@ -90,13 +90,13 @@
 			},
 			{
 				"command": "csbridge.addHost",
-				"title": "Add SSH Host",
+				"title": "Add Compute Host",
 				"category": "CS Bridge",
 				"icon": "$(add)"
 			},
 			{
 				"command": "csbridge.refreshHosts",
-				"title": "Refresh SSH Hosts",
+				"title": "Refresh Compute Hosts",
 				"category": "CS Bridge",
 				"icon": "$(refresh)"
 			},

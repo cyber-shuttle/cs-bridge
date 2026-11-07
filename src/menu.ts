@@ -3,8 +3,8 @@
 // Dev Tunnels sign-out is VS Code's account action, which signs the account out of VS Code as a whole.
 import * as vscode from 'vscode';
 import { Logger, errMsg } from './logger';
-import { Plane } from './plane';
-import { SshHost, EC2_IMAGES, EC2_TYPES } from './models';
+import { Plane, type Cluster } from './plane';
+import { SshHost, EC2_IMAGES, EC2_TYPES, HOST_SOURCE_ICON } from './models';
 import { SessionProvider } from './sessionProvider';
 import { AwsClient } from './modules/aws';
 import { SshHostProvider } from './sshHostProvider';
@@ -26,6 +26,7 @@ const destination = ({ alias, user, hostname = alias }: SshHost): string => (use
 export class CsBridgeMenu {
     private email: string | null = null;
     private microsoft: string | null = null;
+    private clusters: Cluster[] = [];
 
     constructor(
         private readonly plane: Plane, private readonly sessions: SessionProvider,
@@ -50,14 +51,14 @@ export class CsBridgeMenu {
         const go = (build: Build) => { stack.push(build); if (!show(build)) { pick.hide(); } };
         pick.onDidTriggerButton(() => { stack.pop(); const top = stack.at(-1); if (top && !show(top)) { pick.hide(); } });
         pick.onDidAccept(() => {
-            if (page.input) {
+            const item = pick.activeItems[0];
+            if (page.input && !item) {
                 const value = pick.value.trim();
                 if (!value) { return; }
                 try { const next = page.input.submit(value); if (next) { go(next); return; } pick.hide(); }
                 catch (err) { fail(err); }
                 return;
             }
-            const item = pick.selectedItems[0];
             if (item?.open) { go(item.open); return; }
             pick.hide();
             (async () => item?.run?.())().catch(fail).finally(() => this.refreshAccounts());
@@ -70,9 +71,16 @@ export class CsBridgeMenu {
     }
 
     private async refreshAccounts() {
-        try { [this.email, this.microsoft] = await Promise.all([this.plane.identity(), getMicrosoftAccountLabel(), enabled('aws') && this.aws.restored]); }
+        try {
+            [this.email, this.microsoft] = await Promise.all([this.plane.identity(), getMicrosoftAccountLabel(), enabled('aws') && this.aws.restored]);
+        }
         catch (err) { Logger.getInstance().warn(`Menu account refresh failed: ${errMsg(err)}`); }
-        await this.sshHosts.refreshSshHosts();
+        await Promise.all([this.refreshClusters(), this.sshHosts.refreshSshHosts()]);
+    }
+
+    private async refreshClusters() {
+        try { this.clusters = enabled('cybershuttle') && this.email !== null ? (await this.plane.clusters()).sort((a, b) => a.clusterName.localeCompare(b.clusterName)) : []; }
+        catch (err) { Logger.getInstance().warn(`Listing CyberShuttle clusters failed: ${errMsg(err)}`); }
     }
 
     private readonly root: Build = () => {
@@ -81,8 +89,8 @@ export class CsBridgeMenu {
         return {
             title: 'CS Bridge',
             items: [
-                { label: '$(add) Create New SSH Session', open: this.hosts },
-                { label: '$(server) Add SSH Host', open: this.addHost },
+                { label: '$(add) Create New Session', open: this.hosts },
+                { label: '$(server) Add Compute Host', open: this.addHost },
                 ...enabled('aws') && this.aws.regions ? [{ label: '$(cloud) Create Cloud VM', open: this.cloudVm(this.aws.regions) }] : [],
                 { label: 'Accounts', kind: vscode.QuickPickItemKind.Separator },
                 ...cybershuttle ? [email === null
@@ -101,25 +109,35 @@ export class CsBridgeMenu {
     private readonly hosts: Build = () => {
         const merged = SshManager.getInstance().getMergedHosts();
         return {
-            title: 'Create New SSH Session',
-            placeholder: merged.length ? 'Select an SSH host to configure a session on' : 'No SSH hosts configured yet — add one with Add SSH Host.',
-            items: merged.map(h => ({
-                label: h.alias, description: destination(h),
+            title: 'Create New Session',
+            placeholder: merged.length ? 'Select a compute host to configure a session on' : 'No compute hosts yet — add one with Add Compute Host.',
+            items: merged.sort((a, b) => a.alias.localeCompare(b.alias)).map(h => ({
+                label: `$(${HOST_SOURCE_ICON[h.source]}) ${h.alias}`, description: destination(h),
                 run: () => this.sessions.startSessionDraft(h.alias),
             })),
         };
     };
 
-    readonly addHost: Build = () => ask('Add SSH Host', 'SSH connection command, e.g. ssh hello@microsoft.com -A', '', (command) => {
-        const entry = sshCommandToConfig(command);
-        return () => ask('Add SSH Host: Alias', 'Press Enter to use this alias, or type your own', entry.Host, alias => this.sshHosts.saveSshHost({ ...entry, Host: alias }));
+    readonly addHost: Build = () => ({
+        ...ask('Add Compute Host', `Type an SSH command, e.g. ssh hello@microsoft.com -A${this.clusters.length ? ', or pick a CyberShuttle cluster' : ''}`, '', (command) => {
+            const entry = sshCommandToConfig(command);
+            return () => ask('Add Compute Host: Alias', 'Press Enter to use this alias, or type your own', entry.Host, alias => this.sshHosts.saveSshHost({ ...entry, Host: alias }));
+        }),
+        items: this.clusters.map(c => ({ label: `$(${HOST_SOURCE_ICON.cybershuttle}) ${c.clusterName}`, description: c.headnodeHost, open: this.addCluster(c) })),
     });
+
+    private readonly addCluster = ({ slurmClusterId, clusterName }: Cluster): Build => () =>
+        ask(`Add ${clusterName}: Login User`, `Your username on ${clusterName}`, '', user => () =>
+            ask(`Add ${clusterName}: Work Folder`, 'Where sessions run on the cluster', `/home/${user}/cybershuttle`, (workRoot) => {
+                void this.plane.addClusterConfig(slurmClusterId, user, workRoot).then(() => this.sshHosts.refreshSshHosts())
+                    .then(() => vscode.window.showInformationMessage(`Added ${clusterName} as a compute host.`)).catch(fail);
+            }));
 
     readonly editHost = (alias: string): Build => () => {
         const host = SshManager.getInstance().getMergedHosts().find(h => h.alias === alias);
-        if (!host) { throw new Error(`SSH host ${alias} is no longer configured.`); }
-        return ask('Edit SSH Host: Alias', 'Press Enter to keep this alias, or type a new one', alias, newAlias => () =>
-            ask('Edit SSH Host: Destination', '[user@]hostname', destination(host), (dest) => {
+        if (!host) { throw new Error(`Compute host ${alias} is no longer configured.`); }
+        return ask('Edit Compute Host: Alias', 'Press Enter to keep this alias, or type a new one', alias, newAlias => () =>
+            ask('Edit Compute Host: Destination', '[user@]hostname', destination(host), (dest) => {
                 const { hostname, username } = parseHostToken(dest);
                 this.sshHosts.saveSshHost({ Host: newAlias, HostName: hostname, ...username && { User: username } }, alias);
             }));

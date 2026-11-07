@@ -114,6 +114,8 @@ test('renderSshConfig lists a Slurm session with a forward and an EC2 instance w
     assert.deepEqual(text.match(/^Host .*$/gm), ['Host delta-493119', 'Host aws-us-east-1-493119']);
     assert.match(text, /^# CS-Bridge auto-generated for session a\nHost delta-493119\n {4}HostName 127\.0\.0\.1\n {4}Port 50122\n {4}User cs-ssh-user/m);
     assert.match(text, /^Host aws-us-east-1-493119\n {4}HostName 1\.2\.3\.4\n {4}Port 22\n {4}User ubuntu\n(?:.*\n)*? {4}IdentityFile "\/keys\/cs-aws-generated-key-us-east-1-m1"/m);
+    assert.match(renderSshConfig([{ ...base, id: 'd', alias: 'cs', jobId: '3', clusterConfigId: 'k1', connectionInfo: { sshPort: 40, controlPort: 1, localPort: 5 } }], () => '', 'm1'),
+        /^ {4}ConnectTimeout 60$/m, 'a CyberShuttle session\'s first connection is slow');
     assert.equal(renderSshConfig([], () => '', 'm1'), '');
     assert.deepEqual(renderServerInstallPaths([{ ...base, id: 'a', alias: 'delta', jobId: '1', connectionInfo: { sshPort: 40, controlPort: 1, localPort: 5 } }], { 'delta-000000': '/tmp/cs-vscode/old', 'mine': '/srv/code' }),
         { 'mine': '/srv/code', 'delta-493119': '/tmp/cs-vscode/a' });

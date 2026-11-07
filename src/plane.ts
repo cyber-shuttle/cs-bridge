@@ -17,6 +17,7 @@ interface Credential { idToken: string; refreshToken?: string; expiresAt: number
 export interface ClusterConfig { slurmClusterConfigId: string; name?: string | null; slurmClusterId: string; slurmCluster?: { clusterName: string; headnodeHost: string } | null; loginUser: string; workRoot: string }
 interface Partition { name: string; cpuPerNode?: number | null; maxProcessors?: number | null; maxMemory?: number | null; gres?: string | null }
 interface DeploymentRecord { deploymentId: string; templateId?: string | null; slurmClusterId?: string | null; defaultBatchJobConfig?: { allocation: string } | null }
+export interface Cluster { slurmClusterId: string; clusterName: string; headnodeHost: string }
 export interface Deployment { deploymentId: string; label: string; allocation?: string }
 interface Login { authId: string; hostName: string; loginUser: string; banner?: string; instruction?: string; prompts: { text: string }[] }
 const JOB_STATUS: Record<string, SlurmJobStatus> = {
@@ -79,6 +80,15 @@ export class Plane {
         return (await Promise.all([this.api<ClusterConfig[]>('slurm-cluster-configs/me'), this.api<ClusterConfig[]>('slurm-cluster-configs/shared-with-me')])).flat();
     }
 
+    clusters() { return this.api<Cluster[]>('slurm-clusters'); }
+
+    // The CyberShuttle API wants a credential on every config; a prompt-only one stands for none, as in cs-jupyter.
+    async addClusterConfig(slurmClusterId: string, loginUser: string, workRoot: string) {
+        const held = (await this.api<{ sshCredentialId: string; fullInteractive?: boolean }[]>('ssh-credentials')).find(c => c.fullInteractive)
+            ?? await this.api<{ sshCredentialId: string }>('ssh-credentials', 'POST', { sshCredentialName: 'Ask at each login', fullInteractive: true });
+        await this.api('slurm-cluster-configs', 'POST', { slurmClusterId, loginUser, workRoot, sshCredentialId: held.sshCredentialId });
+    }
+
     async discovery(id: string): Promise<SlurmDiscovery> {
         const [{ workRoot }, { allocations, partitions }] = await Promise.all([this.api<ClusterConfig>(`slurm-cluster-configs/${id}`),
             this.loggingIn<{ allocations: { account: string }[]; partitions: NonEmpty<Partition> }>(`slurm-cluster-configs/${id}/discover-allocations`)]);
@@ -93,7 +103,7 @@ export class Plane {
         const found = deployments.filter(d => d.slurmClusterId === slurmClusterId).map(d => ({ deploymentId: d.deploymentId,
             allocation: d.defaultBatchJobConfig?.allocation, label: templates.find(t => t.templateId === d.templateId)?.templateName ?? d.deploymentId }));
         if (!found.length) { throw new Error('CyberShuttle has no deployment on this cluster; ask an administrator.'); }
-        return found;
+        return found.sort((a, b) => Number(b.label === 'Base') - Number(a.label === 'Base'));
     }
 
     // The CyberShuttle API holds a login open five minutes while the user answers its prompts.

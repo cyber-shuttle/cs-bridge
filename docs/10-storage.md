@@ -15,7 +15,7 @@ How windows share these files is in [Cross-window state](03-cross-window-state.m
 | Extension storage `ssh_keys/` | per-session keys `id_cshost-<sessionId>` (ed25519, no `.pub` kept); EC2 key pairs `cs-aws-generated-key-<region>-<machine>` **(experimental)** |
 | Extension storage `ssh_config` | the per-session SSH hosts |
 | Extension storage `schema.json`, `migrate.lock`, `opened.marker` | storage version, its migration lock, and the marker that shows the install message once |
-| `~/.ssh/config` | one `Include` line for the extension's `ssh_config`. It is prepended so per-session hosts match first. Also the `Host` blocks added, edited or deleted in SSH Hosts. |
+| `~/.ssh/config` | one `Include` line for the extension's `ssh_config`. It is prepended so per-session hosts match first. Also the `Host` blocks added, edited or deleted in Compute Hosts. |
 | Extension storage `<file>.<uuid>.tmp` beside each record and `schema.json` | staging file for each write (`storage.ts`) |
 | VS Code logs folder | the "CS Bridge" log output channel (`logger.ts`) |
 | VS Code user setting `remote.SSH.serverInstallPath` | an entry for the per-session SSH host of each Slurm session whose record holds a `localPort`, mapped to `/tmp/cs-vscode/<sessionId>`. The entry is written when the owner binds `127.0.0.1:N`. It is left behind when that window closes. Entries not under `/tmp/cs-vscode/` are left alone. |

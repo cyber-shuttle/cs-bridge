@@ -10,7 +10,7 @@ What CS Bridge registers with VS Code: activation, views, commands, settings and
 |---|---|---|
 | Sessions | `csbridge.sessionsView` | shown, scoped to the window's session |
 | Run History | `csbridge.statsView` | hidden |
-| SSH Hosts | `csbridge.hostsView` | hidden |
+| Compute Hosts | `csbridge.hostsView` | hidden |
 
 Remote windows set the `csbridge.remote` context. The `when` clauses of the views and of `csbridge.menu` test it.
 Only `csbridge.menu` appears in the Command Palette. The other contributed commands are title-bar only.
@@ -20,9 +20,9 @@ Only `csbridge.menu` appears in the Command Palette. The other contributed comma
 | Command | Where |
 |---|---|
 | `csbridge.menu` (CS Bridge: Open Menu) | Sessions title bar and Command Palette, local windows only |
-| `csbridge.addHost`, `csbridge.refreshHosts` | SSH Hosts title bar |
+| `csbridge.addHost`, `csbridge.refreshHosts` | Compute Hosts title bar |
 | `csbridge.refreshStats`, `csbridge.clearRunHistory` | Run History title bar |
-| `csbridge.editHost` | registered, invoked from the SSH Hosts view |
+| `csbridge.editHost` | registered, invoked from the Compute Hosts view |
 | `csbridge.stopRemoteSession` | registered in remote windows. Invoked from the status bar and the session card. |
 
 **Settings.**
@@ -34,8 +34,8 @@ Only `csbridge.menu` appears in the Command Palette. The other contributed comma
 **Menu** (`menu.ts`). The menu is one QuickPick that walks a stack of pages. Escape goes back a page. It does so
 through the `csbridge.menuNested` context and a keybinding. The root page:
 
-- Create New SSH Session, then a host list;
-- Add SSH Host, then the pasted `ssh` command, then an alias;
+- Create New Session, then a host list;
+- Add Compute Host, then the pasted `ssh` command and an alias, or a CyberShuttle cluster, its login user and work folder;
 - Create Cloud VM **(experimental)**, shown once signed in to AWS, then region, instance type and image;
 - Accounts: sign in or out of CyberShuttle **(experimental)**, Microsoft DevTunnel and AWS **(experimental)**.
 
@@ -46,7 +46,7 @@ opens and after each item action. The AWS label is read live.
   another account. Sign Out runs VS Code's `_signOutOfAccount`. It signs that account out of VS Code as a whole.
 - Sign In to CyberShuttle opens the device-code page in the browser. It then waits in a cancellable notification that
   shows the code.
-- `csbridge.editHost` opens the menu on Edit SSH Host: alias, then `[user@]hostname`.
+- `csbridge.editHost` opens the menu on Edit Compute Host: alias, then `[user@]hostname`.
 
 **Webview messages.** Each view posts a `WebviewMessage` (`models.ts`). `Handlers` makes an unhandled one a compile
 error. The extension answers with one message, `{command: 'state', state}`.
@@ -63,7 +63,7 @@ error. The extension answers with one message, `{command: 'state', state}`.
 | Sessions | `stopSessionExecution` | **Stop**: confirms, then `requestStop` |
 | Sessions | `stopRemoteSession` | a remote window's **Stop**. Runs `csbridge.stopRemoteSession`. |
 | Sessions | `deleteSession` | the card's **×** (`confirmAndDeleteSession`) |
-| SSH Hosts | `openTerminal`, `editSshHost`, `deleteSshHost` | see [SSH hosts](04-ssh.md#ssh-hosts) |
+| Compute Hosts | `openTerminal`, `editSshHost`, `deleteSshHost` | see [SSH hosts](04-ssh.md#ssh-hosts) |
 | Run History | `openRunSummary` | opens the run's summary tab |
 
 The SSH auth panel is `csbridge.sshAuth`. Its HTML is inline, from `renderAuthHtml` in `sshShell.ts`. It posts

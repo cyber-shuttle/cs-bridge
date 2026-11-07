@@ -18,7 +18,7 @@ Each status is derived from recorded facts; see [Session status](02-session-stat
 
 ## Create
 
-1. **Pick a host.** The menu's **Create New SSH Session** lists SSH hosts. Picking one calls `startSessionDraft`
+1. **Pick a host.** The menu's **Create New Session** lists compute hosts. Picking one calls `startSessionDraft`
    (`sessionProvider.ts`). This focuses the Sessions view and shows a draft form.
 2. **Discover the cluster.** The form's options come from the login node (`getSlurmDiscovery`, `slurmSupport.ts`).
    Once discovery succeeds, they are cached per SSH host in this window, until the form's **Refresh** or **Retry**.
@@ -61,7 +61,7 @@ For a Slurm session, **Start** first asks for a walltime, from 30 min to 24 h. T
 cancels. `sbatch --test-only` checks the pick before the preview. A refusal shows on the session. The card shows busy
 until the preview opens.
 
-A CyberShuttle host's Start asks for a deployment after the walltime when its cluster has several, then skips steps 2 to 6: the CyberShuttle API submits the job. See [Link transport](06-link-transport.md#steps).
+A CyberShuttle host's Start asks for an environment (a deployment) after the walltime when its cluster has several, then skips steps 2 to 6: the CyberShuttle API submits the job. See [Link transport](06-link-transport.md#steps).
 
 1. **Claim and clean up.** **Start** (`sessionProvider.ts`):
    - ends any monitoring loop with its teardown, or waits for a teardown already in flight;

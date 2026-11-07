@@ -90,7 +90,7 @@ export function SessionCard({ session, remote }: Props) {
             <Stack gap={6}>
                 {m.details ? <Divided items={m.details.map(t => <Text key={t} size={11}>{t}</Text>)} /> : <ResourceStats session={session} />}
                 <Row gap={6}>
-                    <Chip label={m.kind} background={tint} />
+                    <Chip label={m.kind} icon={m.driverIcon} background={tint} />
                     <Row style={statusStyle}><Text ellipsis title={m.status.title ?? m.status.text}>{m.status.text}</Text></Row>
                     {m.actions.length ? (
                         <Row gap={6} style={{ marginLeft: 'auto', flexShrink: 0, zoom: 0.85 }}>

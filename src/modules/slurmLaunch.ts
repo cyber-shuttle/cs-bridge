@@ -75,7 +75,7 @@ export async function installLinkspan(session: Host, run: RemoteRunner, log: Log
     const machine = (await run.runRemoteCommand(session.alias, 'uname -m')).trim();
     const arch = RELEASE_ARCH[machine];
     if (!arch) {
-        throw new Error(`SSH host ${session.alias} reports architecture ${machine}, which Linkspan is not released for`);
+        throw new Error(`Compute host ${session.alias} reports architecture ${machine}, which Linkspan is not released for`);
     }
     log.info(`Detected architecture on SSH host ${session.alias}: ${machine}`);
 

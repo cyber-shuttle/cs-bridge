@@ -40,7 +40,8 @@ export function renderSshConfig(sessions: SlurmSession[], keyPath: (name: string
         const ci = s.connectionInfo;
         if (isEc2(s)) { return ci?.sshPort && s.ec2.ip ? [buildSshConfigBlock(s.id, csHostAlias(s), s.ec2.ip, ci.sshPort, s.ec2.user, keyPath(keyName(s.ec2.region, machine)))] : []; }
         // The custom SSH server ignores the user.
-        return ci?.localPort ? [buildSshConfigBlock(s.id, csHostAlias(s), '127.0.0.1', ci.localPort, 'cs-ssh-user', keyPath(sessionKeyName(s.id)))] : [];
+        // A CyberShuttle session's first connection can take about 30 s.
+        return ci?.localPort ? [buildSshConfigBlock(s.id, csHostAlias(s), '127.0.0.1', ci.localPort, 'cs-ssh-user', keyPath(sessionKeyName(s.id)), s.clusterConfigId ? '60' : undefined)] : [];
     }).map(block => `${block}\n`).join('');
 }
 
@@ -59,6 +60,7 @@ export function buildSshConfigBlock(
     port: number,
     user: string,
     identityFile: string,
+    connectTimeout?: string,
 ): string {
     return [
         ``,
@@ -70,7 +72,7 @@ export function buildSshConfigBlock(
         `    StrictHostKeyChecking no`,
         `    UserKnownHostsFile /dev/null`,
         `    IdentityFile "${identityFile}"`,
-        ...SSH_RESILIENCE_OPTIONS.map(([key, value]) => `    ${key} ${value}`),
+        ...SSH_RESILIENCE_OPTIONS.map(([key, value]) => `    ${key} ${key === 'ConnectTimeout' ? connectTimeout ?? value : value}`),
     ].join('\n');
 }
 
@@ -132,8 +134,8 @@ export function editHostInConfigText(text: string, alias: string, edit: SshConfi
     const config = parse(text);
     const found = config.find({ Host: alias });
     const section = found && 'config' in found ? found : undefined;
-    if (!section) { throw new Error(`SSH host ${alias} is not in ~/.ssh/config.`); }
-    if (edit.Host !== alias && config.find({ Host: edit.Host })) { throw new Error(`SSH host ${edit.Host} already exists.`); }
+    if (!section) { throw new Error(`Compute host ${alias} is not in ~/.ssh/config.`); }
+    if (edit.Host !== alias && config.find({ Host: edit.Host })) { throw new Error(`Compute host ${edit.Host} already exists.`); }
     section.value = edit.Host;
     for (const [param, value] of [['User', edit.User], ['HostName', edit.HostName]] as const) {
         const i = section.config.findIndex(line => 'param' in line && isKeyword(line.param, param));
