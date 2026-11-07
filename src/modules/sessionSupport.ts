@@ -302,7 +302,8 @@ export class SlurmBackend implements Backend {
     // Probe over the tunnel until PROBE_GIVEUP consecutive failures, then fall back
     // to an authoritative sacct cross-check. The probe differs by phase.
     private async pingOrCrossCheck(session: SlurmSession, alive: () => boolean, probe: () => Promise<void>): Promise<void> {
-        if (this.run(session.id).probeFails < PROBE_GIVEUP) { await probe(); }
+        // Cloud sessions cross-check after one failure: their status is a single API call.
+        if (this.run(session.id).probeFails < (session.clusterConfigId ? 1 : PROBE_GIVEUP)) { await probe(); }
         else { await this.crossCheckSlurmForDeath(session, alive); }
     }
 
