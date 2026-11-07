@@ -35,7 +35,7 @@ Only `csbridge.menu` appears in the Command Palette. The other contributed comma
 through the `csbridge.menuNested` context and a keybinding. The root page:
 
 - Create New SSH Session, then a host list;
-- Add SSH Host, then the pasted `ssh` command, then an alias;
+- Add SSH Host, then the pasted `ssh` command and an alias, or a CyberShuttle cluster, its login user and work folder;
 - Create Cloud VM **(experimental)**, shown once signed in to AWS, then region, instance type and image;
 - Accounts: sign in or out of CyberShuttle **(experimental)**, Microsoft DevTunnel and AWS **(experimental)**.
 

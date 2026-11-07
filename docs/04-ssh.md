@@ -99,7 +99,7 @@ On a shared alias the user entry wins (`sshHostsStore.ts`). A `Host` with a wild
 
 | Action | Effect |
 |---|---|
-| Add SSH Host | Parses a pasted `ssh` command with Remote-SSH's flag table (`sshCommandParser.ts`). Asks for the alias. Writes the entry above the first `Host` or `Match` block of `~/.ssh/config`, after its global lines such as `Include`. If the file has no such block, writes it at the end. Replaces an entry with the same alias. |
+| Add SSH Host | Parses a pasted `ssh` command with Remote-SSH's flag table (`sshCommandParser.ts`). Asks for the alias. Writes the entry above the first `Host` or `Match` block of `~/.ssh/config`, after its global lines such as `Include`. If the file has no such block, writes it at the end. Replaces an entry with the same alias. Signed in to CyberShuttle, it also lists the CyberShuttle clusters; picking one asks for the login user and work folder and adds a CyberShuttle cluster config instead. |
 | Edit (user hosts) | `csbridge.editHost`: asks for the alias, then `[user@]hostname`. Rewrites only `Host`, `HostName` and `User`. Removes `User` when the destination has none. Refuses an alias that already exists in `~/.ssh/config`. |
 | Delete (user hosts) | Confirms, then removes the entry from `~/.ssh/config`. |
 | Terminal (any host) | An integrated terminal running `ssh <alias>`. On Unix it uses the host's ControlMaster socket. It thus reuses an authenticated login. |

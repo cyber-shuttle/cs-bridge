@@ -71,6 +71,16 @@ test('a CyberShuttle host\'s form, deployments, run and job status come from the
     assert.equal((await client.jobStatus('p1')).status, 'running', 'READY is a running job whose link is up');
 });
 
+test('a CyberShuttle cluster config reuses a prompt-only credential, creating one only when none is held', async (t) => {
+    for (const held of [[{ sshCredentialId: 'key' }, { sshCredentialId: 'ask', fullInteractive: true }], [{ sshCredentialId: 'key' }]]) {
+        const { calls, client } = await plane(t, () => ({ body: calls.length === 1 ? held : { sshCredentialId: 'ask' } }), live);
+        await client.addClusterConfig('c1', 'me', '/home/me/cybershuttle');
+        assert.deepEqual(calls.map(c => `${c.method} ${c.path}`), ['GET ssh-credentials', ...held.length > 1 ? [] : ['POST ssh-credentials'], 'POST slurm-cluster-configs']);
+        if (held.length === 1) { assert.deepEqual(JSON.parse(must(calls[1]).body), { sshCredentialName: 'Ask at each login', fullInteractive: true }); }
+        assert.deepEqual(JSON.parse(must(calls.at(-1)).body), { slurmClusterId: 'c1', loginUser: 'me', workRoot: '/home/me/cybershuttle', sshCredentialId: 'ask' });
+    }
+});
+
 test('a device sign-in starts at the CyberShuttle API, polls until complete and stores the tokens', async (t) => {
     let polls = 0;
     const { calls, secrets, client } = await plane(t, path => path === 'auth/device' ? { body: { device_code: 'dc', interval: 0 } }
