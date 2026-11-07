@@ -65,6 +65,8 @@ Host delta-493119
     IPQoS cs0
 ```
 
+A CyberShuttle session gets `ConnectTimeout 60`, since its first connection can take about 30 s.
+
 ### Server install path and sync
 
 `syncSshConfig` (`sshSupport.ts`) rewrites, from all session records:
