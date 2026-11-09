@@ -24,7 +24,7 @@ const nested = (value: boolean) => void vscode.commands.executeCommand('setConte
 const destination = ({ alias, user, hostname = alias }: SshHost): string => (user ? `${user}@${hostname}` : hostname);
 
 export class CsBridgeMenu {
-    private email: string | null = null;
+    private signedIn = false;
     private microsoft: string | null = null;
     private clusters: Cluster[] = [];
 
@@ -72,19 +72,19 @@ export class CsBridgeMenu {
 
     private async refreshAccounts() {
         try {
-            [this.email, this.microsoft] = await Promise.all([this.plane.identity(), getMicrosoftAccountLabel(), enabled('aws') && this.aws.restored]);
+            [this.signedIn, this.microsoft] = await Promise.all([this.plane.signedIn(), getMicrosoftAccountLabel(), enabled('aws') && this.aws.restored]);
         }
         catch (err) { Logger.getInstance().warn(`Menu account refresh failed: ${errMsg(err)}`); }
         await Promise.all([this.refreshClusters(), this.sshHosts.refreshSshHosts()]);
     }
 
     private async refreshClusters() {
-        try { this.clusters = enabled('cybershuttle') && this.email !== null ? (await this.plane.clusters()).sort((a, b) => a.clusterName.localeCompare(b.clusterName)) : []; }
+        try { this.clusters = enabled('cybershuttle') && this.signedIn ? (await this.plane.clusters()).sort((a, b) => a.clusterName.localeCompare(b.clusterName)) : []; }
         catch (err) { Logger.getInstance().warn(`Listing CyberShuttle clusters failed: ${errMsg(err)}`); }
     }
 
     private readonly root: Build = () => {
-        const { email, microsoft } = this;
+        const { signedIn, microsoft } = this;
         const cybershuttle = enabled('cybershuttle');
         return {
             title: 'CS Bridge',
@@ -93,9 +93,9 @@ export class CsBridgeMenu {
                 { label: '$(server) Add Compute Host', open: this.addHost },
                 ...enabled('aws') && this.aws.regions ? [{ label: '$(cloud) Create Cloud VM', open: this.cloudVm(this.aws.regions) }] : [],
                 { label: 'Accounts', kind: vscode.QuickPickItemKind.Separator },
-                ...cybershuttle ? [email === null
+                ...cybershuttle ? [!signedIn
                     ? { label: '$(sign-in) Sign In to CyberShuttle', run: () => signIn(this.plane) }
-                    : { label: '$(sign-out) Sign Out of CyberShuttle', description: email, run: () => this.plane.signOut() }] : [],
+                    : { label: '$(sign-out) Sign Out of CyberShuttle', run: () => this.plane.signOut() }] : [],
                 microsoft === null
                     ? { label: '$(sign-in) Sign In to Microsoft DevTunnel', run: switchDevTunnelAccount }
                     : { label: '$(sign-out) Sign Out of Microsoft DevTunnel', description: microsoft, run: () => vscode.commands.executeCommand('_signOutOfAccount', { providerId: 'microsoft', accountLabel: microsoft }) },
@@ -159,10 +159,8 @@ export class CsBridgeMenu {
 }
 
 async function signIn(plane: Plane) {
-    const code = await plane.startSignIn();
-    await vscode.env.openExternal(vscode.Uri.parse(code.verification_uri_complete));
-    if (await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Waiting for CyberShuttle sign-in with code ${code.user_code}`, cancellable: true },
-        (_progress, token) => plane.awaitSignIn(code, () => token.isCancellationRequested),
-    )) { vscode.window.showInformationMessage('Signed in to CyberShuttle.'); }
+    const token = (await vscode.window.showInputBox({ title: 'CyberShuttle API Token', password: true, ignoreFocusOut: true }))?.trim();
+    if (!token) { return; }
+    await plane.signIn(token);
+    vscode.window.showInformationMessage('Signed in to CyberShuttle.');
 }

@@ -53,7 +53,7 @@ Two separate paths reach the cluster:
 - **Work path.** With the Dev Tunnel transport, the tunnel carries only Linkspan's control port. A local listener,
   `127.0.0.1:N`, carries each SSH connection over a WebSocket to Linkspan's `/api/v1/forward/{sshPort}`. Linkspan
   relays it to the node's SSH server. With the link transport **(experimental)**, the listener's WebSocket reaches
-  the same Linkspan endpoint through the CyberShuttle API's `/processes/{id}/proxy/{controlPort}/`. Remote-SSH connects
+  the same Linkspan endpoint through the CyberShuttle API's `/processes/{id}/linkspan/`. Remote-SSH connects
   to `127.0.0.1:N`. With the Dev Tunnel transport, Linkspan's API calls go over HTTPS to the tunnel's
   `*.devtunnels.ms` endpoint for the control port. A window without the relay client samples usage through `srun` on
   the login node.

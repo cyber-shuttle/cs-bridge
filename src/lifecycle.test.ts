@@ -254,7 +254,7 @@ test('a Start on a CyberShuttle host launches a deployment on its cluster throug
     const calls: string[] = [];
     const plane = {
         deployments: async (clusterConfigId: string) => [{ deploymentId: `d-${clusterConfigId}`, label: 'JupyterLab' }],
-        createProcess: async (_s: unknown, _w: number, deployment: { deploymentId: string }) => { calls.push(`create ${deployment.deploymentId}`); return { processId: 'p1', batchProcess: { controlPort: 21234 } }; },
+        createProcess: async (_s: unknown, _w: number, deployment: { deploymentId: string }) => { calls.push(`create ${deployment.deploymentId}`); return { processId: 'p1' }; },
         launchProcess: async (id: string) => { calls.push(`launch ${id}`); },
         jobStatus: async (id: string) => { calls.push(`status ${id}`); return { status: SlurmJobStatus.QUEUED, elapsedSeconds: 0 }; },
         stopProcess: async (id: string) => { calls.push(`stop ${id}`); },
@@ -276,7 +276,6 @@ test('a Start on a CyberShuttle host launches a deployment on its cluster throug
     assert.equal(s.transport, 'link');
     assert.equal(s.jobId, 'p1', 'the job id is the process id');
     assert.equal(s.planeId, 'p1');
-    assert.equal(s.connectionInfo?.controlPort, 21234, 'the control port is the one the CyberShuttle API derives');
     assert.equal(statusOf(s), 'queued');
     provider.dispose();
 
