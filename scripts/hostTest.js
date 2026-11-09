@@ -15,7 +15,7 @@ async function main() {
         await runTests({
             extensionDevelopmentPath: root,
             extensionTestsPath: path.join(root, 'out', 'hostTests.js'),
-            launchArgs: [workspace, '--user-data-dir', userData, '--disable-extensions', '--disable-workspace-trust'],
+            launchArgs: [workspace, '--user-data-dir', userData, '--disable-extensions', '--disable-workspace-trust', '--use-mock-keychain', '--password-store=basic'],
             extensionTestsEnv: { CSBRIDGE_USER_DATA: userData, HOME: home },
         });
     }
