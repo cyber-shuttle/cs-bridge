@@ -15,38 +15,32 @@ records `transport: 'link'`.
 | Host | Form | Start | Status, stop | Job id |
 |---|---|---|---|---|
 | SSH host | `sinfo`, `sacctmgr` over SSH | walltime; CS Bridge submits over SSH; reached by a Dev Tunnel | `sacct`, `scancel` over SSH | Slurm's |
-| CyberShuttle host | `POST /slurm-cluster-configs/{id}/discover-allocations`; home is the config's `workRoot` | walltime, deployment; the CyberShuttle API submits; no preview | `GET /processes/{id}` (`READY` reads as running), `POST /processes/{id}/stop` | the process id |
+| CyberShuttle host | `POST /slurm-cluster-configs/{id}/discover-allocations`; partitions and home from `GET /slurm-cluster-configs/{id}` | walltime, deployment; the CyberShuttle API submits; no preview | `GET /processes/{id}/statuses`, `POST /processes/{id}/stop` | the process id |
 
 - `linkTunnel.ts` implements the same management and relay clients as the Dev Tunnels SDK, on top of the CyberShuttle API. The
   [session lifecycle](01-session-lifecycle.md) therefore runs unchanged.
 - `plane.ts` is the CyberShuttle API client, at `https://jupyterapi.cybershuttle.org/api/v1`. Requests time out after 30 s.
   A call that logs in to the cluster (discovery, stop) times out after 330 s.
-- Every call carries the window's `X-Connection-Id`. The CyberShuttle API shows a login's prompts only to the connection
-  that started it, including a submission's, which logs in after the launch returns.
 - While signed in, the window polls `ssh-interactive-auths` every 2 s and asks each prompt in the SSH authentication panel.
 
 ## Steps
 
-1. **Sign in.** A CILogon device grant brokered by the CyberShuttle API (`auth/device`, then `auth/token` until it stops answering `202`).
-   - The credential is kept in SecretStorage under `csbridge.plane.credential`.
-   - It is refreshed through `auth/token`. The first API call made less than 60 s before its expiry, or after it,
-     does the refresh.
-   - It is cleared on a `401`, or when the CyberShuttle API refuses the refresh with a 4xx.
-   - A 5xx or network error during refresh keeps the credential.
+1. **Sign in.** A pasted CyberShuttle API token, kept once `GET /processes/me` accepts it.
+   - It is kept in SecretStorage under `csbridge.plane.credential`.
+   - It is cleared on a `401`.
 2. **Prepare.** After the walltime, Start asks which environment (deployment) on the host's cluster to run, unless it has one,
    listing Base first (`SessionProvider.pickDeployment`). `SlurmBackend.launch` then creates a `BATCH_JOB` process (`POST /processes`)
-   with the deployment, the cluster config and the run's resources. It saves the id as `planeId` and the answer's
-   `controlPort` as the run's control port. An empty account charges the deployment's default allocation.
+   with the deployment, the cluster config and the run's resources. It saves the id as `planeId`. An empty account
+   charges the deployment's default allocation.
 3. **Submit.** `POST /processes/{id}/launch`.
-4. **Readiness.** The CyberShuttle API answers `/access` only once Linkspan holds its link, and `409` before.
+4. **Readiness.** `GET /processes/{id}/jupyter-server` answers `linked: false` until Linkspan holds its link.
    Fetching the tunnel therefore doubles as the readiness check.
-   While it does, the monitor sets no error. Each such answer still counts toward the six failed probes before a
-   `GET /processes/{id}` cross-check.
+   While it does, the monitor sets no error. Each such answer is followed by a `GET /processes/{id}/statuses` cross-check.
 5. **Forward.**
-   - `/access` returns a connect token, kept only in memory.
+   - `/jupyter-server` returns the Jupyter token as the connect token, kept only in memory.
    - Each forwarded port is a listener on `127.0.0.1`, on the same port number as the remote one when it is free.
    - Each connection to a listener opens a WebSocket to Linkspan's forward through the CyberShuttle API's proxy,
-     `/processes/{id}/proxy/{controlPort}/api/v1/forward/{port}?token=<token>`.
+     `/processes/{id}/linkspan/api/v1/forward/{port}?token=<token>`.
 6. **Poll and connect.** As with a Dev Tunnel. Linkspan's API is reached through the same proxy, with the token
    in an `Authorization: token` header.
 7. **Stop and delete.**

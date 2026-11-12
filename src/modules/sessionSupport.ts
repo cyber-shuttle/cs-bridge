@@ -161,10 +161,10 @@ export class SlurmBackend implements Backend {
 
     async launch(session: SlurmSession, deployment: Deployment, wallMinutes: number): Promise<void> {
         resetLive(session.id);
-        const { processId, batchProcess: { controlPort } } = await this.transports.plane.createProcess(session, wallMinutes, deployment);
+        const { processId } = await this.transports.plane.createProcess(session, wallMinutes, deployment);
         patch(session, { planeId: processId });
         await this.transports.plane.launchProcess(processId);
-        patch(session, { jobId: processId, connectionInfo: { sshPort: 0, controlPort }, submittedAt: Date.now() });
+        patch(session, { jobId: processId, connectionInfo: { sshPort: 0, controlPort: 0 }, submittedAt: Date.now() });
         this.monitor().startMonitoring(session);
     }
 
@@ -237,7 +237,7 @@ export class SlurmBackend implements Backend {
         const transport = this.transports.transportFor(session);
         // Job running but not yet up: drive bring-up over the tunnel rather than Slurm,
         // cross-checking sacct only after PROBE_GIVEUP failures.
-        if (status === 'preparing' && transport.tunnelRef(session) && session.connectionInfo?.controlPort) {
+        if (status === 'preparing' && transport.tunnelRef(session) && session.connectionInfo) {
             await this.pingOrCrossCheck(session, alive, () => this.prepareRemote(session, alive));
             return;
         }

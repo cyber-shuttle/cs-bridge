@@ -29,14 +29,14 @@ test('a forwarded port bridges each 127.0.0.1 connection to its own forward sock
         }
     }
 
-    const relay = new LinkRelayClient(9000, LocalSocket);
+    const relay = new LinkRelayClient(LocalSocket);
     await relay.connect({ tunnelId: 'p1', accessTokens: { connect: 'tok' } });
     await relay.waitForForwardedPort(22);
     const socket = net.connect(relay.forwardedPorts[0]?.localPort ?? 0, '127.0.0.1');
     socket.write('ping');
     const [reply] = await once(socket, 'data');
     assert.equal(String(reply), 'ping');
-    assert.deepEqual(dialed, ['wss://jupyterapi.cybershuttle.org/api/v1/processes/p1/proxy/9000/api/v1/forward/22?token=tok']);
+    assert.deepEqual(dialed, ['wss://jupyterapi.cybershuttle.org/api/v1/processes/p1/linkspan/api/v1/forward/22?token=tok']);
 
     await relay.dispose();
     await once(socket, 'close');

@@ -1,17 +1,18 @@
 // The link transport's tunnel clients, shaped like the Dev Tunnels SDK's so transport's session-level functions
-// drive either pair. The tunnel is the run's CyberShuttle API process and its connect token the run token from `/access`.
+// drive either pair. The tunnel is the run's CyberShuttle API process and its connect token the Jupyter token from `/jupyter-server`.
 // A ForwardRelayClient has no upstream connection of its own: each forwarded port is a 127.0.0.1 listener whose every
 // accepted socket rides a fresh WebSocket to Linkspan's forward: through the CyberShuttle API's proxy for link, over a Dev Tunnel otherwise.
 import * as net from 'node:net';
-import { Plane, PLANE_URL } from '../plane';
+import { Plane, PlaneError, PLANE_URL } from '../plane';
 import type { TunnelRef, TunnelRelayClient } from './transport';
 
 export class LinkManagementClient {
     constructor(private readonly plane: Plane) { }
 
-    // The CyberShuttle API answers /access only for a linked run, and 409 before, so this also gates on Linkspan holding its link.
     async getTunnel({ tunnelId }: TunnelRef): Promise<TunnelRef> {
-        return { tunnelId, accessTokens: { connect: (await this.plane.processAccess(tunnelId)).app.token } };
+        const { linked, token } = await this.plane.jupyterServer(tunnelId);
+        if (!linked) { throw new PlaneError(409, 'Linkspan has not linked to the CyberShuttle API yet.'); }
+        return { tunnelId, accessTokens: { connect: token } };
     }
 }
 
@@ -59,15 +60,13 @@ export class ForwardRelayClient {
     }
 }
 
-export const linkspanUrl = (processId: string, controlPort: number) => `${PLANE_URL}/processes/${processId}/proxy/${controlPort}/api/v1`;
+export const linkspanUrl = (processId: string) => `${PLANE_URL}/processes/${processId}/linkspan/api/v1`;
 
 export class LinkRelayClient extends ForwardRelayClient {
-    constructor(private readonly controlPort: number, WebSocket?: typeof globalThis.WebSocket) { super(WebSocket); }
-
     async connect(tunnel: TunnelRef) {
         const token = tunnel.accessTokens?.connect;
         if (!token) { throw new Error('CyberShuttle returned no connect token for the session.'); }
-        const forward = `${linkspanUrl(tunnel.tunnelId, this.controlPort).replace(/^http/, 'ws')}/forward/`;
+        const forward = `${linkspanUrl(tunnel.tunnelId).replace(/^http/, 'ws')}/forward/`;
         this.forwardUrl = port => `${forward}${port}?token=${token}`; // a WebSocket cannot carry a header
     }
 }

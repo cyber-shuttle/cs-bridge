@@ -1,10 +1,8 @@
 // The CyberShuttle API client. A CyberShuttle host's run is a BATCH_JOB process the CyberShuttle API submits, reads and
-// stops; its Linkspan links back and the API forwards its ports. Sign-in is CILogon's device grant, brokered by the
-// CyberShuttle API because it holds the client secret: the user approves a short code in the browser while this polls
-// to redeem it; the ID token answered is the bearer.
-import { randomUUID } from 'node:crypto';
+// stops; its Linkspan links back and the API forwards its ports. Sign-in is a pasted CyberShuttle API token, the bearer
+// of every call until a 401 signs it out.
 import type * as vscode from 'vscode';
-import { NonEmpty, SlurmDiscovery, SlurmJobStatus, SlurmSession } from './models';
+import { nonEmpty, SlurmDiscovery, SlurmJobStatus, SlurmSession } from './models';
 import { parseJson } from './modules/json';
 import { parseGres } from './modules/slurmParse';
 import { sleep } from './modules/util';
@@ -14,18 +12,15 @@ export const CREDENTIAL_KEY = 'csbridge.plane.credential';
 // The CyberShuttle API holds a login open five minutes while the user answers its prompts.
 const LOGIN_TIMEOUT = 330_000;
 
-interface DeviceCode { device_code: string; user_code: string; verification_uri_complete: string; interval: number }
-interface Tokens { id_token: string; refresh_token?: string; expires_in: number }
-interface Credential { idToken: string; refreshToken?: string; expiresAt: number }
-export interface ClusterConfig { slurmClusterConfigId: string; name?: string | null; slurmClusterId: string; slurmCluster?: { clusterName: string; headnodeHost: string } | null; loginUser: string; workRoot: string }
+export interface ClusterConfig { slurmClusterConfigId: string; name?: string | null; slurmClusterId: string; slurmCluster?: { clusterName: string; headnodeHost: string; partitions?: Partition[] } | null; loginUser: string; workRoot: string }
 interface Partition { name: string; cpuPerNode?: number | null; maxProcessors?: number | null; maxMemory?: number | null; gres?: string | null }
 interface DeploymentRecord { deploymentId: string; templateId?: string | null; slurmClusterId?: string | null; defaultBatchJobConfig?: { allocation: string } | null }
 export interface Cluster { slurmClusterId: string; clusterName: string; headnodeHost: string }
 export interface Deployment { deploymentId: string; label: string; allocation?: string }
 interface Login { authId: string; hostName: string; loginUser: string; banner?: string; instruction?: string; prompts: { text: string }[] }
 const JOB_STATUS: Record<string, SlurmJobStatus> = {
-    CREATED: SlurmJobStatus.QUEUED, SUBMITTED: SlurmJobStatus.QUEUED, RUNNING: SlurmJobStatus.RUNNING, READY: SlurmJobStatus.RUNNING,
-    COMPLETED: SlurmJobStatus.COMPLETED, FAILED: SlurmJobStatus.FAILED, CANCELLED: SlurmJobStatus.CANCELLED,
+    CREATED: SlurmJobStatus.QUEUED, SUBMITTED: SlurmJobStatus.QUEUED, RUNNING: SlurmJobStatus.RUNNING,
+    COMPLETED: SlurmJobStatus.COMPLETED, FAILED: SlurmJobStatus.FAILED, STOPPED: SlurmJobStatus.CANCELLED,
 };
 
 export class PlaneError extends Error {
@@ -33,49 +28,30 @@ export class PlaneError extends Error {
 }
 
 export class Plane {
-    private credential?: Credential | null;
-    private refreshing?: Promise<void>;
-    // Names this window to the CyberShuttle API, which shows a login's prompts only to the connection that started it.
-    private readonly connection = randomUUID();
+    private credential?: string | null;
 
     constructor(private readonly secrets: Pick<vscode.SecretStorage, 'get' | 'store' | 'delete'>, private readonly fetchImpl = fetch) { }
 
-    startSignIn() { return this.request<DeviceCode>('auth/device', 'POST'); }
-
-    async awaitSignIn(code: DeviceCode, cancelled: () => boolean) {
-        while (!cancelled()) {
-            await sleep(code.interval * 1000);
-            if (cancelled()) { break; }
-            const poll = await this.request<Tokens | { status: 202 }>('auth/token', 'POST', { device_code: code.device_code }); // 202, in the error shape, until approved
-            if (!('status' in poll)) { await this.store(poll); return true; }
-        }
-        return false;
+    async signIn(token: string) {
+        await this.request('processes/me', 'GET', undefined, token);
+        await this.save(token);
     }
 
     signOut() { return this.save(); }
     async signedIn() { return !!await this.load(); }
-    // The signed-in user's email from the id token, or null when signed out.
-    async identity(): Promise<string | null> {
-        const credential = await this.load();
-        if (!credential) { return null; }
-        const payload = credential.idToken.split('.')[1];
-        if (!payload) { throw new Error('The CyberShuttle id token is malformed.'); }
-        const { email = '' } = parseJson<{ email?: string }>(Buffer.from(payload, 'base64url').toString());
-        return email;
-    }
 
     createProcess({ clusterConfigId, account, partition, resources: { cores, memoryMb, gpuCount } }: SlurmSession, wallMinutes: number, deployment: Deployment) {
         const batchProcess = { deploymentId: deployment.deploymentId, slurmClusterConfigId: clusterConfigId,
             batchJobConfig: { wallTimeMinutes: wallMinutes, allocation: account || deployment.allocation, partition, nodes: 1, cpus: cores, mem: `${memoryMb}M`, gpus: gpuCount || undefined } };
-        return this.api<{ processId: string; batchProcess: { controlPort: number } }>('processes', 'POST', { processType: 'BATCH_JOB', batchProcess });
+        return this.api<{ processId: string }>('processes', 'POST', { processType: 'BATCH_JOB', batchProcess });
     }
 
     launchProcess(id: string) { return this.api(`processes/${id}/launch`, 'POST'); }
     stopProcess(id: string) { return this.api(`processes/${id}/stop`, 'POST', undefined, LOGIN_TIMEOUT); }
-    processAccess(id: string) { return this.api<{ app: { token: string } }>(`processes/${id}/access`); }
+    jupyterServer(id: string) { return this.api<{ linked: boolean; token: string }>(`processes/${id}/jupyter-server`); }
 
     async jobStatus(id: string): Promise<{ status: SlurmJobStatus; elapsedSeconds: number }> {
-        const { lastStatus } = await this.api<{ lastStatus?: { status?: string | null; timestamp?: number | null } | null }>(`processes/${id}`);
+        const lastStatus = (await this.api<{ status?: string | null; timestamp?: number | null }[]>(`processes/${id}/statuses`)).at(-1);
         return { status: JOB_STATUS[String(lastStatus?.status)] ?? SlurmJobStatus.UNKNOWN, elapsedSeconds: Math.max(0, (Date.now() - (lastStatus?.timestamp ?? Date.now())) / 1000) };
     }
 
@@ -94,8 +70,10 @@ export class Plane {
     }
 
     async discovery(id: string): Promise<SlurmDiscovery> {
-        const [{ workRoot }, { allocations, partitions }] = await Promise.all([this.api<ClusterConfig>(`slurm-cluster-configs/${id}`),
-            this.api<{ allocations: { account: string }[]; partitions: NonEmpty<Partition> }>(`slurm-cluster-configs/${id}/discover-allocations`, 'POST', undefined, LOGIN_TIMEOUT)]);
+        const [{ workRoot, slurmCluster }, { allocations }] = await Promise.all([this.api<ClusterConfig>(`slurm-cluster-configs/${id}`),
+            this.api<{ allocations: { account: string }[] }>(`slurm-cluster-configs/${id}/discover-allocations`, 'POST', undefined, LOGIN_TIMEOUT)]);
+        const partitions = slurmCluster?.partitions ?? [];
+        if (!nonEmpty(partitions)) { throw new Error('CyberShuttle lists no partitions on this cluster; ask an administrator.'); }
         const info = (p: Partition) => ({ name: p.name, cpuCount: p.cpuPerNode ?? p.maxProcessors ?? 0, memoryMb: p.maxMemory ?? 0, gres: parseGres(p.gres ?? '') });
         const [first, ...rest] = partitions;
         return { accounts: allocations.map(a => a.account), partitions: [info(first), ...rest.map(info)], homeDir: workRoot };
@@ -110,7 +88,6 @@ export class Plane {
         return found.sort((a, b) => Number(b.label === 'Base') - Number(a.label === 'Base'));
     }
 
-    // Every prompt polled is this window's own, however long after its request the login runs, as a submission's does.
     answerLogins(askLogin: (host: string, prompt: string) => Promise<string | undefined>): { dispose(): void } {
         let live = true;
         void (async () => {
@@ -134,45 +111,25 @@ export class Plane {
     }
 
     private async api<T = unknown>(path: string, method = 'GET', body?: unknown, timeout?: number): Promise<T> {
-        const credential = await this.load();
-        if (credential && Date.now() > credential.expiresAt - 60_000) {
-            this.refreshing ??= this.refresh(credential).finally(() => { this.refreshing = undefined; });
-            await this.refreshing;
-        }
-        if (!this.credential) { throw new PlaneError(401, 'Sign in to CyberShuttle first (CS Bridge: Open Menu).'); }
-        try { return await this.request<T>(path, method, body, this.credential.idToken, timeout); }
+        const token = await this.load();
+        if (!token) { throw new PlaneError(401, 'Sign in to CyberShuttle first (CS Bridge: Open Menu).'); }
+        try { return await this.request<T>(path, method, body, token, timeout); }
         catch (err) {
             if (err instanceof PlaneError && err.status === 401) { await this.signOut(); }
             throw err;
         }
     }
 
-    private async refresh(credential: Credential) {
-        try {
-            const tokens = await this.request<Tokens>('auth/token', 'POST', { refresh_token: credential.refreshToken });
-            await this.store({ ...tokens, refresh_token: tokens.refresh_token ?? credential.refreshToken });
-        }
-        catch (err) {
-            if (!(err instanceof PlaneError && err.status < 500)) { throw err; }
-            await this.signOut();
-        }
+    private save(token?: string) {
+        this.credential = token;
+        return token ? this.secrets.store(CREDENTIAL_KEY, token) : this.secrets.delete(CREDENTIAL_KEY);
     }
 
-    private store(tokens: Tokens) { return this.save({ idToken: tokens.id_token, refreshToken: tokens.refresh_token, expiresAt: Date.now() + tokens.expires_in * 1000 }); }
-
-    private save(credential?: Credential) {
-        this.credential = credential;
-        return credential ? this.secrets.store(CREDENTIAL_KEY, JSON.stringify(credential)) : this.secrets.delete(CREDENTIAL_KEY);
-    }
-
-    private async load() {
-        const stored = await this.secrets.get(CREDENTIAL_KEY);
-        return this.credential ??= stored ? parseJson<Credential>(stored) : null;
-    }
+    private async load() { return this.credential ??= await this.secrets.get(CREDENTIAL_KEY) ?? null; }
 
     // T is the server's documented response shape; the body is trusted as such, as every wire client here does.
     private async request<T>(path: string, method: string, body?: unknown, token?: string, timeout = 30_000): Promise<T> {
-        const headers = { 'Content-Type': 'application/json', 'X-Connection-Id': this.connection, ...token && { Authorization: `Bearer ${token}` } };
+        const headers = { 'Content-Type': 'application/json', ...token && { Authorization: `Bearer ${token}` } };
         const response = await this.fetchImpl(`${PLANE_URL}/${path}`, { method, headers, body: JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
         let value: (T & { message?: string; fieldErrors?: { message: string }[] }) | undefined;
         try { value = parseJson((await response.text()) || 'null'); } // 204 carries no body
