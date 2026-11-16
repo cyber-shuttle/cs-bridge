@@ -29,10 +29,8 @@ test('a 401 signs out', async (t) => {
     assert.equal(secrets.size, 0);
 });
 
-const live = 'id';
-
 test('an error keeps the CyberShuttle API\'s status and message', async (t) => {
-    const { client } = await plane(t, () => ({ status: 409, body: { status: 409, error: 'Conflict', message: 'the job has no link yet' } }), live);
+    const { client } = await plane(t, () => ({ status: 409, body: { status: 409, error: 'Conflict', message: 'the job has no link yet' } }), 'id');
     await assert.rejects(client.jupyterServer('s1'), (err: PlaneError) => err.status === 409 && err.message === 'the job has no link yet');
 });
 
@@ -45,7 +43,7 @@ test('a CyberShuttle host\'s form, deployments, run and job status come from the
             { deploymentId: 'd3', slurmClusterId: 'c1', templateId: 't3' }],
         'application-templates': [{ templateId: 't1', templateName: 'JupyterLab' }, { templateId: 't3', templateName: 'Base' }],
         'processes/p1/statuses': [{ status: 'CREATED' }, { status: 'RUNNING', timestamp: Date.now() }],
-    }[path] ?? {} }), live);
+    }[path] ?? {} }), 'id');
     assert.deepEqual(await client.discovery('k1'), { accounts: ['lab-alloc'], homeDir: '/work/u1', partitions: [
         { name: 'gpu', cpuCount: 64, memoryMb: 512000, gres: [{ name: 'gpu:a100', count: 4 }] }, { name: 'cpu', cpuCount: 32, memoryMb: 0, gres: [] }] });
     const deployments = await client.deployments('k1');
@@ -58,7 +56,7 @@ test('a CyberShuttle host\'s form, deployments, run and job status come from the
 
 test('a CyberShuttle cluster config reuses a prompt-only credential, creating one only when none is held', async (t) => {
     for (const held of [[{ sshCredentialId: 'key' }, { sshCredentialId: 'ask', fullInteractive: true }], [{ sshCredentialId: 'key' }]]) {
-        const { calls, client } = await plane(t, () => ({ body: calls.length === 1 ? held : { sshCredentialId: 'ask' } }), live);
+        const { calls, client } = await plane(t, () => ({ body: calls.length === 1 ? held : { sshCredentialId: 'ask' } }), 'id');
         await client.addClusterConfig('c1', 'me', '/home/me/cybershuttle');
         assert.deepEqual(calls.map(c => `${c.method} ${c.path}`), ['GET ssh-credentials', ...held.length > 1 ? [] : ['POST ssh-credentials'], 'POST slurm-cluster-configs']);
         if (held.length === 1) { assert.deepEqual(JSON.parse(must(calls[1]).body), { sshCredentialName: 'Ask at each login', fullInteractive: true }); }
@@ -70,7 +68,7 @@ test('a login raised after the launch returned is asked in this window', async (
     const answered = Promise.withResolvers<unknown>();
     let launched = false;
     const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
-    const client = new Plane({ get: async () => live, store: async () => undefined, delete: async () => undefined }, async (url, init) => {
+    const client = new Plane({ get: async () => 'id', store: async () => undefined, delete: async () => undefined }, async (url, init) => {
         const path = String(url).slice(PLANE_URL.length + 1);
         if (path === 'processes/p1/launch') { launched = true; }
         else if (path === 'ssh-interactive-auths') { return json(launched ? [{ authId: 'a1', hostName: 'login.example.org', loginUser: 'u1', banner: 'Welcome', prompts: [{ text: 'Passcode: ' }] }] : []); }
