@@ -4,7 +4,8 @@ import * as net from 'node:net';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { server as WebSocketServer, w3cwebsocket } from 'websocket';
-import { LinkRelayClient } from './linkTunnel';
+import { LinkManagementClient, LinkRelayClient } from './linkTunnel';
+import { PlaneError } from '../plane';
 import { must } from './testSupport';
 
 // A local stand-in for Linkspan's forward behind the CyberShuttle API's proxy: a real WebSocket server that pipes each socket to
@@ -29,14 +30,14 @@ test('a forwarded port bridges each 127.0.0.1 connection to its own forward sock
         }
     }
 
-    const relay = new LinkRelayClient(9000, LocalSocket);
+    const relay = new LinkRelayClient(LocalSocket);
     await relay.connect({ tunnelId: 'p1', accessTokens: { connect: 'tok' } });
     await relay.waitForForwardedPort(22);
     const socket = net.connect(relay.forwardedPorts[0]?.localPort ?? 0, '127.0.0.1');
     socket.write('ping');
     const [reply] = await once(socket, 'data');
     assert.equal(String(reply), 'ping');
-    assert.deepEqual(dialed, ['wss://jupyterapi.cybershuttle.org/api/v1/processes/p1/proxy/9000/api/v1/forward/22?token=tok']);
+    assert.deepEqual(dialed, ['wss://jupyterapi.cybershuttle.org/api/v1/processes/p1/linkspan/api/v1/forward/22?token=tok']);
 
     await relay.dispose();
     await once(socket, 'close');
@@ -44,4 +45,9 @@ test('a forwarded port bridges each 127.0.0.1 connection to its own forward sock
     forward.shutDown();
     echo.close();
     http.close();
+});
+
+test('an unlinked run is the not-ready 409', async () => {
+    const plane = { jupyterServer: async () => ({ linked: false, token: 't' }) };
+    await assert.rejects(new LinkManagementClient(plane as never).getTunnel({ tunnelId: 'p1' }), (err: PlaneError) => err.status === 409);
 });

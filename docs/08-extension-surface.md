@@ -39,13 +39,12 @@ through the `csbridge.menuNested` context and a keybinding. The root page:
 - Create Cloud VM **(experimental)**, shown once signed in to AWS, then region, instance type and image;
 - Accounts: sign in or out of CyberShuttle **(experimental)**, Microsoft DevTunnel and AWS **(experimental)**.
 
-The CyberShuttle and Microsoft labels are cached. They are filled when the menu is built. They are refreshed when it
+The CyberShuttle state and Microsoft label are cached. They are filled when the menu is built. They are refreshed when it
 opens and after each item action. The AWS label is read live.
 
 - Sign In to Microsoft DevTunnel asks VS Code for a Microsoft session with `clearSessionPreference`. This lets you pick
   another account. Sign Out runs VS Code's `_signOutOfAccount`. It signs that account out of VS Code as a whole.
-- Sign In to CyberShuttle opens the device-code page in the browser. It then waits in a cancellable notification that
-  shows the code.
+- Sign In to CyberShuttle asks for a CyberShuttle API token.
 - `csbridge.editHost` opens the menu on Edit Compute Host: alias, then `[user@]hostname`.
 
 **Webview messages.** Each view posts a `WebviewMessage` (`models.ts`). `Handlers` makes an unhandled one a compile

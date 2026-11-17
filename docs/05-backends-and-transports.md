@@ -38,7 +38,7 @@ for a session from the record's `transport` field. A Slurm Start sets that field
 | `release()` | end the run's remote hold and its tokens |
 | `management()`, `relayClient()` | the tunnel management and relay clients |
 | `tunnelRef()` | the run's tunnel, once prepared |
-| `ensureTunnel()` | Dev Tunnel: fetch or create the run's tunnel, refresh this window's connect token, and register the control port if the tunnel lacks it. Link: nothing. The CyberShuttle API proxies the control port. |
+| `ensureTunnel()` | Dev Tunnel: fetch or create the run's tunnel, refresh this window's connect token, and register the control port if the tunnel lacks it. Link: nothing. The CyberShuttle API proxies Linkspan. |
 | `withLinkspan()` | call Linkspan's HTTP API. Dev Tunnel: through the tunnel's public HTTPS endpoint, with the connect token. Link: through a short-lived relay client. |
 | `deleteTunnel()` | delete the run's tunnel |
 

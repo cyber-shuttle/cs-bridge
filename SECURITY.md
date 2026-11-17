@@ -48,7 +48,7 @@ when it shows one of them failing.
 - Dev Tunnel sign-in is VS Code's Microsoft account provider. CS Bridge runs no OAuth server and stores no Microsoft
   token.
 - The `link` transport **(experimental)** is an open-source alternative to Microsoft Dev Tunnels, served by the CyberShuttle API.
-  Its sign-in is CILogon's device grant brokered by the CyberShuttle API. The ID token it returns is the bearer token.
+  Its sign-in is a pasted CyberShuttle API token.
   - The credential is stored only in VS Code's SecretStorage. Each window caches it in memory. It is sent only to
     the CyberShuttle API.
   - A CyberShuttle host's Start sends the run's resources and the picked deployment and config ids. The CyberShuttle

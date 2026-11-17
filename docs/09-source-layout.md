@@ -108,7 +108,7 @@ What the code requires of a backend, as `SlurmBackend` and `Ec2Backend` do it:
 - `csHostAlias` is the only builder of the per-session SSH host name.
 - Only `transport.ts` maps a record's `transport` to its implementation (`transportFor`). The Start
   (`sessionProvider.ts`) picks the name a new run records. There are two exceptions:
-  - `sessionSupport.ts` recognises the CyberShuttle API's not-ready error while preparing;
+  - `sessionSupport.ts` recognises the link transport's not-linked error while preparing;
   - `validateSlurmConfig` (`slurmLaunch.ts`) dry-runs with a placeholder `devTunnelLaunch`.
 - Tokens reach the job only as environment assignments on the `sbatch` command (`slurmLaunch.ts`). That command is
   sent over the shell's stdin. Tokens never go in the job script, a process's argv or a file. Exception, to fix in

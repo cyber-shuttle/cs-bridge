@@ -72,17 +72,16 @@ class Link implements Transport {
     constructor(private readonly plane: Plane) { }
 
     management = () => new LinkManagementClient(this.plane);
-    relayClient = (_: unknown, ci: ConnectionInfo) => new LinkRelayClient(ci.controlPort);
+    relayClient = () => new LinkRelayClient();
 
     tunnelRef = ({ planeId }: SlurmSession) => planeId ? { tunnelId: planeId } : undefined;
-    // The CyberShuttle API proxies any port a Linkspan task serves, so there is nothing to declare.
     async ensureTunnel() { }
 
-    withLinkspan: Tunnels['withLinkspan'] = async (session, ci, call) => {
+    withLinkspan: Tunnels['withLinkspan'] = async (session, _ci, call) => {
         const ref = this.tunnelRef(session);
         if (!ref) { throw new Error(`Session ${session.id} has no CyberShuttle run to reach Linkspan through.`); }
         const { accessTokens } = await this.management().getTunnel(ref);
-        return call(linkspanUrl(ref.tunnelId, ci.controlPort), { Authorization: `token ${accessTokens?.connect}` });
+        return call(linkspanUrl(ref.tunnelId), { Authorization: `token ${accessTokens?.connect}` });
     };
 
     signedIn = () => this.plane.signedIn();
