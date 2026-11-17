@@ -23,15 +23,18 @@ async function plane(t: TestContext, answer: (path: string) => { status?: number
     return { calls, secrets, client: new Plane(store, (url, init) => fetch(String(url).replace(PLANE_URL, local), init)) };
 }
 
-test('a 401 signs out', async (t) => {
-    const { secrets, client } = await plane(t, () => ({ status: 401, body: {} }), 'tok');
+test('a token the CyberShuttle API accepts is kept and sent as the bearer, and a 401 signs out', async (t) => {
+    const { calls, secrets, client } = await plane(t, path => ({ status: path === 'processes/me' ? 200 : 401, body: {} }));
+    await client.signIn('tok');
+    assert.equal(calls[0]?.headers.authorization, 'Bearer tok');
+    assert.equal(secrets.get(CREDENTIAL_KEY), 'tok');
     await assert.rejects(client.jupyterServer('s1'));
     assert.equal(secrets.size, 0);
 });
 
 test('an error keeps the CyberShuttle API\'s status and message', async (t) => {
-    const { client } = await plane(t, () => ({ status: 409, body: { status: 409, error: 'Conflict', message: 'the job has no link yet' } }), 'id');
-    await assert.rejects(client.jupyterServer('s1'), (err: PlaneError) => err.status === 409 && err.message === 'the job has no link yet');
+    const { client } = await plane(t, () => ({ status: 403, body: { status: 403, error: 'Forbidden', message: 'only the owner' } }), 'id');
+    await assert.rejects(client.jupyterServer('s1'), (err: PlaneError) => err.status === 403 && err.message === 'only the owner');
 });
 
 test('a CyberShuttle host\'s form, deployments, run and job status come from the CyberShuttle API', async (t) => {
@@ -64,7 +67,7 @@ test('a CyberShuttle cluster config reuses a prompt-only credential, creating on
     }
 });
 
-test('a login raised after the launch returned is asked in this window', async () => {
+test('a login raised after the launch returned is asked', async () => {
     const answered = Promise.withResolvers<unknown>();
     let launched = false;
     const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });

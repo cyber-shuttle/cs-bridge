@@ -22,6 +22,7 @@ records `transport: 'link'`.
 - `plane.ts` is the CyberShuttle API client, at `https://jupyterapi.cybershuttle.org/api/v1`. Requests time out after 30 s.
   A call that logs in to the cluster (discovery, stop) times out after 330 s.
 - While signed in, the window polls `ssh-interactive-auths` every 2 s and asks each prompt in the SSH authentication panel.
+  It asks every pending login of the account, whichever window or client started it.
 
 ## Steps
 

@@ -28,7 +28,7 @@ export class PlaneError extends Error {
 }
 
 export class Plane {
-    private credential?: string | null;
+    private credential?: string;
 
     constructor(private readonly secrets: Pick<vscode.SecretStorage, 'get' | 'store' | 'delete'>, private readonly fetchImpl = fetch) { }
 
@@ -125,7 +125,7 @@ export class Plane {
         return token ? this.secrets.store(CREDENTIAL_KEY, token) : this.secrets.delete(CREDENTIAL_KEY);
     }
 
-    private async load() { return this.credential ??= await this.secrets.get(CREDENTIAL_KEY) ?? null; }
+    private async load() { return this.credential ??= await this.secrets.get(CREDENTIAL_KEY); }
 
     // T is the server's documented response shape; the body is trusted as such, as every wire client here does.
     private async request<T>(path: string, method: string, body?: unknown, token?: string, timeout = 30_000): Promise<T> {

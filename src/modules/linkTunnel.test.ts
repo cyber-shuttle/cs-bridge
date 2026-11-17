@@ -4,7 +4,8 @@ import * as net from 'node:net';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { server as WebSocketServer, w3cwebsocket } from 'websocket';
-import { LinkRelayClient } from './linkTunnel';
+import { LinkManagementClient, LinkRelayClient } from './linkTunnel';
+import { PlaneError } from '../plane';
 import { must } from './testSupport';
 
 // A local stand-in for Linkspan's forward behind the CyberShuttle API's proxy: a real WebSocket server that pipes each socket to
@@ -44,4 +45,9 @@ test('a forwarded port bridges each 127.0.0.1 connection to its own forward sock
     forward.shutDown();
     echo.close();
     http.close();
+});
+
+test('an unlinked run is the not-ready 409', async () => {
+    const plane = { jupyterServer: async () => ({ linked: false, token: 't' }) };
+    await assert.rejects(new LinkManagementClient(plane as never).getTunnel({ tunnelId: 'p1' }), (err: PlaneError) => err.status === 409);
 });

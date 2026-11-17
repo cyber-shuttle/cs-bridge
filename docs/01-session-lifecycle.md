@@ -163,7 +163,7 @@ CS Bridge uses these endpoints on the control port. They are in `linkspanSupport
 | Status | Tick |
 |---|---|
 | `submitting`, `queued`, `unreachable`, `stopping`, or no tunnel yet | reads the job state from `sacct`. When the job first reads `RUNNING`, `startedAt` is set from `sacct`'s `ElapsedRaw`. The walltime countdown then follows Slurm's clock. |
-| `preparing` | calls `ensureRemoteSession`. It asks Linkspan for an SSH server that accepts the session's public key. Success records the node's `sshPort`, and the session becomes `ready_to_connect`. Failure means Linkspan is not up yet. The session stays `preparing`, and `errorMessage` records why. The card shows only "Starting Linkspan…". The exception is the CyberShuttle API's not-ready answer, which is only logged. The first call creates the session's key pair (`sessionPublicKey`, `sshSupport.ts`). |
+| `preparing` | calls `ensureRemoteSession`. It asks Linkspan for an SSH server that accepts the session's public key. Success records the node's `sshPort`, and the session becomes `ready_to_connect`. Failure means Linkspan is not up yet. The session stays `preparing`, and `errorMessage` records why. The card shows only "Starting Linkspan…". The exception is a link run whose Linkspan has not linked yet, which is only logged. The first call creates the session's key pair (`sessionPublicKey`, `sshSupport.ts`). |
 | `ready_to_connect`, `connecting`, `connected` | pulls a usage sample from `/api/v1/usage`. This is the health check. |
 
 Details:
